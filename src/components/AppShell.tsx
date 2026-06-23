@@ -14,6 +14,7 @@ const NAV: NavItem[] = [
   { to: '/cases', label: 'My cases', allow: ['fellow', 'supervisor', 'director'] },
   { to: '/competency', label: 'Competency', allow: ['fellow', 'director', 'admin'] },
   { to: '/handbook', label: 'Handbook' },
+  { to: '/people', label: 'People', allow: ['director', 'admin'] },
 ]
 
 export function AppShell({ children }: { children: ReactNode }) {

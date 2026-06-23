@@ -8,6 +8,7 @@ import ClinicRotations from './pages/ClinicRotations'
 import Cases from './pages/Cases'
 import Competency from './pages/Competency'
 import Handbook from './pages/Handbook'
+import People from './pages/People'
 import NotFound from './pages/NotFound'
 
 export default function App() {
@@ -59,6 +60,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <AppShell><Handbook /></AppShell>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/people"
+        element={
+          <ProtectedRoute allow={['director', 'admin']}>
+            <AppShell><People /></AppShell>
           </ProtectedRoute>
         }
       />
