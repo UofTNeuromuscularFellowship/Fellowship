@@ -6,17 +6,44 @@ import { Waveform } from './ui/Waveform'
 import type { UserRole } from '../types/database'
 
 interface NavItem { to: string; label: string; allow?: UserRole[] }
+interface NavSection { heading: string | null; items: NavItem[] }
 
-const NAV: NavItem[] = [
-  { to: '/', label: 'Dashboard' },
-  { to: '/teaching', label: 'Teaching schedule' },
-  { to: '/clinic', label: 'Clinic rotations' },
-  { to: '/cases', label: 'My cases', allow: ['fellow', 'supervisor', 'director'] },
-  { to: '/competency', label: 'Competency', allow: ['fellow', 'director', 'admin'] },
-  { to: '/handbook', label: 'Handbook' },
-  { to: '/people', label: 'People', allow: ['director', 'admin'] },
-  { to: '/my-teaching', label: 'My Teaching', allow: ['supervisor', 'director'] },
-  { to: '/rate-teaching', label: 'Rate Teaching', allow: ['fellow'] },
+const SECTIONS: NavSection[] = [
+  {
+    heading: null,
+    items: [{ to: '/dashboard', label: 'Dashboard' }],
+  },
+  {
+    heading: 'Schedules',
+    items: [
+      { to: '/teaching', label: 'Teaching schedule' },
+      { to: '/clinic', label: 'Clinic schedule' },
+      { to: '/vacation', label: 'Vacation', allow: ['fellow', 'director'] },
+    ],
+  },
+  {
+    heading: 'Case logging',
+    items: [
+      { to: '/cases', label: 'Case logger', allow: ['fellow', 'supervisor', 'director'] },
+      { to: '/competency', label: 'Competency', allow: ['fellow', 'director', 'admin'] },
+    ],
+  },
+  {
+    heading: 'Teaching',
+    items: [
+      { to: '/my-teaching', label: 'My Teaching', allow: ['supervisor', 'director'] },
+      { to: '/rate-teaching', label: 'Rate Teaching', allow: ['fellow'] },
+      { to: '/evaluations', label: 'Evaluations', allow: ['fellow', 'supervisor', 'director'] },
+    ],
+  },
+  {
+    heading: 'Program',
+    items: [
+      { to: '/handbook', label: 'Handbook' },
+      { to: '/people', label: 'People', allow: ['director', 'admin'] },
+      { to: '/settings', label: 'Settings', allow: ['director'] },
+    ],
+  },
 ]
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -24,12 +51,15 @@ export function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
   const role = profile?.role
 
-  const items = NAV.filter((i) => !i.allow || (role && i.allow.includes(role)))
-
   async function handleSignOut() {
     await signOut()
     navigate('/login')
   }
+
+  const visibleSections = SECTIONS.map((s) => ({
+    ...s,
+    items: s.items.filter((i) => !i.allow || (role && i.allow.includes(role))),
+  })).filter((s) => s.items.length > 0)
 
   return (
     <div className="flex min-h-screen">
@@ -41,20 +71,28 @@ export function AppShell({ children }: { children: ReactNode }) {
           </p>
           <p className="mt-1 text-xs text-muted">University of Toronto · Neurology</p>
         </div>
-        <nav className="flex-1 px-3 py-4">
-          {items.map((i) => (
-            <NavLink
-              key={i.to}
-              to={i.to}
-              end={i.to === '/'}
-              className={({ isActive }) =>
-                `block rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                  isActive ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-paper hover:text-ink'
-                }`
-              }
-            >
-              {i.label}
-            </NavLink>
+        <nav className="flex-1 overflow-y-auto px-3 py-4">
+          {visibleSections.map((section, idx) => (
+            <div key={idx} className={idx > 0 ? 'mt-5' : ''}>
+              {section.heading && (
+                <p className="mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted">
+                  {section.heading}
+                </p>
+              )}
+              {section.items.map((i) => (
+                <NavLink
+                  key={i.to}
+                  to={i.to}
+                  className={({ isActive }) =>
+                    `block rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                      isActive ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-paper hover:text-ink'
+                    }`
+                  }
+                >
+                  {i.label}
+                </NavLink>
+              ))}
+            </div>
           ))}
         </nav>
         <div className="border-t border-line px-5 py-4">

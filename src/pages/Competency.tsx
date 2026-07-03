@@ -1,178 +1,234 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
-import { TargetEditor } from '../components/TargetEditor'
-import { mergeTargets } from '../lib/competency'
-import type { CompetencyTarget, AppUser } from '../types/database'
+import { cohortYears, DIAGNOSIS_CATEGORIES } from '../lib/caseOptions'
 
-type DoneMap = Record<string, number>
-
-async function fetchProgress(fellowId: string): Promise<DoneMap> {
-  const { data, error } = await supabase.rpc('fellow_competency_progress', { p_fellow: fellowId })
-  if (error) return {}
-  const map: DoneMap = {}
-  for (const r of (data as { metric_key: string; done: number }[]) ?? []) {
-    map[r.metric_key.toLowerCase()] = Number(r.done)
-  }
-  return map
+interface Target {
+  id: string
+  cohort_year: string | null
+  fellow_id: string | null
+  metric_key: string
+  metric_label: string
+  metric_kind: string
+  target_value: number
+  sort_order: number | null
 }
+
+interface CaseAgg {
+  ncs: number; emg: number; rns: number; sfemg: number; total: number
+  byDiagnosis: Record<string, number>
+}
+
+const METRIC_KINDS = [
+  { value: 'cases_total', label: 'Total cases logged' },
+  { value: 'ncs_total', label: 'Nerve conduction studies (total)' },
+  { value: 'emg_total', label: 'EMG muscles sampled (total)' },
+  { value: 'rns_total', label: 'Repetitive nerve stimulation (total)' },
+  { value: 'sfemg_total', label: 'Single fiber EMG (total)' },
+  ...DIAGNOSIS_CATEGORIES.map((d) => ({ value: `diagnosis:${d}`, label: `Cases: ${d}` })),
+]
 
 export default function Competency() {
-  const { profile, session } = useAuth()
-  const role = profile?.role
+  const { profile } = useAuth()
+  const isDirector = profile?.role === 'director'
+  const isFellow = profile?.role === 'fellow'
+  const [targets, setTargets] = useState<Target[]>([])
+  const [agg, setAgg] = useState<CaseAgg | null>(null)
+  const [msg, setMsg] = useState<string | null>(null)
 
-  if (role === 'admin') {
-    return (
-      <Wrap>
-        <Card className="p-8 text-center">
-          <p className="text-sm text-muted">
-            Competency progress is derived from clinical case data, which isn't accessible to
-            the admin role. Target configuration is managed by directors.
-          </p>
-        </Card>
-      </Wrap>
-    )
+  async function load() {
+    const { data: t, error } = await supabase
+      .from('competency_targets')
+      .select('*')
+      .order('sort_order', { ascending: true, nullsFirst: false })
+    if (error) setMsg(error.message)
+    setTargets((t as Target[]) ?? [])
+
+    if (isFellow && profile) {
+      const { data: rows } = await supabase
+        .from('cases')
+        .select('ncs_count, emg_count, rns_count, sfemg_count, diagnoses')
+        .eq('fellow_id', profile.id)
+      const a: CaseAgg = { ncs: 0, emg: 0, rns: 0, sfemg: 0, total: 0, byDiagnosis: {} }
+      for (const r of rows ?? []) {
+        a.total += 1
+        a.ncs += r.ncs_count ?? 0
+        a.emg += r.emg_count ?? 0
+        a.rns += r.rns_count ?? 0
+        a.sfemg += r.sfemg_count ?? 0
+        for (const d of (r.diagnoses as { category: string }[]) ?? []) {
+          if (d?.category) a.byDiagnosis[d.category] = (a.byDiagnosis[d.category] ?? 0) + 1
+        }
+      }
+      setAgg(a)
+    }
   }
 
-  if (role === 'director') return <DirectorView />
-  return <FellowView fellowId={session!.user.id} cohortYear={profile?.cohort_year ?? null} />
-}
+  useEffect(() => { if (profile) load() }, [profile?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-function Wrap({ children }: { children: ReactNode }) {
+  function achieved(kind: string): number {
+    if (!agg) return 0
+    if (kind === 'cases_total') return agg.total
+    if (kind === 'ncs_total') return agg.ncs
+    if (kind === 'emg_total') return agg.emg
+    if (kind === 'rns_total') return agg.rns
+    if (kind === 'sfemg_total') return agg.sfemg
+    if (kind.startsWith('diagnosis:')) return agg.byDiagnosis[kind.slice('diagnosis:'.length)] ?? 0
+    return 0
+  }
+
+  const myTargets = isFellow && profile
+    ? targets.filter((t) => (t.fellow_id === profile.id) || (!t.fellow_id && (!t.cohort_year || t.cohort_year === profile.cohort_year)))
+    : targets
+
+  if (!profile) return null
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="font-display text-2xl font-bold text-ink">Competency</h1>
-        <p className="mt-1 text-sm text-muted">Progress against program targets</p>
+        <p className="mt-1 text-sm text-muted">
+          {isFellow ? 'Your progress toward the minimums set by the fellowship' : 'Program minimums by cohort'}
+        </p>
       </div>
-      {children}
+
+      {msg && (
+        <div className="rounded-md border border-line bg-surface px-4 py-3 text-sm text-ink">
+          {msg} <button className="ml-2 font-medium text-accent" onClick={() => setMsg(null)}>dismiss</button>
+        </div>
+      )}
+
+      {isFellow && (
+        <Card>
+          <CardHeader title="Your progress" sub="Computed from your logged cases" />
+          {myTargets.length === 0 ? (
+            <p className="px-5 py-4 text-sm text-muted">
+              No minimums have been set for your cohort yet — the fellowship director configures these.
+            </p>
+          ) : (
+            <ul className="divide-y divide-line">
+              {myTargets.map((t) => {
+                const done = achieved(t.metric_kind)
+                const pct = t.target_value > 0 ? Math.min(100, Math.round((done / t.target_value) * 100)) : 0
+                return (
+                  <li key={t.id} className="px-5 py-3">
+                    <div className="flex items-baseline justify-between text-sm">
+                      <span className="font-medium text-ink">{t.metric_label}</span>
+                      <span className={done >= t.target_value ? 'font-semibold text-accent' : 'text-muted'}>
+                        {done} / {t.target_value}{done >= t.target_value ? ' ✓' : ''}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-paper">
+                      <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${pct}%` }} />
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </Card>
+      )}
+
+      {isDirector && <TargetEditor targets={targets} onChanged={load} onError={setMsg} />}
     </div>
   )
 }
 
-function ProgressBars({ targets, done, fellowId }: { targets: CompetencyTarget[]; done: DoneMap; fellowId: string }) {
-  const merged = useMemo(() => mergeTargets(targets, fellowId), [targets, fellowId])
-  if (merged.length === 0) {
-    return (
-      <Card className="p-8 text-center">
-        <p className="text-sm text-muted">No targets configured for this cohort yet.</p>
-      </Card>
-    )
+function TargetEditor({ targets, onChanged, onError }: { targets: Target[]; onChanged: () => void; onError: (m: string) => void }) {
+  const [cohort, setCohort] = useState(cohortYears()[2] ?? '')
+  const [kind, setKind] = useState('cases_total')
+  const [label, setLabel] = useState('')
+  const [value, setValue] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function add() {
+    const v = parseInt(value, 10)
+    if (!label.trim() || !v || v < 1) { onError('A label and a target of at least 1 are required.'); return }
+    setBusy(true)
+    const { error } = await supabase.from('competency_targets').insert({
+      cohort_year: cohort || null,
+      metric_key: `${kind}:${Date.now()}`,
+      metric_label: label.trim(),
+      metric_kind: kind,
+      target_value: v,
+      sort_order: targets.length + 1,
+    })
+    setBusy(false)
+    if (error) { onError(error.message); return }
+    setLabel(''); setValue(''); onChanged()
   }
+
+  async function remove(id: string) {
+    await supabase.from('competency_targets').delete().eq('id', id)
+    onChanged()
+  }
+
+  async function updateValue(t: Target, v: string) {
+    const n = parseInt(v, 10)
+    if (!n || n < 1) return
+    await supabase.from('competency_targets').update({ target_value: n }).eq('id', t.id)
+    onChanged()
+  }
+
   return (
     <Card>
-      <CardHeader title="Progress" sub="Counts across all logged cases" />
-      <ul className="divide-y divide-line">
-        {merged.map((t) => {
-          const n = done[t.metric_key.toLowerCase()] ?? 0
-          const pct = t.target_value > 0 ? Math.min(100, Math.round((n / t.target_value) * 100)) : 0
-          const met = t.target_value > 0 && n >= t.target_value
-          return (
-            <li key={t.id} className="px-5 py-3">
-              <div className="flex items-baseline justify-between">
-                <span className="text-sm font-medium text-ink">{t.metric_label}</span>
-                <span className="text-sm text-muted nums">{n} / {t.target_value}</span>
-              </div>
-              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-paper">
-                <div className={`h-full rounded-full ${met ? 'bg-accent' : 'bg-signal'}`} style={{ width: `${pct}%` }} />
-              </div>
-            </li>
-          )
-        })}
-      </ul>
-    </Card>
-  )
-}
-
-function FellowView({ fellowId, cohortYear }: { fellowId: string; cohortYear: string | null }) {
-  const [done, setDone] = useState<DoneMap>({})
-  const [targets, setTargets] = useState<CompetencyTarget[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    (async () => {
-      const d = await fetchProgress(fellowId)
-      let tq = supabase.from('competency_targets').select('*')
-      if (cohortYear) tq = tq.eq('cohort_year', cohortYear)
-      const ts = await tq
-      setDone(d)
-      setTargets((ts.data as CompetencyTarget[]) ?? [])
-      setLoading(false)
-    })()
-  }, [fellowId, cohortYear])
-
-  return (
-    <Wrap>
-      {!cohortYear && (
-        <p className="rounded-md border border-line bg-accent-soft/40 px-4 py-3 text-xs text-muted">
-          Your cohort year isn't set yet, so cohort targets may not apply. Ask a director to set it on your profile.
-        </p>
-      )}
-      {loading ? <p className="text-sm text-muted">Loading…</p> : <ProgressBars targets={targets} done={done} fellowId={fellowId} />}
-    </Wrap>
-  )
-}
-
-function DirectorView() {
-  const [fellows, setFellows] = useState<AppUser[]>([])
-  const [selected, setSelected] = useState<AppUser | null>(null)
-  const [cohortYear, setCohortYear] = useState('2026-27')
-  const [done, setDone] = useState<DoneMap>({})
-  const [targets, setTargets] = useState<CompetencyTarget[]>([])
-
-  useEffect(() => {
-    supabase.from('users').select('*').eq('role', 'fellow').eq('status', 'active')
-      .then(({ data }) => setFellows((data as AppUser[]) ?? []))
-  }, [])
-
-  useEffect(() => {
-    if (!selected) { setDone({}); setTargets([]); return }
-    (async () => {
-      const d = await fetchProgress(selected.id)
-      const ts = await supabase.from('competency_targets').select('*')
-        .eq('cohort_year', selected.cohort_year ?? cohortYear)
-      setDone(d)
-      setTargets((ts.data as CompetencyTarget[]) ?? [])
-    })()
-  }, [selected, cohortYear])
-
-  return (
-    <Wrap>
-      <Card className="p-5">
-        <label className="block">
-          <span className="text-sm font-medium text-ink">Cohort year</span>
-          <input
-            value={cohortYear}
-            onChange={(e) => setCohortYear(e.target.value)}
-            className="mt-1 w-40 rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"
-            placeholder="2026-27"
-          />
-        </label>
-      </Card>
-
-      <TargetEditor cohortYear={cohortYear} />
-
-      <Card className="p-5">
-        <p className="text-sm font-medium text-ink">View a fellow's progress</p>
-        {fellows.length === 0 ? (
-          <p className="mt-2 text-sm text-muted">No active fellow accounts yet. Once fellows sign up and are assigned the fellow role, they appear here.</p>
-        ) : (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {fellows.map((f) => (
-              <button
-                key={f.id}
-                onClick={() => setSelected(f)}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium ${selected?.id === f.id ? 'bg-accent text-white' : 'bg-paper text-ink hover:bg-line'}`}
-              >
-                {f.full_name}
-              </button>
-            ))}
+      <CardHeader title="Set minimums" sub="These drive each fellow's progress view. Metrics compute from logged cases." />
+      <div className="space-y-4 px-5 py-4">
+        <div className="flex flex-wrap items-end gap-2">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted">Cohort</label>
+            <select value={cohort} onChange={(e) => setCohort(e.target.value)}
+              className="rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink">
+              <option value="">All cohorts</option>
+              {cohortYears().map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
           </div>
-        )}
-      </Card>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted">Metric</label>
+            <select value={kind} onChange={(e) => { setKind(e.target.value); const m = METRIC_KINDS.find((x) => x.value === e.target.value); if (m) setLabel(m.label) }}
+              className="max-w-xs rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink">
+              {METRIC_KINDS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
+          </div>
+          <div className="min-w-0 flex-1">
+            <label className="mb-1 block text-xs font-medium text-muted">Display label</label>
+            <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g., Total EMG cases"
+              className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted">Minimum</label>
+            <input value={value} onChange={(e) => setValue(e.target.value.replace(/\D/g, ''))} inputMode="numeric"
+              className="w-24 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink" />
+          </div>
+          <button onClick={add} disabled={busy}
+            className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+            Add
+          </button>
+        </div>
 
-      {selected && <ProgressBars targets={targets} done={done} fellowId={selected.id} />}
-    </Wrap>
+        {targets.length > 0 && (
+          <ul className="divide-y divide-line">
+            {targets.map((t) => (
+              <li key={t.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
+                <div>
+                  <span className="font-medium text-ink">{t.metric_label}</span>
+                  <span className="ml-2 text-muted">{t.cohort_year ?? 'All cohorts'}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    defaultValue={t.target_value}
+                    onBlur={(e) => updateValue(t, e.target.value)}
+                    inputMode="numeric"
+                    className="w-20 rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink"
+                  />
+                  <button onClick={() => remove(t.id)} className="text-xs font-medium text-muted hover:text-ink">Remove</button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </Card>
   )
 }
