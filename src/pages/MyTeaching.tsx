@@ -27,7 +27,7 @@ interface NamedFeedbackRow extends FeedbackRow {
   fellow_name: string
 }
 
-interface Fellow {
+interface Person {
   id: string
   full_name: string
 }
@@ -39,7 +39,8 @@ export default function MyTeaching() {
   const isDirector = profile?.role === 'director'
   const [sessions, setSessions] = useState<Session[]>([])
   const [loading, setLoading] = useState(true)
-  const [openPanel, setOpenPanel] = useState<{ id: string; kind: 'feedback' | 'attendance' | 'zoom' } | null>(null)
+  const [openPanel, setOpenPanel] = useState<{ id: string; kind: 'feedback' | 'attendance' | 'zoom' | 'edit' } | null>(null)
+  const [providers, setProviders] = useState<Person[]>([])
   const [msg, setMsg] = useState<string | null>(null)
 
   async function load() {
@@ -58,6 +59,9 @@ export default function MyTeaching() {
 
   useEffect(() => {
     if (profile) load()
+    if (isDirector) {
+      supabase.rpc('list_providers').then(({ data }) => setProviders((data as Person[]) ?? []))
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id])
 
@@ -72,6 +76,71 @@ export default function MyTeaching() {
   }
 
   if (!profile) return null
+
+  function togglePanel(id: string, kind: 'feedback' | 'attendance' | 'zoom' | 'edit') {
+    setOpenPanel(openPanel?.id === id && openPanel.kind === kind ? null : { id, kind })
+  }
+
+  function renderSession(s: Session, isPast: boolean) {
+    return (
+      <li key={s.id} className="px-5 py-4">
+        <SessionRow s={s} isDirector={isDirector} />
+        <div className="mt-2 flex flex-wrap items-center gap-4 text-sm">
+          {!isPast && (s.zoom_link ? (
+            <a href={s.zoom_link} target="_blank" rel="noreferrer" className="font-medium text-accent hover:underline">
+              Join Zoom
+            </a>
+          ) : (
+            <span className="text-muted">No Zoom link yet</span>
+          ))}
+          {!isPast && (
+            <button className="font-medium text-accent hover:underline" onClick={() => togglePanel(s.id, 'zoom')}>
+              {s.zoom_link ? 'Edit link' : 'Add link'}
+            </button>
+          )}
+          {isPast && (s.delivered_at ? (
+            <span className="text-muted">Delivered {new Date(s.delivered_at).toLocaleDateString('en-CA')}</span>
+          ) : (
+            <button className="font-medium text-accent hover:underline" onClick={() => markDelivered(s)}>
+              Mark as delivered
+            </button>
+          ))}
+          {isPast && (
+            <button className="font-medium text-accent hover:underline" onClick={() => togglePanel(s.id, 'attendance')}>
+              Attendance
+            </button>
+          )}
+          {isPast && (
+            <button className="font-medium text-accent hover:underline" onClick={() => togglePanel(s.id, 'feedback')}>
+              Feedback
+            </button>
+          )}
+          {isPast && s.delivered_at && (
+            <button className="font-medium text-accent hover:underline" onClick={() => openCompletionLetter(s)}>
+              Completion letter
+            </button>
+          )}
+          {isDirector && (
+            <button className="font-medium text-accent hover:underline" onClick={() => togglePanel(s.id, 'edit')}>
+              Edit session
+            </button>
+          )}
+        </div>
+        {openPanel?.id === s.id && openPanel.kind === 'zoom' && (
+          <ZoomEditor session={s} onDone={() => { setOpenPanel(null); load() }} onError={setMsg} />
+        )}
+        {openPanel?.id === s.id && openPanel.kind === 'attendance' && (
+          <AttendancePanel session={s} recorderId={profile!.id} onError={setMsg} />
+        )}
+        {openPanel?.id === s.id && openPanel.kind === 'feedback' && (
+          <FeedbackPanel session={s} isDirector={isDirector} onError={setMsg} />
+        )}
+        {openPanel?.id === s.id && openPanel.kind === 'edit' && (
+          <EditSessionPanel session={s} providers={providers} onDone={() => { setOpenPanel(null); load() }} onError={setMsg} />
+        )}
+      </li>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -95,29 +164,7 @@ export default function MyTeaching() {
         ) : upcoming.length === 0 ? (
           <p className="px-5 py-4 text-sm text-muted">No upcoming assignments.</p>
         ) : (
-          <ul className="divide-y divide-line">
-            {upcoming.map((s) => (
-              <li key={s.id} className="px-5 py-4">
-                <SessionRow s={s} isDirector={isDirector} />
-                <div className="mt-2 flex flex-wrap items-center gap-4 text-sm">
-                  {s.zoom_link ? (
-                    <a href={s.zoom_link} target="_blank" rel="noreferrer" className="font-medium text-accent hover:underline">
-                      Join Zoom
-                    </a>
-                  ) : (
-                    <span className="text-muted">No Zoom link yet</span>
-                  )}
-                  <button className="font-medium text-accent hover:underline"
-                    onClick={() => setOpenPanel(openPanel?.id === s.id && openPanel.kind === 'zoom' ? null : { id: s.id, kind: 'zoom' })}>
-                    {s.zoom_link ? 'Edit link' : 'Add link'}
-                  </button>
-                </div>
-                {openPanel?.id === s.id && openPanel.kind === 'zoom' && (
-                  <ZoomEditor session={s} onDone={() => { setOpenPanel(null); load() }} onError={setMsg} />
-                )}
-              </li>
-            ))}
-          </ul>
+          <ul className="divide-y divide-line">{upcoming.map((s) => renderSession(s, false))}</ul>
         )}
       </Card>
 
@@ -128,41 +175,7 @@ export default function MyTeaching() {
         ) : past.length === 0 ? (
           <p className="px-5 py-4 text-sm text-muted">Nothing here yet.</p>
         ) : (
-          <ul className="divide-y divide-line">
-            {past.map((s) => (
-              <li key={s.id} className="px-5 py-4">
-                <SessionRow s={s} isDirector={isDirector} />
-                <div className="mt-2 flex flex-wrap items-center gap-4 text-sm">
-                  {s.delivered_at ? (
-                    <span className="text-muted">Delivered {new Date(s.delivered_at).toLocaleDateString('en-CA')}</span>
-                  ) : (
-                    <button className="font-medium text-accent hover:underline" onClick={() => markDelivered(s)}>
-                      Mark as delivered
-                    </button>
-                  )}
-                  <button className="font-medium text-accent hover:underline"
-                    onClick={() => setOpenPanel(openPanel?.id === s.id && openPanel.kind === 'attendance' ? null : { id: s.id, kind: 'attendance' })}>
-                    Attendance
-                  </button>
-                  <button className="font-medium text-accent hover:underline"
-                    onClick={() => setOpenPanel(openPanel?.id === s.id && openPanel.kind === 'feedback' ? null : { id: s.id, kind: 'feedback' })}>
-                    Feedback
-                  </button>
-                  {s.delivered_at && (
-                    <button className="font-medium text-accent hover:underline" onClick={() => openCompletionLetter(s)}>
-                      Completion letter
-                    </button>
-                  )}
-                </div>
-                {openPanel?.id === s.id && openPanel.kind === 'attendance' && (
-                  <AttendancePanel session={s} recorderId={profile.id} onError={setMsg} />
-                )}
-                {openPanel?.id === s.id && openPanel.kind === 'feedback' && (
-                  <FeedbackPanel session={s} isDirector={isDirector} onError={setMsg} />
-                )}
-              </li>
-            ))}
-          </ul>
+          <ul className="divide-y divide-line">{past.map((s) => renderSession(s, true))}</ul>
         )}
       </Card>
     </div>
@@ -179,6 +192,84 @@ function SessionRow({ s, isDirector }: { s: Session; isDirector: boolean }) {
           {isDirector && s.provider_name ? ` · ${s.provider_name}` : ''}
         </p>
       </div>
+    </div>
+  )
+}
+
+function EditSessionPanel({
+  session, providers, onDone, onError,
+}: {
+  session: Session
+  providers: Person[]
+  onDone: () => void
+  onError: (m: string) => void
+}) {
+  const linked = providers.find((p) => p.id === session.provider_id)
+  const [topic, setTopic] = useState(session.topic ?? '')
+  const [choice, setChoice] = useState<string>(linked ? linked.id : session.provider_name ? 'custom' : 'none')
+  const [customName, setCustomName] = useState(linked ? '' : session.provider_name ?? '')
+  const [busy, setBusy] = useState(false)
+
+  async function save() {
+    let provider_id: string | null = null
+    let provider_name: string | null = null
+    if (choice === 'custom') {
+      provider_name = customName.trim() || null
+    } else if (choice !== 'none') {
+      const p = providers.find((x) => x.id === choice)
+      provider_id = choice
+      provider_name = p?.full_name ?? null
+    }
+    setBusy(true)
+    const { error } = await supabase
+      .from('teaching_sessions')
+      .update({ topic: topic.trim() || null, provider_id, provider_name, updated_at: new Date().toISOString() })
+      .eq('id', session.id)
+    setBusy(false)
+    if (error) onError(error.message)
+    else onDone()
+  }
+
+  return (
+    <div className="mt-3 space-y-3 rounded-md border border-line p-4">
+      <div>
+        <label className="mb-1 block text-xs font-medium text-muted">Topic</label>
+        <input
+          value={topic}
+          onChange={(e) => setTopic(e.target.value)}
+          className="w-full max-w-md rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink"
+        />
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-medium text-muted">Teacher</label>
+        <select
+          value={choice}
+          onChange={(e) => setChoice(e.target.value)}
+          className="w-full max-w-md rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink"
+        >
+          <option value="none">Unassigned</option>
+          {providers.map((p) => (
+            <option key={p.id} value={p.id}>{p.full_name}</option>
+          ))}
+          <option value="custom">Other (name only, no portal account)</option>
+        </select>
+        {choice === 'custom' && (
+          <input
+            value={customName}
+            onChange={(e) => setCustomName(e.target.value)}
+            placeholder="Teacher's name"
+            className="mt-2 w-full max-w-md rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink"
+          />
+        )}
+        <p className="mt-1 text-xs text-muted">
+          Teachers picked from the list see this session on their own My Teaching page. "Other" is for teachers who
+          don't have a portal account yet.
+        </p>
+      </div>
+      <button onClick={save} disabled={busy}
+        className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-accent hover:underline disabled:opacity-50">
+        {busy ? 'Saving…' : 'Save changes'}
+      </button>
     </div>
   )
 }
@@ -210,7 +301,7 @@ function ZoomEditor({ session, onDone, onError }: { session: Session; onDone: ()
 }
 
 function AttendancePanel({ session, recorderId, onError }: { session: Session; recorderId: string; onError: (m: string) => void }) {
-  const [fellows, setFellows] = useState<Fellow[]>([])
+  const [fellows, setFellows] = useState<Person[]>([])
   const [marks, setMarks] = useState<Record<string, AttendanceStatus>>({})
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -219,7 +310,7 @@ function AttendancePanel({ session, recorderId, onError }: { session: Session; r
     ;(async () => {
       const { data: fl, error: fe } = await supabase.rpc('list_fellows')
       if (fe) { onError(fe.message); return }
-      setFellows((fl as Fellow[]) ?? [])
+      setFellows((fl as Person[]) ?? [])
       const { data: existing } = await supabase
         .from('session_attendance')
         .select('fellow_id, status')
