@@ -23,7 +23,7 @@ export default function Landing() {
         <div className="flex items-center gap-3">
           <Waveform className="h-5 w-24 text-accent" />
           <span className="hidden font-display text-sm font-semibold sm:inline">
-            City Wide Neuromuscular Fellowship
+            Citywide Neuromuscular Fellowship
           </span>
         </div>
         <Link
@@ -40,7 +40,7 @@ export default function Landing() {
           University of Toronto · Division of Neurology
         </p>
         <h1 className="mx-auto mt-4 max-w-3xl font-display text-4xl font-bold leading-tight md:text-5xl">
-          City Wide Neuromuscular Fellowship
+          Citywide Neuromuscular Fellowship
         </h1>
         <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-muted md:text-lg">
           A clinical fellowship in neuromuscular medicine and electrodiagnostics — EMG and nerve
@@ -122,7 +122,7 @@ export default function Landing() {
       </section>
 
       <footer className="px-6 py-8 text-center text-xs text-muted">
-        City Wide Neuromuscular Fellowship · University of Toronto · Division of Neurology
+        Citywide Neuromuscular Fellowship · University of Toronto · Division of Neurology
       </footer>
     </div>
   )

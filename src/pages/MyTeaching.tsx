@@ -514,10 +514,10 @@ async function openCompletionLetter(s: Session) {
   .muted { color: #555; font-size: .9rem; } .sig { margin-top: 4rem; }
   @media print { body { margin: 1rem auto; } }
 </style></head><body>
-<h1>City Wide Neuromuscular Fellowship<br/><span class="muted">Division of Neurology, University of Toronto</span></h1>
+<h1>Citywide Neuromuscular Fellowship<br/><span class="muted">Division of Neurology, University of Toronto</span></h1>
 <p class="muted">${new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
 <h2>Confirmation of Teaching Activity</h2>
-<p>This letter confirms that <strong>${s.provider_name ?? ''}</strong> delivered the following didactic teaching session to the fellows of the City Wide Neuromuscular Fellowship:</p>
+<p>This letter confirms that <strong>${s.provider_name ?? ''}</strong> delivered the following didactic teaching session to the fellows of the Citywide Neuromuscular Fellowship:</p>
 <p><strong>Topic:</strong> ${s.topic ?? ''}<br/>
 <strong>Date:</strong> ${new Date(s.session_date + 'T00:00:00').toLocaleDateString('en-CA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}<br/>
 <strong>Time:</strong> ${s.start_time.slice(0, 5)}–${s.end_time.slice(0, 5)}</p>
@@ -527,7 +527,7 @@ ${feedbackLine}
 <div class="sig">
 <p>_______________________________<br/>
 Dr. Aaron Izenberg<br/>
-Fellowship Director, City Wide Neuromuscular Fellowship<br/>
+Fellowship Director, Citywide Neuromuscular Fellowship<br/>
 aaron.izenberg@sunnybrook.ca · 416-480-4475</p>
 </div>
 <script>window.print()</script>

@@ -1,7 +1,7 @@
 {
   "name": "Neuromuscular Fellowship Portal",
   "short_name": "NM Fellowship",
-  "description": "City Wide Neuromuscular Fellowship portal \u2014 University of Toronto",
+  "description": "Citywide Neuromuscular Fellowship portal \u2014 University of Toronto",
   "start_url": "/dashboard",
   "scope": "/",
   "display": "standalone",
