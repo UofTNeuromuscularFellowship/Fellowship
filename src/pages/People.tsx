@@ -11,7 +11,7 @@ interface UserRow {
 
 export default function People() {
   const { profile } = useAuth()
-  const isDirector = profile?.role === 'director'
+  const canManage = profile?.role === 'director' || profile?.role === 'admin'
   const [users, setUsers] = useState<UserRow[]>([])
   const [msg, setMsg] = useState<string | null>(null)
 
@@ -64,7 +64,7 @@ export default function People() {
         </div>
       )}
 
-      {isDirector && (
+      {canManage && (
         <Card>
           <CardHeader
             title="Add a person"
@@ -128,18 +128,115 @@ export default function People() {
         <CardHeader title="All accounts" sub={`${users.length} people`} />
         <ul className="divide-y divide-line">
           {users.map((u) => (
-            <li key={u.id} className="flex flex-wrap items-baseline justify-between gap-2 px-5 py-3 text-sm">
-              <div>
-                <span className="font-medium text-ink">{u.full_name}</span>
-                <span className="ml-2 text-muted">{u.email}</span>
-              </div>
-              <span className="text-muted">
-                {roleLabel(u.role)}{u.cohort_year ? ` · ${u.cohort_year}` : ''}{u.status !== 'active' ? ` · ${u.status}` : ''}
-              </span>
-            </li>
+            <UserItem key={u.id} user={u} canManage={canManage} onChanged={load} onError={setMsg} />
           ))}
         </ul>
       </Card>
     </div>
+  )
+}
+
+function UserItem({ user, canManage, onChanged, onError }: {
+  user: UserRow; canManage: boolean; onChanged: () => void; onError: (m: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [role, setRole] = useState(user.role)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [resetCred, setResetCred] = useState<string | null>(null)
+
+  async function call(action: string, body: Record<string, unknown>) {
+    setBusy(action); onError('')
+    const { data, error } = await supabase.functions.invoke('admin-manage-user', {
+      body: { action, user_id: user.id, ...body },
+    })
+    setBusy(null)
+    if (error || data?.error) { onError(data?.error ?? error?.message ?? 'Action failed.'); return null }
+    return data
+  }
+
+  async function saveRole() {
+    if (role === user.role) { setOpen(false); return }
+    const r = await call('set_role', { role })
+    if (r) onChanged()
+  }
+
+  async function toggleStatus() {
+    const next = user.status === 'active' ? 'inactive' : 'active'
+    const r = await call('set_status', { status: next })
+    if (r) onChanged()
+  }
+
+  async function resetPassword() {
+    const r = await call('reset_password', {})
+    if (r?.temp_password) setResetCred(r.temp_password)
+  }
+
+  const inactive = user.status !== 'active'
+
+  return (
+    <li className="px-5 py-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+        <div className={inactive ? 'opacity-60' : ''}>
+          <span className="font-medium text-ink">{user.full_name}</span>
+          <span className="ml-2 text-muted">{user.email}</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-muted">
+            {roleLabel(user.role)}{user.cohort_year ? ` · ${user.cohort_year}` : ''}{inactive ? ` · ${user.status}` : ''}
+          </span>
+          {canManage && (
+            <button onClick={() => setOpen(!open)} className="text-xs font-medium text-accent hover:underline">
+              {open ? 'Close' : 'Manage'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {open && canManage && (
+        <div className="mt-3 space-y-3 rounded-md border border-line p-4">
+          <div className="flex flex-wrap items-end gap-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted">Role</label>
+              <select value={role} onChange={(e) => setRole(e.target.value)}
+                className="rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink">
+                <option value="fellow">Fellow</option>
+                <option value="supervisor">Supervisor</option>
+                <option value="director">Director</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+            <button onClick={saveRole} disabled={busy !== null || role === user.role}
+              className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-accent hover:underline disabled:opacity-40">
+              {busy === 'set_role' ? 'Saving…' : 'Save role'}
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 border-t border-line pt-3">
+            <button onClick={toggleStatus} disabled={busy !== null}
+              className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink hover:bg-paper disabled:opacity-40">
+              {busy === 'set_status' ? 'Working…' : inactive ? 'Reactivate account' : 'Deactivate account'}
+            </button>
+            <button onClick={resetPassword} disabled={busy !== null}
+              className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink hover:bg-paper disabled:opacity-40">
+              {busy === 'reset_password' ? 'Resetting…' : 'Reset password'}
+            </button>
+          </div>
+
+          {inactive && (
+            <p className="text-xs text-muted">
+              Deactivated accounts can't sign in and are skipped by schedule generation and emails.
+            </p>
+          )}
+
+          {resetCred && (
+            <div className="rounded-md border border-accent bg-accent-soft px-3 py-2 text-sm">
+              <p className="font-semibold text-ink">New temporary password — share it now</p>
+              <p className="mt-1 font-mono font-semibold text-ink">{resetCred}</p>
+              <p className="mt-1 text-xs text-muted">Shown once. They'll set their own at next sign-in.</p>
+            </div>
+          )}
+        </div>
+      )}
+    </li>
   )
 }

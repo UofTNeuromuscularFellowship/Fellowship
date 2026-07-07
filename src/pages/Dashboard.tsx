@@ -86,7 +86,6 @@ export default function Dashboard() {
         <p className="mt-1 text-sm text-muted">Your week at a glance</p>
       </div>
 
-      {/* Notifications */}
       {notifications.length > 0 && (
         <div className="space-y-2">
           {notifications.map((n) => (
@@ -120,7 +119,6 @@ export default function Dashboard() {
       )}
 
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Clinic this week */}
         <Card>
           <CardHeader title="Clinics this week" action={<Link to="/clinic" className="text-sm font-medium text-accent hover:underline">Full schedule</Link>} />
           {rotations.length === 0 ? (
@@ -139,7 +137,6 @@ export default function Dashboard() {
           )}
         </Card>
 
-        {/* Teaching this week */}
         <Card>
           <CardHeader title="Teaching this week" action={<Link to="/teaching" className="text-sm font-medium text-accent hover:underline">Full schedule</Link>} />
           {sessions.length === 0 ? (
@@ -170,15 +167,16 @@ export default function Dashboard() {
       <div className="grid gap-6 lg:grid-cols-2">
         <JotNotes userId={profile.id} />
         <Card>
-          <CardHeader title="Shortcuts" />
-          <div className="space-y-3 px-5 py-4 text-sm">
-            <p><Link to="/handbook" className="font-medium text-accent hover:underline">Fellowship Handbook →</Link></p>
-            <CalendarSubscribe userId={profile.id} />
+          <CardHeader title="Handbook" />
+          <div className="px-5 py-4 text-sm">
+            <Link to="/handbook" className="font-medium text-accent hover:underline">Open the Fellowship Handbook →</Link>
+            <p className="mt-1 text-muted">Housekeeping, EMG reporting, and site-by-site guides.</p>
           </div>
         </Card>
       </div>
 
-      {/* Interesting reads */}
+      <CalendarSubscribe userId={profile.id} />
+
       <Card>
         <CardHeader title="Interesting reads" sub="Recent neuromuscular publications, refreshed weekly from PubMed" />
         {pubsLoading ? (
@@ -289,45 +287,85 @@ function JotNotes({ userId }: { userId: string }) {
 }
 
 function CalendarSubscribe({ userId }: { userId: string }) {
-  const [url, setUrl] = useState<string | null>(null)
-  const [copied, setCopied] = useState<string | null>(null)
+  const [links, setLinks] = useState<{ all: string; teaching: string; clinic: string } | null>(null)
+  const [choice, setChoice] = useState<'all' | 'teaching' | 'clinic'>('all')
+  const [copied, setCopied] = useState(false)
+  const [loading, setLoading] = useState(false)
 
-  async function getUrl() {
+  async function ensureLinks() {
+    setLoading(true)
     let { data: tok } = await supabase.from('calendar_tokens').select('token').eq('user_id', userId).maybeSingle()
     if (!tok) {
       const { data: created } = await supabase.from('calendar_tokens').insert({ user_id: userId }).select('token').single()
       tok = created
     }
-    if (tok) setUrl(`https://joraxuxuzynyrfmtqghp.supabase.co/functions/v1/calendar-feed?token=${tok.token}`)
+    if (tok) {
+      const base = `https://joraxuxuzynyrfmtqghp.supabase.co/functions/v1/calendar-feed?token=${tok.token}`
+      setLinks({ all: `${base}&kind=all`, teaching: `${base}&kind=teaching`, clinic: `${base}&kind=clinic` })
+    }
+    setLoading(false)
   }
 
-  async function copy(kind: string) {
-    if (!url) return
-    await navigator.clipboard.writeText(`${url}&kind=${kind}`)
-    setCopied(kind); setTimeout(() => setCopied(null), 2000)
+  useEffect(() => { ensureLinks() }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const currentLink = links ? links[choice] : ''
+
+  async function copy() {
+    if (!currentLink) return
+    await navigator.clipboard.writeText(currentLink)
+    setCopied(true); setTimeout(() => setCopied(false), 2000)
   }
 
-  if (!url) {
-    return (
-      <p>
-        <button onClick={getUrl} className="font-medium text-accent hover:underline">
-          Subscribe to your schedule (iCal / Outlook) →
-        </button>
-      </p>
-    )
-  }
   return (
-    <div>
-      <p className="font-medium text-ink">Calendar subscription</p>
-      <p className="mt-1 text-xs text-muted">
-        Copy a link and add it as a subscribed/internet calendar in Outlook, Google, or Apple Calendar.
-        Your calendar app re-checks it automatically, so schedule changes sync on their own. Keep the link private.
-      </p>
-      <div className="mt-2 flex flex-wrap gap-3">
-        <button onClick={() => copy('all')} className="font-medium text-accent hover:underline">{copied === 'all' ? 'Copied ✓' : 'Copy: everything'}</button>
-        <button onClick={() => copy('teaching')} className="font-medium text-accent hover:underline">{copied === 'teaching' ? 'Copied ✓' : 'Copy: teaching only'}</button>
-        <button onClick={() => copy('clinic')} className="font-medium text-accent hover:underline">{copied === 'clinic' ? 'Copied ✓' : 'Copy: clinics only'}</button>
+    <Card>
+      <CardHeader
+        title="Sync your schedule to your calendar"
+        sub="Add the fellowship schedule to Apple Calendar, Google Calendar, or Outlook. It updates automatically whenever the schedule changes — you never have to re-add it."
+      />
+      <div className="space-y-4 px-5 py-4">
+        <div>
+          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted">1. Choose what to include</p>
+          <div className="flex flex-wrap gap-2">
+            {([['all', 'Everything'], ['teaching', 'Teaching only'], ['clinic', 'Clinics only']] as const).map(([val, label]) => (
+              <button key={val} onClick={() => setChoice(val)}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  choice === val ? 'border-accent bg-accent-soft text-accent' : 'border-line text-muted hover:text-ink'
+                }`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted">2. Copy your private link</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              readOnly
+              value={loading ? 'Preparing your link…' : currentLink}
+              onFocus={(e) => e.target.select()}
+              className="min-w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2 font-mono text-xs text-muted"
+            />
+            <button onClick={copy} disabled={!currentLink}
+              className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+              {copied ? 'Copied ✓' : 'Copy link'}
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-muted">This link is private to you — please don't share it.</p>
+        </div>
+
+        <div>
+          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted">3. Add it to your calendar app</p>
+          <div className="space-y-1.5 text-sm text-ink">
+            <p><span className="font-medium">Apple Calendar (iPhone/Mac):</span> Calendar → File → New Calendar Subscription (or on iPhone: Settings → Calendar → Accounts → Add Account → Other → Add Subscribed Calendar), then paste the link.</p>
+            <p><span className="font-medium">Google Calendar:</span> On a computer, open Google Calendar → next to "Other calendars" click + → From URL → paste the link.</p>
+            <p><span className="font-medium">Outlook:</span> Calendar → Add calendar → Subscribe from web → paste the link.</p>
+          </div>
+          <p className="mt-2 text-xs text-muted">
+            Calendar apps refresh subscriptions on their own schedule (often several times a day), so updates may take a few hours to appear — you don't need to do anything.
+          </p>
+        </div>
       </div>
-    </div>
+    </Card>
   )
 }
