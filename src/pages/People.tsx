@@ -20,7 +20,8 @@ export default function People() {
   const [role, setRole] = useState<'fellow' | 'supervisor' | 'director' | 'admin'>('fellow')
   const [cohort, setCohort] = useState('')
   const [busy, setBusy] = useState(false)
-  const [createdCred, setCreatedCred] = useState<{ email: string; password: string } | null>(null)
+  const [createdCred, setCreatedCred] = useState<{ user_id: string; email: string; password: string } | null>(null)
+  const [emailedCreate, setEmailedCreate] = useState(false)
 
   async function load() {
     const { data, error } = await supabase
@@ -46,7 +47,8 @@ export default function People() {
     })
     setBusy(false)
     if (error || data?.error) { setMsg(data?.error ?? error?.message ?? 'Could not create the account.'); return }
-    setCreatedCred({ email: data.email, password: data.temp_password })
+    setCreatedCred({ user_id: data.user_id, email: data.email, password: data.temp_password })
+    setEmailedCreate(false)
     setFullName(''); setEmail('')
     load()
   }
@@ -118,6 +120,17 @@ export default function People() {
                 <p className="mt-1 text-xs text-muted">
                   This password is shown only once. They'll be prompted to choose their own the first time they sign in.
                 </p>
+                <button
+                  onClick={async () => {
+                    const { data, error } = await supabase.functions.invoke('admin-manage-user', {
+                      body: { action: 'email_temp_password', user_id: createdCred.user_id, temp_password: createdCred.password },
+                    })
+                    if (error || data?.error) { setMsg(data?.error ?? error?.message ?? 'Could not send the email.'); return }
+                    setEmailedCreate(true)
+                  }}
+                  className="mt-2 rounded-md border border-accent px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent-soft">
+                  {emailedCreate ? 'Emailed ✓' : 'Email login details to user'}
+                </button>
               </div>
             )}
           </div>
@@ -143,6 +156,7 @@ function UserItem({ user, canManage, onChanged, onError }: {
   const [role, setRole] = useState(user.role)
   const [busy, setBusy] = useState<string | null>(null)
   const [resetCred, setResetCred] = useState<string | null>(null)
+  const [emailedReset, setEmailedReset] = useState(false)
 
   async function call(action: string, body: Record<string, unknown>) {
     setBusy(action); onError('')
@@ -168,7 +182,7 @@ function UserItem({ user, canManage, onChanged, onError }: {
 
   async function resetPassword() {
     const r = await call('reset_password', {})
-    if (r?.temp_password) setResetCred(r.temp_password)
+    if (r?.temp_password) { setResetCred(r.temp_password); setEmailedReset(false) }
   }
 
   const inactive = user.status !== 'active'
@@ -233,6 +247,14 @@ function UserItem({ user, canManage, onChanged, onError }: {
               <p className="font-semibold text-ink">New temporary password — share it now</p>
               <p className="mt-1 font-mono font-semibold text-ink">{resetCred}</p>
               <p className="mt-1 text-xs text-muted">Shown once. They'll set their own at next sign-in.</p>
+              <button
+                onClick={async () => {
+                  const r = await call('email_temp_password', { temp_password: resetCred })
+                  if (r) setEmailedReset(true)
+                }}
+                className="mt-2 rounded-md border border-accent px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent-soft">
+                {emailedReset ? 'Emailed ✓' : 'Email new password to user'}
+              </button>
             </div>
           )}
         </div>
