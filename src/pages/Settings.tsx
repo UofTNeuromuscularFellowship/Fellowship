@@ -24,6 +24,7 @@ export default function Settings() {
 
       <Broadcast directorId={profile.id} onError={setMsg} />
       <RequestAwayDates onError={setMsg} />
+      <ScheduleCcEmails onError={setMsg} />
       <WaveformAllocation onError={setMsg} />
       <PubmedTerms onError={setMsg} />
     </div>
@@ -184,6 +185,102 @@ function PubmedTerms({ onError }: { onError: (m: string) => void }) {
             className="min-w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink" />
         </div>
         <p className="text-xs text-muted">{busy ? 'Saving…' : saved ? 'Saved ✓' : ' '}</p>
+      </div>
+    </Card>
+  )
+}
+
+function ScheduleCcEmails({ onError }: { onError: (m: string) => void }) {
+  const [teaching, setTeaching] = useState<string[]>([])
+  const [clinic, setClinic] = useState<string[]>([])
+  const [draftT, setDraftT] = useState('')
+  const [draftC, setDraftC] = useState('')
+  const [status, setStatus] = useState<'idle' | 'saved'>('idle')
+
+  useEffect(() => {
+    supabase.from('app_settings').select('key, value').in('key', ['teaching_cc_emails', 'clinic_cc_emails'])
+      .then(({ data }) => {
+        for (const row of data ?? []) {
+          if (row.key === 'teaching_cc_emails') setTeaching((row.value as string[]) ?? [])
+          if (row.key === 'clinic_cc_emails') setClinic((row.value as string[]) ?? [])
+        }
+      })
+  }, [])
+
+  async function save(key: string, list: string[]) {
+    const { error } = await supabase.from('app_settings')
+      .upsert({ key, value: list, updated_at: new Date().toISOString() })
+    if (error) { onError(error.message); return }
+    setStatus('saved'); setTimeout(() => setStatus('idle'), 1500)
+  }
+
+  function isEmail(v: string) { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v) }
+
+  function addTo(which: 'teaching' | 'clinic', value: string) {
+    const v = value.trim().toLowerCase()
+    if (!isEmail(v)) { onError('Please enter a valid email address.'); return }
+    if (which === 'teaching') {
+      if (teaching.includes(v)) return
+      const next = [...teaching, v]; setTeaching(next); setDraftT(''); save('teaching_cc_emails', next)
+    } else {
+      if (clinic.includes(v)) return
+      const next = [...clinic, v]; setClinic(next); setDraftC(''); save('clinic_cc_emails', next)
+    }
+  }
+
+  function removeFrom(which: 'teaching' | 'clinic', value: string) {
+    if (which === 'teaching') {
+      const next = teaching.filter((x) => x !== value); setTeaching(next); save('teaching_cc_emails', next)
+    } else {
+      const next = clinic.filter((x) => x !== value); setClinic(next); save('clinic_cc_emails', next)
+    }
+  }
+
+  function ListEditor({ which, list, draft, setDraft }: {
+    which: 'teaching' | 'clinic'; list: string[]; draft: string; setDraft: (v: string) => void
+  }) {
+    return (
+      <div>
+        <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted">
+          {which === 'teaching' ? 'Teaching schedule — copied on publish' : 'Clinic schedule — copied on publish'}
+        </p>
+        {list.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {list.map((e) => (
+              <span key={e} className="inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-1 text-xs font-medium text-ink">
+                {e}
+                <button onClick={() => removeFrom(which, e)} className="text-muted hover:text-ink">×</button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2">
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') addTo(which, draft) }}
+            placeholder="name@example.com, then press Enter"
+            className="min-w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink"
+          />
+          <button onClick={() => addTo(which, draft)}
+            className="rounded-md border border-line px-3 py-2 text-sm font-medium text-accent hover:underline">
+            Add
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        title="Schedule email CC list"
+        sub="Extra addresses copied whenever a schedule is published — e.g. a program coordinator or admin assistant who isn't a portal user. These receive the same 'schedule updated' email."
+      />
+      <div className="space-y-5 px-5 py-4">
+        <ListEditor which="teaching" list={teaching} draft={draftT} setDraft={setDraftT} />
+        <ListEditor which="clinic" list={clinic} draft={draftC} setDraft={setDraftC} />
+        <p className="text-xs text-muted">{status === 'saved' ? 'Saved ✓' : 'Changes save automatically.'}</p>
       </div>
     </Card>
   )
