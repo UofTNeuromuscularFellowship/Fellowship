@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
-import { cohortYears, DIAGNOSIS_CATEGORIES } from '../lib/caseOptions'
+import {
+  cohortYears, DIAGNOSIS_CATEGORIES,
+  NCS_COMMON, NCS_INFREQUENT, RNS_SITES, SFEMG_SITES, EMG_MUSCLES,
+} from '../lib/caseOptions'
 
 interface Target {
   id: string
@@ -15,26 +18,48 @@ interface Target {
   sort_order: number | null
 }
 
-interface CaseAgg {
-  ncs: number; emg: number; rns: number; sfemg: number; total: number
-  byDiagnosis: Record<string, number>
+interface CaseRow {
+  ncs_count: number | null
+  emg_count: number | null
+  rns_count: number | null
+  sfemg_count: number | null
+  nerves_tested: { common?: string[]; infrequent?: string[]; rns?: string[]; sfemg?: string[] } | null
+  muscles_tested: string[] | null
+  diagnoses: { category: string }[] | null
 }
 
-const METRIC_KINDS = [
-  { value: 'cases_total', label: 'Total cases logged' },
-  { value: 'ncs_total', label: 'Nerve conduction studies (total)' },
-  { value: 'emg_total', label: 'EMG muscles sampled (total)' },
-  { value: 'rns_total', label: 'Repetitive nerve stimulation (total)' },
-  { value: 'sfemg_total', label: 'Single fiber EMG (total)' },
-  ...DIAGNOSIS_CATEGORIES.map((d) => ({ value: `diagnosis:${d}`, label: `Cases: ${d}` })),
+// Grouped metric options — each individual component is selectable, plus totals & diagnoses.
+const METRIC_GROUPS: { label: string; options: { value: string; label: string }[] }[] = [
+  {
+    label: 'Totals',
+    options: [
+      { value: 'cases_total', label: 'Total cases logged' },
+      { value: 'ncs_total', label: 'Nerve conduction studies (total)' },
+      { value: 'emg_total', label: 'EMG muscles sampled (total)' },
+      { value: 'rns_total', label: 'Repetitive nerve stimulation (total)' },
+      { value: 'sfemg_total', label: 'Single fiber EMG (total)' },
+    ],
+  },
+  { label: 'Nerve conduction — common protocol', options: NCS_COMMON.map((n) => ({ value: `ncs:${n}`, label: n })) },
+  { label: 'Nerve conduction — infrequent nerves', options: NCS_INFREQUENT.map((n) => ({ value: `ncs:${n}`, label: n })) },
+  { label: 'Repetitive nerve stimulation', options: RNS_SITES.map((n) => ({ value: `rns:${n}`, label: n })) },
+  { label: 'Single fiber EMG', options: SFEMG_SITES.map((n) => ({ value: `sfemg:${n}`, label: n })) },
+  ...EMG_MUSCLES.map((g) => ({
+    label: `EMG muscles — ${g.group}`,
+    options: g.muscles.map((m) => ({ value: `emg:${m}`, label: m })),
+  })),
+  { label: 'Diagnosis', options: DIAGNOSIS_CATEGORIES.map((d) => ({ value: `diagnosis:${d}`, label: `Cases: ${d}` })) },
 ]
+
+const METRIC_LABEL: Record<string, string> = {}
+for (const g of METRIC_GROUPS) for (const o of g.options) METRIC_LABEL[o.value] = o.label
 
 export default function Competency() {
   const { profile } = useAuth()
   const isDirector = profile?.role === 'director'
   const isFellow = profile?.role === 'fellow'
   const [targets, setTargets] = useState<Target[]>([])
-  const [agg, setAgg] = useState<CaseAgg | null>(null)
+  const [counts, setCounts] = useState<Record<string, number> | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
 
   async function load() {
@@ -48,35 +73,33 @@ export default function Competency() {
     if (isFellow && profile) {
       const { data: rows } = await supabase
         .from('cases')
-        .select('ncs_count, emg_count, rns_count, sfemg_count, diagnoses')
+        .select('ncs_count, emg_count, rns_count, sfemg_count, nerves_tested, muscles_tested, diagnoses')
         .eq('fellow_id', profile.id)
-      const a: CaseAgg = { ncs: 0, emg: 0, rns: 0, sfemg: 0, total: 0, byDiagnosis: {} }
-      for (const r of rows ?? []) {
-        a.total += 1
-        a.ncs += r.ncs_count ?? 0
-        a.emg += r.emg_count ?? 0
-        a.rns += r.rns_count ?? 0
-        a.sfemg += r.sfemg_count ?? 0
-        for (const d of (r.diagnoses as { category: string }[]) ?? []) {
-          if (d?.category) a.byDiagnosis[d.category] = (a.byDiagnosis[d.category] ?? 0) + 1
-        }
+      const c: Record<string, number> = {}
+      const bump = (k: string, by = 1) => { c[k] = (c[k] ?? 0) + by }
+      let total = 0
+      for (const r of (rows as CaseRow[]) ?? []) {
+        total += 1
+        const nt = r.nerves_tested ?? {}
+        for (const x of nt.common ?? []) bump(`ncs:${x}`)
+        for (const x of nt.infrequent ?? []) bump(`ncs:${x}`)
+        for (const x of nt.rns ?? []) bump(`rns:${x}`)
+        for (const x of nt.sfemg ?? []) bump(`sfemg:${x}`)
+        for (const m of r.muscles_tested ?? []) bump(`emg:${m}`)
+        for (const d of r.diagnoses ?? []) if (d?.category) bump(`diagnosis:${d.category}`)
+        bump('ncs_total', r.ncs_count ?? ((nt.common?.length ?? 0) + (nt.infrequent?.length ?? 0)))
+        bump('emg_total', r.emg_count ?? (r.muscles_tested?.length ?? 0))
+        bump('rns_total', r.rns_count ?? (nt.rns?.length ?? 0))
+        bump('sfemg_total', r.sfemg_count ?? (nt.sfemg?.length ?? 0))
       }
-      setAgg(a)
+      c['cases_total'] = total
+      setCounts(c)
     }
   }
 
   useEffect(() => { if (profile) load() }, [profile?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  function achieved(kind: string): number {
-    if (!agg) return 0
-    if (kind === 'cases_total') return agg.total
-    if (kind === 'ncs_total') return agg.ncs
-    if (kind === 'emg_total') return agg.emg
-    if (kind === 'rns_total') return agg.rns
-    if (kind === 'sfemg_total') return agg.sfemg
-    if (kind.startsWith('diagnosis:')) return agg.byDiagnosis[kind.slice('diagnosis:'.length)] ?? 0
-    return 0
-  }
+  const achieved = (kind: string) => counts?.[kind] ?? 0
 
   const myTargets = isFellow && profile
     ? targets.filter((t) => (t.fellow_id === profile.id) || (!t.fellow_id && (!t.cohort_year || t.cohort_year === profile.cohort_year)))
@@ -138,7 +161,7 @@ export default function Competency() {
 function TargetEditor({ targets, onChanged, onError }: { targets: Target[]; onChanged: () => void; onError: (m: string) => void }) {
   const [cohort, setCohort] = useState(cohortYears()[2] ?? '')
   const [kind, setKind] = useState('cases_total')
-  const [label, setLabel] = useState('')
+  const [label, setLabel] = useState('Total cases logged')
   const [value, setValue] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -156,7 +179,7 @@ function TargetEditor({ targets, onChanged, onError }: { targets: Target[]; onCh
     })
     setBusy(false)
     if (error) { onError(error.message); return }
-    setLabel(''); setValue(''); onChanged()
+    setValue(''); onChanged()
   }
 
   async function remove(id: string) {
@@ -173,7 +196,10 @@ function TargetEditor({ targets, onChanged, onError }: { targets: Target[]; onCh
 
   return (
     <Card>
-      <CardHeader title="Set minimums" sub="These drive each fellow's progress view. Metrics compute from logged cases." />
+      <CardHeader
+        title="Set minimums"
+        sub="Set a target for any individual nerve, muscle, study, or diagnosis — or an overall total. Progress computes from each fellow's logged cases."
+      />
       <div className="space-y-4 px-5 py-4">
         <div className="flex flex-wrap items-end gap-2">
           <div>
@@ -185,15 +211,20 @@ function TargetEditor({ targets, onChanged, onError }: { targets: Target[]; onCh
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-muted">Metric</label>
-            <select value={kind} onChange={(e) => { setKind(e.target.value); const m = METRIC_KINDS.find((x) => x.value === e.target.value); if (m) setLabel(m.label) }}
+            <label className="mb-1 block text-xs font-medium text-muted">Component</label>
+            <select value={kind}
+              onChange={(e) => { setKind(e.target.value); setLabel(METRIC_LABEL[e.target.value] ?? '') }}
               className="max-w-xs rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink">
-              {METRIC_KINDS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+              {METRIC_GROUPS.map((g) => (
+                <optgroup key={g.label} label={g.label}>
+                  {g.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </optgroup>
+              ))}
             </select>
           </div>
           <div className="min-w-0 flex-1">
             <label className="mb-1 block text-xs font-medium text-muted">Display label</label>
-            <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g., Total EMG cases"
+            <input value={label} onChange={(e) => setLabel(e.target.value)}
               className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink" />
           </div>
           <div>
