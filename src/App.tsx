@@ -48,7 +48,7 @@ export default function App() {
       <Route path="/people" element={<Shell allow={['director', 'admin']}><People /></Shell>} />
       <Route path="/my-teaching" element={<Shell allow={['supervisor', 'director']}><MyTeaching /></Shell>} />
       <Route path="/rate-teaching" element={<Shell allow={['fellow']}><RateTeaching /></Shell>} />
-      <Route path="/vacation" element={<Shell allow={['fellow', 'director']}><Vacation /></Shell>} />
+      <Route path="/vacation" element={<Shell allow={['fellow', 'supervisor', 'director']}><Vacation /></Shell>} />
       <Route path="/evaluations" element={<Shell allow={['fellow', 'supervisor', 'director']}><Evaluations /></Shell>} />
       <Route path="/settings" element={<Shell allow={['director']}><Settings /></Shell>} />
       {/* Legacy path redirects */}

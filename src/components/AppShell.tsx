@@ -19,7 +19,7 @@ const SECTIONS: NavSection[] = [
     items: [
       { to: '/teaching', label: 'Teaching schedule' },
       { to: '/clinic', label: 'Clinic schedule' },
-      { to: '/vacation', label: 'Vacation', allow: ['fellow', 'director'] },
+      { to: '/vacation', label: 'Vacation & away dates', allow: ['fellow', 'supervisor', 'director'] },
     ],
   },
   {
