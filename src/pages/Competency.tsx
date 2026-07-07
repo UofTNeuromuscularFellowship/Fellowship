@@ -28,6 +28,8 @@ interface CaseRow {
   diagnoses: { category: string }[] | null
 }
 
+interface FellowOpt { id: string; full_name: string }
+
 const METRIC_GROUPS: { label: string; options: { value: string; label: string }[] }[] = [
   {
     label: 'Totals',
@@ -65,6 +67,58 @@ function ProgressBar({ done, goal }: { done: number; goal: number }) {
   )
 }
 
+function countsFromCases(rows: CaseRow[]): Record<string, number> {
+  const c: Record<string, number> = {}
+  const bump = (k: string, by = 1) => { c[k] = (c[k] ?? 0) + by }
+  let total = 0
+  for (const r of rows) {
+    total += 1
+    const nt = r.nerves_tested ?? {}
+    for (const x of nt.common ?? []) bump(`ncs:${x}`)
+    for (const x of nt.infrequent ?? []) bump(`ncs:${x}`)
+    for (const x of nt.rns ?? []) bump(`rns:${x}`)
+    for (const x of nt.sfemg ?? []) bump(`sfemg:${x}`)
+    for (const m of r.muscles_tested ?? []) bump(`emg:${m}`)
+    for (const d of r.diagnoses ?? []) if (d?.category) bump(`diagnosis:${d.category}`)
+    bump('ncs_total', r.ncs_count ?? ((nt.common?.length ?? 0) + (nt.infrequent?.length ?? 0)))
+    bump('emg_total', r.emg_count ?? (r.muscles_tested?.length ?? 0))
+    bump('rns_total', r.rns_count ?? (nt.rns?.length ?? 0))
+    bump('sfemg_total', r.sfemg_count ?? (nt.sfemg?.length ?? 0))
+  }
+  c['cases_total'] = total
+  return c
+}
+
+function ProgressTable({ counts, byKind }: { counts: Record<string, number>; byKind: Map<string, Target> }) {
+  if (byKind.size === 0) {
+    return <p className="px-5 py-4 text-sm text-muted">No minimums have been set yet.</p>
+  }
+  return (
+    <div className="px-5 py-3">
+      {METRIC_GROUPS.map((g) => {
+        const rows = g.options.filter((o) => byKind.has(o.value))
+        if (rows.length === 0) return null
+        return (
+          <div key={g.label} className="mb-4 last:mb-0">
+            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted">{g.label}</p>
+            <div className="divide-y divide-line">
+              {rows.map((o) => {
+                const t = byKind.get(o.value)!
+                return (
+                  <div key={o.value} className="flex items-center justify-between gap-3 py-2">
+                    <span className="min-w-0 flex-1 truncate text-sm text-ink">{t.metric_label}</span>
+                    <ProgressBar done={counts[o.value] ?? 0} goal={t.target_value} />
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function Competency() {
   const { profile } = useAuth()
   const isDirector = profile?.role === 'director'
@@ -83,25 +137,7 @@ export default function Competency() {
         .from('cases')
         .select('ncs_count, emg_count, rns_count, sfemg_count, nerves_tested, muscles_tested, diagnoses')
         .eq('fellow_id', profile.id)
-      const c: Record<string, number> = {}
-      const bump = (k: string, by = 1) => { c[k] = (c[k] ?? 0) + by }
-      let total = 0
-      for (const r of (rows as CaseRow[]) ?? []) {
-        total += 1
-        const nt = r.nerves_tested ?? {}
-        for (const x of nt.common ?? []) bump(`ncs:${x}`)
-        for (const x of nt.infrequent ?? []) bump(`ncs:${x}`)
-        for (const x of nt.rns ?? []) bump(`rns:${x}`)
-        for (const x of nt.sfemg ?? []) bump(`sfemg:${x}`)
-        for (const m of r.muscles_tested ?? []) bump(`emg:${m}`)
-        for (const d of r.diagnoses ?? []) if (d?.category) bump(`diagnosis:${d.category}`)
-        bump('ncs_total', r.ncs_count ?? ((nt.common?.length ?? 0) + (nt.infrequent?.length ?? 0)))
-        bump('emg_total', r.emg_count ?? (r.muscles_tested?.length ?? 0))
-        bump('rns_total', r.rns_count ?? (nt.rns?.length ?? 0))
-        bump('sfemg_total', r.sfemg_count ?? (nt.sfemg?.length ?? 0))
-      }
-      c['cases_total'] = total
-      setCounts(c)
+      setCounts(countsFromCases((rows as CaseRow[]) ?? []))
     }
   }
 
@@ -119,7 +155,7 @@ export default function Competency() {
       <div>
         <h1 className="font-display text-2xl font-bold text-ink">Competency</h1>
         <p className="mt-1 text-sm text-muted">
-          {isFellow ? 'Your progress toward the minimums set by the fellowship' : 'Set a minimum for any component; fellows see their progress as a bar'}
+          {isFellow ? 'Your progress toward the minimums set by the fellowship' : 'Set minimums and review each fellow\u2019s progress'}
         </p>
       </div>
 
@@ -132,39 +168,63 @@ export default function Competency() {
       {isFellow && (
         <Card>
           <CardHeader title="Your progress" sub="Computed from your logged cases" />
-          {myByKind.size === 0 ? (
-            <p className="px-5 py-4 text-sm text-muted">
-              No minimums have been set for your cohort yet — the fellowship director configures these.
-            </p>
-          ) : (
-            <div className="px-5 py-3">
-              {METRIC_GROUPS.map((g) => {
-                const rows = g.options.filter((o) => myByKind.has(o.value))
-                if (rows.length === 0) return null
-                return (
-                  <div key={g.label} className="mb-4 last:mb-0">
-                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted">{g.label}</p>
-                    <div className="divide-y divide-line">
-                      {rows.map((o) => {
-                        const t = myByKind.get(o.value)!
-                        return (
-                          <div key={o.value} className="flex items-center justify-between gap-3 py-2">
-                            <span className="min-w-0 flex-1 truncate text-sm text-ink">{t.metric_label}</span>
-                            <ProgressBar done={counts[o.value] ?? 0} goal={t.target_value} />
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
+          <ProgressTable counts={counts} byKind={myByKind} />
         </Card>
       )}
 
+      {isDirector && <FellowProgress targets={targets} onError={setMsg} />}
       {isDirector && <MinimumsTable targets={targets} onChanged={load} onError={setMsg} />}
     </div>
+  )
+}
+
+function FellowProgress({ targets, onError }: { targets: Target[]; onError: (m: string) => void }) {
+  const [fellows, setFellows] = useState<FellowOpt[]>([])
+  const [fellowId, setFellowId] = useState('')
+  const [cohortYear, setCohortYear] = useState<string | null>(null)
+  const [counts, setCounts] = useState<Record<string, number>>({})
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    supabase.rpc('list_fellows').then(({ data }) => setFellows((data as FellowOpt[]) ?? []))
+  }, [])
+
+  async function pick(id: string) {
+    setFellowId(id)
+    setCounts({})
+    if (!id) return
+    setLoading(true)
+    // cohort of this fellow (for matching cohort-level targets)
+    const { data: u } = await supabase.from('users').select('cohort_year').eq('id', id).maybeSingle()
+    setCohortYear((u?.cohort_year as string | null) ?? null)
+    const { data, error } = await supabase.rpc('fellow_competency_counts', { p_fellow: id })
+    setLoading(false)
+    if (error) { onError(error.message); return }
+    const c: Record<string, number> = {}
+    for (const row of (data as { metric_kind: string; n: number }[]) ?? []) c[row.metric_kind] = Number(row.n)
+    setCounts(c)
+  }
+
+  const applicable = targets.filter(
+    (t) => t.fellow_id === fellowId || (!t.fellow_id && (!t.cohort_year || t.cohort_year === cohortYear))
+  )
+  const byKind = new Map(applicable.map((t) => [t.metric_kind, t]))
+
+  return (
+    <Card>
+      <CardHeader title="Fellow progress" sub="Select a fellow to see their progress toward each minimum" />
+      <div className="px-5 pt-4">
+        <label className="mb-1 block text-xs font-medium text-muted">Fellow</label>
+        <select value={fellowId} onChange={(e) => pick(e.target.value)}
+          className="rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink">
+          <option value="">— choose a fellow —</option>
+          {fellows.map((f) => <option key={f.id} value={f.id}>{f.full_name}</option>)}
+        </select>
+      </div>
+      {fellowId && (loading
+        ? <p className="px-5 py-4 text-sm text-muted">Loading…</p>
+        : <ProgressTable counts={counts} byKind={byKind} />)}
+    </Card>
   )
 }
 
