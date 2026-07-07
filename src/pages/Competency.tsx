@@ -28,7 +28,6 @@ interface CaseRow {
   diagnoses: { category: string }[] | null
 }
 
-// Grouped metric options — each individual component is selectable, plus totals & diagnoses.
 const METRIC_GROUPS: { label: string; options: { value: string; label: string }[] }[] = [
   {
     label: 'Totals',
@@ -51,22 +50,31 @@ const METRIC_GROUPS: { label: string; options: { value: string; label: string }[
   { label: 'Diagnosis', options: DIAGNOSIS_CATEGORIES.map((d) => ({ value: `diagnosis:${d}`, label: `Cases: ${d}` })) },
 ]
 
-const METRIC_LABEL: Record<string, string> = {}
-for (const g of METRIC_GROUPS) for (const o of g.options) METRIC_LABEL[o.value] = o.label
+function ProgressBar({ done, goal }: { done: number; goal: number }) {
+  const pct = goal > 0 ? Math.min(100, Math.round((done / goal) * 100)) : 0
+  const met = done >= goal
+  return (
+    <div className="flex items-center gap-2">
+      <div className="h-2 w-28 overflow-hidden rounded-full bg-paper sm:w-40">
+        <div className={`h-full rounded-full transition-all ${met ? 'bg-accent' : 'bg-accent/70'}`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className={`w-12 shrink-0 text-right text-sm tabular-nums ${met ? 'font-semibold text-accent' : 'text-muted'}`}>
+        {done}/{goal}
+      </span>
+    </div>
+  )
+}
 
 export default function Competency() {
   const { profile } = useAuth()
   const isDirector = profile?.role === 'director'
   const isFellow = profile?.role === 'fellow'
   const [targets, setTargets] = useState<Target[]>([])
-  const [counts, setCounts] = useState<Record<string, number> | null>(null)
+  const [counts, setCounts] = useState<Record<string, number>>({})
   const [msg, setMsg] = useState<string | null>(null)
 
   async function load() {
-    const { data: t, error } = await supabase
-      .from('competency_targets')
-      .select('*')
-      .order('sort_order', { ascending: true, nullsFirst: false })
+    const { data: t, error } = await supabase.from('competency_targets').select('*')
     if (error) setMsg(error.message)
     setTargets((t as Target[]) ?? [])
 
@@ -99,20 +107,19 @@ export default function Competency() {
 
   useEffect(() => { if (profile) load() }, [profile?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const achieved = (kind: string) => counts?.[kind] ?? 0
-
-  const myTargets = isFellow && profile
-    ? targets.filter((t) => (t.fellow_id === profile.id) || (!t.fellow_id && (!t.cohort_year || t.cohort_year === profile.cohort_year)))
-    : targets
-
   if (!profile) return null
+
+  const myTargets = targets.filter(
+    (t) => t.fellow_id === profile.id || (!t.fellow_id && (!t.cohort_year || t.cohort_year === profile.cohort_year))
+  )
+  const myByKind = new Map(myTargets.map((t) => [t.metric_kind, t]))
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="font-display text-2xl font-bold text-ink">Competency</h1>
         <p className="mt-1 text-sm text-muted">
-          {isFellow ? 'Your progress toward the minimums set by the fellowship' : 'Program minimums by cohort'}
+          {isFellow ? 'Your progress toward the minimums set by the fellowship' : 'Set a minimum for any component; fellows see their progress as a bar'}
         </p>
       </div>
 
@@ -125,72 +132,69 @@ export default function Competency() {
       {isFellow && (
         <Card>
           <CardHeader title="Your progress" sub="Computed from your logged cases" />
-          {myTargets.length === 0 ? (
+          {myByKind.size === 0 ? (
             <p className="px-5 py-4 text-sm text-muted">
               No minimums have been set for your cohort yet — the fellowship director configures these.
             </p>
           ) : (
-            <ul className="divide-y divide-line">
-              {myTargets.map((t) => {
-                const done = achieved(t.metric_kind)
-                const pct = t.target_value > 0 ? Math.min(100, Math.round((done / t.target_value) * 100)) : 0
+            <div className="px-5 py-3">
+              {METRIC_GROUPS.map((g) => {
+                const rows = g.options.filter((o) => myByKind.has(o.value))
+                if (rows.length === 0) return null
                 return (
-                  <li key={t.id} className="px-5 py-3">
-                    <div className="flex items-baseline justify-between text-sm">
-                      <span className="font-medium text-ink">{t.metric_label}</span>
-                      <span className={done >= t.target_value ? 'font-semibold text-accent' : 'text-muted'}>
-                        {done} / {t.target_value}{done >= t.target_value ? ' ✓' : ''}
-                      </span>
+                  <div key={g.label} className="mb-4 last:mb-0">
+                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted">{g.label}</p>
+                    <div className="divide-y divide-line">
+                      {rows.map((o) => {
+                        const t = myByKind.get(o.value)!
+                        return (
+                          <div key={o.value} className="flex items-center justify-between gap-3 py-2">
+                            <span className="min-w-0 flex-1 truncate text-sm text-ink">{t.metric_label}</span>
+                            <ProgressBar done={counts[o.value] ?? 0} goal={t.target_value} />
+                          </div>
+                        )
+                      })}
                     </div>
-                    <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-paper">
-                      <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${pct}%` }} />
-                    </div>
-                  </li>
+                  </div>
                 )
               })}
-            </ul>
+            </div>
           )}
         </Card>
       )}
 
-      {isDirector && <TargetEditor targets={targets} onChanged={load} onError={setMsg} />}
+      {isDirector && <MinimumsTable targets={targets} onChanged={load} onError={setMsg} />}
     </div>
   )
 }
 
-function TargetEditor({ targets, onChanged, onError }: { targets: Target[]; onChanged: () => void; onError: (m: string) => void }) {
-  const [cohort, setCohort] = useState(cohortYears()[2] ?? '')
-  const [kind, setKind] = useState('cases_total')
-  const [label, setLabel] = useState('Total cases logged')
-  const [value, setValue] = useState('')
-  const [busy, setBusy] = useState(false)
+function MinimumsTable({ targets, onChanged, onError }: { targets: Target[]; onChanged: () => void; onError: (m: string) => void }) {
+  const [cohort, setCohort] = useState('')
 
-  async function add() {
-    const v = parseInt(value, 10)
-    if (!label.trim() || !v || v < 1) { onError('A label and a target of at least 1 are required.'); return }
-    setBusy(true)
-    const { error } = await supabase.from('competency_targets').insert({
-      cohort_year: cohort || null,
-      metric_key: `${kind}:${Date.now()}`,
-      metric_label: label.trim(),
-      metric_kind: kind,
-      target_value: v,
-      sort_order: targets.length + 1,
-    })
-    setBusy(false)
-    if (error) { onError(error.message); return }
-    setValue(''); onChanged()
-  }
+  const byKind = new Map(
+    targets.filter((t) => (t.cohort_year ?? '') === cohort && !t.fellow_id).map((t) => [t.metric_kind, t])
+  )
 
-  async function remove(id: string) {
-    await supabase.from('competency_targets').delete().eq('id', id)
-    onChanged()
-  }
-
-  async function updateValue(t: Target, v: string) {
-    const n = parseInt(v, 10)
-    if (!n || n < 1) return
-    await supabase.from('competency_targets').update({ target_value: n }).eq('id', t.id)
+  async function setMinimum(kind: string, label: string, raw: string) {
+    const v = parseInt(raw, 10)
+    const existing = byKind.get(kind)
+    if (!raw.trim() || !v || v < 1) {
+      if (existing) { await supabase.from('competency_targets').delete().eq('id', existing.id); onChanged() }
+      return
+    }
+    if (existing) {
+      await supabase.from('competency_targets').update({ target_value: v, metric_label: label }).eq('id', existing.id)
+    } else {
+      const { error } = await supabase.from('competency_targets').insert({
+        cohort_year: cohort || null,
+        metric_key: `${cohort || 'all'}:${kind}`,
+        metric_label: label,
+        metric_kind: kind,
+        target_value: v,
+        sort_order: 0,
+      })
+      if (error) { onError(error.message); return }
+    }
     onChanged()
   }
 
@@ -198,67 +202,42 @@ function TargetEditor({ targets, onChanged, onError }: { targets: Target[]; onCh
     <Card>
       <CardHeader
         title="Set minimums"
-        sub="Set a target for any individual nerve, muscle, study, or diagnosis — or an overall total. Progress computes from each fellow's logged cases."
+        sub="Type a target next to any component — individual nerves, muscles, studies, or diagnoses. Leave blank for no minimum. Each fellow sees these as progress bars."
       />
-      <div className="space-y-4 px-5 py-4">
-        <div className="flex flex-wrap items-end gap-2">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted">Cohort</label>
-            <select value={cohort} onChange={(e) => setCohort(e.target.value)}
-              className="rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink">
-              <option value="">All cohorts</option>
-              {cohortYears().map((y) => <option key={y} value={y}>{y}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted">Component</label>
-            <select value={kind}
-              onChange={(e) => { setKind(e.target.value); setLabel(METRIC_LABEL[e.target.value] ?? '') }}
-              className="max-w-xs rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink">
-              {METRIC_GROUPS.map((g) => (
-                <optgroup key={g.label} label={g.label}>
-                  {g.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </optgroup>
-              ))}
-            </select>
-          </div>
-          <div className="min-w-0 flex-1">
-            <label className="mb-1 block text-xs font-medium text-muted">Display label</label>
-            <input value={label} onChange={(e) => setLabel(e.target.value)}
-              className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink" />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted">Minimum</label>
-            <input value={value} onChange={(e) => setValue(e.target.value.replace(/\D/g, ''))} inputMode="numeric"
-              className="w-24 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink" />
-          </div>
-          <button onClick={add} disabled={busy}
-            className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
-            Add
-          </button>
+      <div className="px-5 py-4">
+        <div className="mb-4">
+          <label className="mb-1 block text-xs font-medium text-muted">Cohort</label>
+          <select value={cohort} onChange={(e) => setCohort(e.target.value)}
+            className="rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink">
+            <option value="">All cohorts</option>
+            {cohortYears().map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
         </div>
 
-        {targets.length > 0 && (
-          <ul className="divide-y divide-line">
-            {targets.map((t) => (
-              <li key={t.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
-                <div>
-                  <span className="font-medium text-ink">{t.metric_label}</span>
-                  <span className="ml-2 text-muted">{t.cohort_year ?? 'All cohorts'}</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <input
-                    defaultValue={t.target_value}
-                    onBlur={(e) => updateValue(t, e.target.value)}
-                    inputMode="numeric"
-                    className="w-20 rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink"
-                  />
-                  <button onClick={() => remove(t.id)} className="text-xs font-medium text-muted hover:text-ink">Remove</button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+        {METRIC_GROUPS.map((g) => (
+          <div key={g.label} className="mb-5 last:mb-0">
+            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted">{g.label}</p>
+            <div className="divide-y divide-line">
+              {g.options.map((o) => {
+                const existing = byKind.get(o.value)
+                return (
+                  <div key={o.value} className="flex items-center justify-between gap-3 py-1.5">
+                    <span className="min-w-0 flex-1 truncate text-sm text-ink">{o.label}</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      defaultValue={existing ? String(existing.target_value) : ''}
+                      key={`${o.value}-${cohort}-${existing?.target_value ?? 'x'}`}
+                      onBlur={(e) => setMinimum(o.value, o.label, e.target.value.replace(/[^\d]/g, ''))}
+                      placeholder="—"
+                      className="w-16 rounded-md border border-line bg-surface px-2 py-1 text-right text-sm text-ink"
+                    />
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ))}
       </div>
     </Card>
   )
