@@ -218,18 +218,16 @@ function AutoAssignToolbar({ draftCount, onChanged, onError }: { draftCount: num
           className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
           {busy === 'assign' ? 'Generating…' : 'Generate Draft Schedule'}
         </button>
+        <button onClick={() => run('publish')} disabled={busy !== null || draftCount === 0}
+          className="rounded-md border border-accent px-4 py-2 text-sm font-semibold text-accent hover:bg-accent-soft disabled:opacity-40">
+          {busy === 'publish' ? 'Publishing…' : 'Publish Schedule'}
+        </button>
+        <button onClick={() => run('discard')} disabled={busy !== null || draftCount === 0}
+          className="rounded-md border border-line px-4 py-2 text-sm font-medium text-muted hover:text-ink disabled:opacity-40">
+          {busy === 'discard' ? 'Discarding…' : 'Clear Draft Schedule'}
+        </button>
         {draftCount > 0 && (
-          <>
-            <span className="text-sm text-muted">{draftCount} draft assignment{draftCount === 1 ? '' : 's'} pending</span>
-            <button onClick={() => run('publish')} disabled={busy !== null}
-              className="rounded-md border border-accent px-4 py-2 text-sm font-semibold text-accent hover:bg-accent-soft disabled:opacity-50">
-              {busy === 'publish' ? 'Publishing…' : 'Publish Schedule'}
-            </button>
-            <button onClick={() => run('discard')} disabled={busy !== null}
-              className="rounded-md border border-line px-4 py-2 text-sm font-medium text-muted hover:text-ink disabled:opacity-50">
-              {busy === 'discard' ? 'Discarding…' : 'Clear Draft Schedule'}
-            </button>
-          </>
+          <span className="text-sm text-muted">{draftCount} draft assignment{draftCount === 1 ? '' : 's'} pending</span>
         )}
       </div>
     </Card>
