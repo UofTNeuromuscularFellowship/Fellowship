@@ -46,7 +46,20 @@ export default function People() {
       },
     })
     setBusy(false)
-    if (error || data?.error) { setMsg(data?.error ?? error?.message ?? 'Could not create the account.'); return }
+    if (error || data?.error) {
+      let detail = data?.error ?? error?.message ?? 'Could not create the account.'
+      // supabase.functions.invoke hides the response body on non-2xx; read it out
+      const ctx = (error as unknown as { context?: Response })?.context
+      if (ctx && typeof ctx.text === 'function') {
+        try {
+          const body = await ctx.text()
+          const parsed = JSON.parse(body)
+          if (parsed?.error) detail = parsed.error
+        } catch { /* keep the generic message */ }
+      }
+      setMsg(detail)
+      return
+    }
     setCreatedCred({ user_id: data.user_id, email: data.email, password: data.temp_password })
     setEmailedCreate(false)
     setFullName(''); setEmail('')
