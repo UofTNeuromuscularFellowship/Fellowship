@@ -22,7 +22,7 @@ export default function Settings() {
         </div>
       )}
 
-      <Broadcast directorId={profile.id} onError={setMsg} />
+      <Broadcast onError={setMsg} />
       <RequestAwayDates onError={setMsg} />
       <ScheduleCcEmails onError={setMsg} />
       <WaveformAllocation onError={setMsg} />
@@ -31,7 +31,7 @@ export default function Settings() {
   )
 }
 
-function Broadcast({ directorId, onError }: { directorId: string; onError: (m: string) => void }) {
+function Broadcast({ onError }: { onError: (m: string) => void }) {
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [audience, setAudience] = useState<'fellow' | 'all'>('fellow')
@@ -41,20 +41,15 @@ function Broadcast({ directorId, onError }: { directorId: string; onError: (m: s
   async function send() {
     if (!title.trim()) return
     setBusy(true)
-    let q = supabase.from('users').select('id').eq('status', 'active').neq('id', directorId)
-    if (audience === 'fellow') q = q.eq('role', 'fellow')
-    const { data: recipients, error: e1 } = await q
-    if (e1) { setBusy(false); onError(e1.message); return }
-    const rows = (recipients ?? []).map((r) => ({
-      user_id: r.id,
-      kind: 'director_note',
-      title: title.trim(),
-      body: body.trim() || null,
-    }))
-    if (rows.length === 0) { setBusy(false); onError('No recipients found.'); return }
-    const { error: e2 } = await supabase.from('notifications').insert(rows)
+    const { data, error } = await supabase.rpc('send_director_note', {
+      p_title: title.trim(),
+      p_body: body.trim() || null,
+      p_audience: audience === 'fellow' ? 'fellow' : 'all',
+      p_email: true,
+    })
     setBusy(false)
-    if (e2) { onError(e2.message); return }
+    if (error) { onError(error.message); return }
+    if ((data as number) === 0) { onError('No recipients found.'); return }
     setTitle(''); setBody(''); setSent(true); setTimeout(() => setSent(false), 2500)
   }
 
@@ -307,9 +302,9 @@ function RequestAwayDates({ onError }: { onError: (m: string) => void }) {
       <div className="flex items-center gap-3 px-5 py-4">
         <button onClick={push} disabled={busy}
           className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
-          {busy ? 'Sending\u2026' : 'Email everyone now'}
+          {busy ? 'Sending…' : 'Email everyone now'}
         </button>
-        {result !== null && <span className="text-sm text-muted">Queued for {result} people \u2713</span>}
+        {result !== null && <span className="text-sm text-muted">Queued for {result} people ✓</span>}
       </div>
     </Card>
   )

@@ -26,6 +26,33 @@ export default function Vacation() {
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editStart, setEditStart] = useState('')
+  const [editEnd, setEditEnd] = useState('')
+  const [editNote, setEditNote] = useState('')
+
+  function startEdit(r: Request) {
+    setEditingId(r.id)
+    setEditStart(r.start_date)
+    setEditEnd(r.end_date)
+    setEditNote(r.note ?? '')
+  }
+
+  async function saveEdit(id: string) {
+    if (!editStart || !editEnd) return
+    if (editEnd < editStart) { setMsg('End date must be on or after the start date.'); return }
+    const { error } = await supabase.from('vacation_requests')
+      .update({ start_date: editStart, end_date: editEnd, note: editNote.trim() || null })
+      .eq('id', id)
+    if (error) { setMsg(error.message); return }
+    setEditingId(null); load()
+  }
+
+  async function cancelRequest(id: string) {
+    const { error } = await supabase.from('vacation_requests').delete().eq('id', id)
+    if (error) setMsg(error.message)
+    else load()
+  }
 
   async function load() {
     const { data, error } = await supabase
@@ -157,13 +184,46 @@ export default function Vacation() {
         ) : (
           <ul className="divide-y divide-line">
             {requests.map((r) => (
-              <li key={r.id} className="flex flex-wrap items-baseline justify-between gap-2 px-5 py-3 text-sm">
-                <div>
-                  {isDirector && <span className="font-medium text-ink">{names[r.fellow_id] ?? 'Fellow'} · </span>}
-                  <span className="text-ink">{shortDate(r.start_date)} – {shortDate(r.end_date)}</span>
-                  {r.note && <span className="ml-2 text-muted">{r.note}</span>}
+              <li key={r.id} className="px-5 py-3 text-sm">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <div>
+                    {isDirector && <span className="font-medium text-ink">{names[r.fellow_id] ?? 'Fellow'} · </span>}
+                    <span className="text-ink">{shortDate(r.start_date)} – {shortDate(r.end_date)}</span>
+                    {r.note && <span className="ml-2 text-muted">{r.note}</span>}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {!isDirector && r.status === 'pending' && editingId !== r.id && (
+                      <>
+                        <button onClick={() => startEdit(r)} className="text-xs font-medium text-accent hover:underline">Modify</button>
+                        <button onClick={() => cancelRequest(r.id)} className="text-xs font-medium text-muted hover:text-ink">Cancel</button>
+                      </>
+                    )}
+                    <span className={statusStyle[r.status]}>{r.status}</span>
+                  </div>
                 </div>
-                <span className={statusStyle[r.status]}>{r.status}</span>
+                {!isDirector && editingId === r.id && (
+                  <div className="mt-3 flex flex-wrap items-end gap-2 rounded-md border border-line p-3">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-muted">First day</label>
+                      <input type="date" value={editStart} onChange={(e) => setEditStart(e.target.value)}
+                        className="rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-muted">Last day</label>
+                      <input type="date" value={editEnd} onChange={(e) => setEditEnd(e.target.value)}
+                        className="rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <label className="mb-1 block text-xs font-medium text-muted">Note</label>
+                      <input value={editNote} onChange={(e) => setEditNote(e.target.value)}
+                        className="w-full rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink" />
+                    </div>
+                    <button onClick={() => saveEdit(r.id)}
+                      className="rounded-md bg-accent px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90">Save</button>
+                    <button onClick={() => setEditingId(null)}
+                      className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-muted hover:text-ink">Close</button>
+                  </div>
+                )}
               </li>
             ))}
           </ul>

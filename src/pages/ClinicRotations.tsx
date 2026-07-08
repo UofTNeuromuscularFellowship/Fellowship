@@ -14,6 +14,7 @@ interface Rotation {
   is_draft: boolean
   is_protected: boolean | null
   has_conflict: boolean
+  is_away: boolean
 }
 interface AwayDate { fellow_id: string; away_date: string }
 interface ClinicCat { id: string; provider_name: string | null; provider_id: string | null; weekday: number; site_code: string; fellow_capacity: number }
@@ -31,8 +32,11 @@ export default function ClinicRotations() {
   const isFellow = profile?.role === 'fellow'
   const [rotations, setRotations] = useState<Rotation[]>([])
   const [away, setAway] = useState<AwayDate[]>([])
+  const [fellows, setFellows] = useState<FellowOpt[]>([])
+  const [catalog, setCatalog] = useState<ClinicCat[]>([])
   const [msg, setMsg] = useState<string | null>(null)
   const [showConfig, setShowConfig] = useState(false)
+  const [editCell, setEditCell] = useState<{ fellowId: string; date: string; weekday: number } | null>(null)
 
   const today = new Date().toISOString().slice(0, 10)
 
@@ -40,7 +44,7 @@ export default function ClinicRotations() {
     const horizon = new Date(); horizon.setDate(horizon.getDate() + 90)
     let q = supabase
       .from('clinic_rotations')
-      .select('id, fellow_id, fellow_label, rotation_date, site_code, provider_name, is_draft, is_protected, has_conflict')
+      .select('id, fellow_id, fellow_label, rotation_date, site_code, provider_name, is_draft, is_protected, has_conflict, is_away')
       .gte('rotation_date', today)
       .lte('rotation_date', horizon.toISOString().slice(0, 10))
       .order('rotation_date')
@@ -53,6 +57,12 @@ export default function ClinicRotations() {
     if (isManager) {
       const { data: aw } = await supabase.from('fellow_away_dates').select('fellow_id, away_date').gte('away_date', today)
       setAway((aw as AwayDate[]) ?? [])
+      const { data: fl } = await supabase.rpc('list_fellows')
+      setFellows((fl as FellowOpt[]) ?? [])
+      const { data: cat } = await supabase.from('clinic_template').select('id, provider_name, provider_id, weekday, site_code, fellow_capacity')
+      setCatalog((cat as ClinicCat[]) ?? [])
+    } else if (isFellow && profile) {
+      setFellows([{ id: profile.id, full_name: profile.full_name }])
     }
   }
 
@@ -65,25 +75,52 @@ export default function ClinicRotations() {
     [rotations, awaySet]
   )
 
+  // key: fellow_id|date -> rotation
+  const byCell = useMemo(() => {
+    const m = new Map<string, Rotation>()
+    for (const r of rotations) if (r.fellow_id) m.set(`${r.fellow_id}|${r.rotation_date}`, r)
+    return m
+  }, [rotations])
+
+  // Week Mondays that have any rotation, each expanded to Mon–Fri dates
   const weeks = useMemo(() => {
-    const map = new Map<string, Rotation[]>()
+    const set = new Set<string>()
     for (const r of rotations) {
       const d = new Date(r.rotation_date + 'T00:00:00')
       const day = d.getDay() === 0 ? 7 : d.getDay()
       const mon = new Date(d); mon.setDate(d.getDate() - day + 1)
-      const key = mon.toISOString().slice(0, 10)
-      if (!map.has(key)) map.set(key, [])
-      map.get(key)!.push(r)
+      set.add(mon.toISOString().slice(0, 10))
     }
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b))
+    return Array.from(set).sort().map((weekStart) => {
+      const mon = new Date(weekStart + 'T00:00:00')
+      const dates: string[] = []
+      for (let i = 0; i < 5; i++) { const dd = new Date(mon); dd.setDate(mon.getDate() + i); dates.push(dd.toISOString().slice(0, 10)) }
+      return { weekStart, dates }
+    })
   }, [rotations])
 
-  async function removeRotation(id: string) {
-    const { error } = await supabase.from('clinic_rotations').delete().eq('id', id)
+  async function applyCell(mode: string, clinicId?: string) {
+    if (!editCell) return
+    const { error } = await supabase.rpc('set_clinic_cell', {
+      p_fellow: editCell.fellowId, p_date: editCell.date, p_mode: mode, p_clinic: clinicId ?? null,
+    })
+    setEditCell(null)
     if (error) setMsg(error.message); else load()
   }
 
   if (!profile) return null
+
+  function cellContent(r: Rotation | undefined) {
+    if (!r) return <span className="text-muted">—</span>
+    if (r.is_away) return <span className="font-medium text-red-600">Fellow Away</span>
+    if (r.is_protected) return <span className="text-ink">Protected</span>
+    return (
+      <span className="text-ink">
+        {r.site_code}
+        {r.provider_name && <span className="block text-xs text-muted">{r.provider_name}</span>}
+      </span>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -105,7 +142,7 @@ export default function ClinicRotations() {
           <p className="text-sm font-semibold text-ink">
             ⚠ {conflicts.length} clinic assignment{conflicts.length === 1 ? '' : 's'} need attention
           </p>
-          <p className="mt-0.5 text-xs text-muted">Conflicts (fellow on vacation, or a provider who set a new away date) are outlined in red below.</p>
+          <p className="mt-0.5 text-xs text-muted">Red cells are conflicts (a provider set a new away date). Click the cell to reassign it to another clinic.</p>
         </div>
       )}
 
@@ -131,40 +168,72 @@ export default function ClinicRotations() {
       {weeks.length === 0 ? (
         <Card><p className="px-5 py-4 text-sm text-muted">No upcoming clinic assignments.</p></Card>
       ) : (
-        weeks.map(([weekStart, rows]) => (
+        weeks.map(({ weekStart, dates }) => (
           <Card key={weekStart}>
             <CardHeader title={`Week of ${shortDate(weekStart)}`} />
-            <ul className="divide-y divide-line">
-              {rows.map((r) => {
-                const conflicted = r.has_conflict || (r.fellow_id && awaySet.has(`${r.fellow_id}|${r.rotation_date}`))
-                const d = new Date(r.rotation_date + 'T00:00:00')
-                const wd = WEEKDAYS[(d.getDay() === 0 ? 7 : d.getDay()) - 1] ?? ''
-                return (
-                  <li key={r.id}
-                    className={`flex flex-wrap items-center justify-between gap-2 px-5 py-2.5 text-sm ${
-                      conflicted ? 'border-l-4 border-red-500 bg-red-50' : ''
-                    }`}>
-                    <div>
-                      <span className="font-medium text-ink">{wd} {shortDate(r.rotation_date)}</span>
-                      <span className="ml-2 text-ink">{r.is_protected ? 'Protected' : r.site_code}</span>
-                      {!r.is_protected && r.provider_name && <span className="ml-2 text-muted">{r.provider_name}</span>}
-                      {!isFellow && r.fellow_label && <span className="ml-2 text-muted">· {r.fellow_label}</span>}
-                      {r.is_draft && (
-                        <span className="ml-2 rounded-full border border-accent px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">Draft</span>
-                      )}
-                      {conflicted && (
-                        <span className="ml-2 rounded-full border border-red-500 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-600">Conflict</span>
-                      )}
-                    </div>
-                    {isManager && (
-                      <button onClick={() => removeRotation(r.id)} className="text-xs font-medium text-muted hover:text-ink">Remove</button>
-                    )}
-                  </li>
-                )
-              })}
-            </ul>
+            <div className="overflow-x-auto px-2 py-2">
+              <table className="w-full min-w-[640px] border-collapse text-sm">
+                <thead>
+                  <tr>
+                    <th className="p-2 text-left text-xs font-semibold uppercase tracking-wider text-muted">Fellow</th>
+                    {dates.map((dt, i) => (
+                      <th key={dt} className="p-2 text-left text-xs font-semibold uppercase tracking-wider text-muted">
+                        {WEEKDAYS[i]}<span className="block font-normal normal-case text-muted">{shortDate(dt)}</span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {fellows.map((f) => (
+                    <tr key={f.id} className="border-t border-line align-top">
+                      <td className="p-2 font-medium text-ink">{f.full_name}</td>
+                      {dates.map((dt, i) => {
+                        const r = byCell.get(`${f.id}|${dt}`)
+                        const conflicted = r ? (r.has_conflict || awaySet.has(`${f.id}|${dt}`)) : false
+                        return (
+                          <td key={dt}
+                            onClick={isManager ? () => setEditCell({ fellowId: f.id, date: dt, weekday: i + 1 }) : undefined}
+                            className={`p-2 ${isManager ? 'cursor-pointer hover:bg-paper' : ''} ${conflicted ? 'bg-red-50 outline outline-1 outline-red-400' : ''}`}>
+                            {cellContent(r)}
+                            {r?.is_draft && <span className="mt-0.5 block text-[10px] font-semibold uppercase tracking-wide text-accent">Draft</span>}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </Card>
         ))
+      )}
+
+      {editCell && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => setEditCell(null)}>
+          <div className="w-full max-w-md rounded-lg border border-line bg-surface p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <p className="font-display text-base font-semibold text-ink">Assign clinic</p>
+            <p className="mt-0.5 text-sm text-muted">
+              {fellows.find((f) => f.id === editCell.fellowId)?.full_name} · {WEEKDAYS[editCell.weekday - 1]} {shortDate(editCell.date)}
+            </p>
+            <div className="mt-4 space-y-1.5">
+              {catalog.filter((c) => c.weekday === editCell.weekday).length === 0 && (
+                <p className="text-sm text-muted">No clinics are defined for this weekday in the catalog.</p>
+              )}
+              {catalog.filter((c) => c.weekday === editCell.weekday).map((c) => (
+                <button key={c.id} onClick={() => applyCell('clinic', c.id)}
+                  className="block w-full rounded-md border border-line px-3 py-2 text-left text-sm text-ink hover:border-accent hover:text-accent">
+                  {c.site_code} <span className="text-muted">· {c.provider_name}</span>
+                </button>
+              ))}
+              <div className="flex flex-wrap gap-2 pt-2">
+                <button onClick={() => applyCell('protected')} className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink hover:bg-paper">Protected</button>
+                <button onClick={() => applyCell('away')} className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink hover:bg-paper">Fellow Away</button>
+                <button onClick={() => applyCell('clear')} className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-muted hover:text-ink">Clear</button>
+                <button onClick={() => setEditCell(null)} className="ml-auto rounded-md px-3 py-1.5 text-sm font-medium text-muted hover:text-ink">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       <ClinicTally isManager={isManager} />
@@ -184,7 +253,7 @@ function GeneratorToolbar({ draftCount, onChanged, onError }: {
     setBusy(kind)
     let res
     if (kind === 'generate') {
-      if (!to) { setBusy(null); onError('Choose an end date (up to ~3 months out).'); return }
+      if (!to) { setBusy(null); onError('Choose an end date (up to a full academic year out).'); return }
       res = await supabase.rpc('generate_clinic_schedule', { p_from: from, p_to: to })
     } else if (kind === 'publish') {
       res = await supabase.rpc('publish_clinic_drafts')
@@ -200,7 +269,7 @@ function GeneratorToolbar({ draftCount, onChanged, onError }: {
     <Card>
       <CardHeader
         title="Schedule"
-        sub="Generates a draft by cycling each fellow through their assigned template, switching templates every 3 months across the academic year. Providers who are away are auto-substituted with an alternate clinic."
+        sub="Generates a draft across whatever range you choose — up to a full academic year. Each fellow follows their assigned template for 3 months, then automatically rotates to the next. Providers who are away are auto-substituted with an alternate clinic."
       />
       <div className="flex flex-wrap items-end gap-2 px-5 py-4">
         <div>
@@ -209,7 +278,7 @@ function GeneratorToolbar({ draftCount, onChanged, onError }: {
             className="rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink" />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-muted">To (max ~3 months)</label>
+          <label className="mb-1 block text-xs font-medium text-muted">To (up to a full year)</label>
           <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
             className="rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink" />
         </div>
@@ -503,7 +572,14 @@ function ClinicTally({ isManager }: { isManager: boolean }) {
   const byFellow = new Map<string, TallyRow[]>()
   for (const r of rows) { if (!byFellow.has(r.fellow_label)) byFellow.set(r.fellow_label, []); byFellow.get(r.fellow_label)!.push(r) }
 
-  if (loaded && rows.length === 0) return null
+  if (loaded && rows.length === 0) {
+    return (
+      <Card>
+        <CardHeader title="Clinics per provider this academic year" sub="Published clinics only, July–June" />
+        <p className="px-5 py-4 text-sm text-muted">No published clinics yet this academic year. Once you publish a schedule, each fellow's clinic counts per provider will appear here.</p>
+      </Card>
+    )
+  }
 
   return (
     <Card>
