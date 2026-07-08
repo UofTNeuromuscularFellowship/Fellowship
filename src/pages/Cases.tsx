@@ -11,8 +11,6 @@ interface CaseRow {
   id: string
   case_date: string
   title: string | null
-  age: number | null
-  sex: string | null
   nerves_tested: { common?: string[]; infrequent?: string[]; rns?: string[]; sfemg?: string[] } | null
   muscles_tested: string[] | null
   diagnoses: { category: string; subtype: string | null }[] | null
@@ -68,7 +66,7 @@ export default function Cases() {
   async function load() {
     const { data, error } = await supabase
       .from('cases')
-      .select('id, case_date, title, age, sex, nerves_tested, muscles_tested, diagnoses, summary')
+      .select('id, case_date, title, nerves_tested, muscles_tested, diagnoses, summary')
       .order('case_date', { ascending: false })
       .limit(100)
     if (error) setMsg(error.message)
@@ -150,8 +148,6 @@ function CaseForm({ fellowId, existing, onDone, onError }: {
 }) {
   const [date, setDate] = useState(existing?.case_date ?? new Date().toISOString().slice(0, 10))
   const [title, setTitle] = useState(existing?.title ?? '')
-  const [age, setAge] = useState(existing?.age ? String(existing.age) : '')
-  const [sex, setSex] = useState(existing?.sex ?? '')
   const [ncsCommon, setNcsCommon] = useState<string[]>(existing?.nerves_tested?.common ?? [])
   const [ncsInfrequent, setNcsInfrequent] = useState<string[]>(existing?.nerves_tested?.infrequent ?? [])
   const [rns, setRns] = useState<string[]>(existing?.nerves_tested?.rns ?? [])
@@ -168,8 +164,6 @@ function CaseForm({ fellowId, existing, onDone, onError }: {
       fellow_id: fellowId,
       case_date: date,
       title: title.trim() || null,
-      age: age ? parseInt(age, 10) : null,
-      sex: sex || null,
       nerves_tested: { common: ncsCommon, infrequent: ncsInfrequent, rns, sfemg },
       muscles_tested: muscles,
       diagnoses: diagCategory ? [{ category: diagCategory, subtype: diagSubtype.trim() || null }] : [],
@@ -203,21 +197,6 @@ function CaseForm({ fellowId, existing, onDone, onError }: {
             <label className="mb-1 block text-xs font-medium text-muted">Title</label>
             <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g., Progressive weakness, EMG for MND vs myopathy"
               className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink" />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted">Age</label>
-            <input value={age} onChange={(e) => setAge(e.target.value.replace(/\D/g, ''))} inputMode="numeric"
-              className="w-20 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink" />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted">Sex</label>
-            <select value={sex} onChange={(e) => setSex(e.target.value)}
-              className="rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink">
-              <option value="">—</option>
-              <option value="F">F</option>
-              <option value="M">M</option>
-              <option value="Other">Other</option>
-            </select>
           </div>
         </div>
 

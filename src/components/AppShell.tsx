@@ -32,7 +32,7 @@ const SECTIONS: NavSection[] = [
   {
     heading: 'Teaching',
     items: [
-      { to: '/my-teaching', label: 'My Teaching', allow: ['supervisor', 'director'] },
+      { to: '/my-teaching', label: 'Teaching Assignments', allow: ['supervisor', 'director'] },
       { to: '/rate-teaching', label: 'Rate Teaching', allow: ['fellow'] },
       { to: '/evaluations', label: 'Evaluations', allow: ['fellow', 'supervisor', 'director'] },
     ],

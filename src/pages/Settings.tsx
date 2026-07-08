@@ -25,7 +25,6 @@ export default function Settings() {
       <Broadcast onError={setMsg} />
       <RequestAwayDates onError={setMsg} />
       <ScheduleCcEmails onError={setMsg} />
-      <WaveformAllocation onError={setMsg} />
       <PubmedTerms onError={setMsg} />
     </div>
   )
@@ -75,63 +74,6 @@ function Broadcast({ onError }: { onError: (m: string) => void }) {
           className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
           {busy ? 'Sending…' : sent ? 'Sent ✓' : 'Send note'}
         </button>
-      </div>
-    </Card>
-  )
-}
-
-function WaveformAllocation({ onError }: { onError: (m: string) => void }) {
-  const [rows, setRows] = useState<{ name: string; weight: number }[]>([])
-  const [busy, setBusy] = useState(false)
-  const [saved, setSaved] = useState(false)
-
-  useEffect(() => {
-    supabase.from('app_settings').select('value').eq('key', 'waveform_allocation').maybeSingle()
-      .then(({ data }) => {
-        const v = (data?.value as Record<string, number>) ?? {}
-        setRows(Object.entries(v).map(([name, weight]) => ({ name, weight })))
-      })
-  }, [])
-
-  async function save() {
-    setBusy(true)
-    const value: Record<string, number> = {}
-    for (const r of rows) if (r.name.trim() && r.weight > 0) value[r.name.trim()] = r.weight
-    const { error } = await supabase.from('app_settings')
-      .upsert({ key: 'waveform_allocation', value, updated_at: new Date().toISOString() })
-    setBusy(false)
-    if (error) { onError(error.message); return }
-    setSaved(true); setTimeout(() => setSaved(false), 2000)
-  }
-
-  return (
-    <Card>
-      <CardHeader
-        title="Waveform Rounds allocation"
-        sub="Relative share of Waveform Rounds each provider is auto-assigned per rotation cycle. The cycle repeats after the weights are used up (e.g., 6 : 6 : 1 ≈ one session per ~6 months for the weight-1 provider)."
-      />
-      <div className="space-y-2 px-5 py-4">
-        {rows.map((r, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <input value={r.name}
-              onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
-              className="min-w-0 flex-1 rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink" />
-            <input value={r.weight}
-              onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, weight: parseInt(e.target.value.replace(/\D/g, ''), 10) || 0 } : x))}
-              inputMode="numeric"
-              className="w-20 rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink" />
-            <button onClick={() => setRows(rows.filter((_, j) => j !== i))}
-              className="text-xs font-medium text-muted hover:text-ink">Remove</button>
-          </div>
-        ))}
-        <div className="flex gap-3 pt-1">
-          <button onClick={() => setRows([...rows, { name: '', weight: 1 }])}
-            className="text-sm font-medium text-accent hover:underline">+ Add provider</button>
-          <button onClick={save} disabled={busy}
-            className="rounded-md bg-accent px-4 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
-            {busy ? 'Saving…' : saved ? 'Saved ✓' : 'Save allocation'}
-          </button>
-        </div>
       </div>
     </Card>
   )
@@ -284,10 +226,11 @@ function ScheduleCcEmails({ onError }: { onError: (m: string) => void }) {
 function RequestAwayDates({ onError }: { onError: (m: string) => void }) {
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<number | null>(null)
+  const [audience, setAudience] = useState<'everyone' | 'fellows' | 'supervisors'>('everyone')
 
   async function push() {
-    setBusy(true)
-    const { data, error } = await supabase.rpc('request_vacation_submissions')
+    setBusy(true); setResult(null)
+    const { data, error } = await supabase.rpc('request_vacation_submissions', { p_audience: audience })
     setBusy(false)
     if (error) { onError(error.message); return }
     setResult(data as number)
@@ -297,14 +240,33 @@ function RequestAwayDates({ onError }: { onError: (m: string) => void }) {
     <Card>
       <CardHeader
         title="Request away dates"
-        sub="Emails all active providers and fellows asking them to submit vacation and away dates in the portal, so the next clinic and teaching schedules can be built around them. Sends at most once per person per day."
+        sub="Emails the group you choose, asking them to submit vacation and away dates in the portal, so the next clinic and teaching schedules can be built around them."
       />
-      <div className="flex items-center gap-3 px-5 py-4">
-        <button onClick={push} disabled={busy}
-          className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
-          {busy ? 'Sending…' : 'Email everyone now'}
-        </button>
-        {result !== null && <span className="text-sm text-muted">Queued for {result} people ✓</span>}
+      <div className="space-y-3 px-5 py-4">
+        <div>
+          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted">Who to email</p>
+          <div className="flex flex-wrap gap-2">
+            {([['everyone', 'Everyone'], ['fellows', 'All fellows'], ['supervisors', 'All supervisors']] as const).map(([val, label]) => (
+              <button key={val} onClick={() => { setAudience(val); setResult(null) }}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  audience === val ? 'border-accent bg-accent-soft text-accent' : 'border-line text-muted hover:text-ink'
+                }`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <button onClick={push} disabled={busy}
+            className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+            {busy ? 'Sending…' : 'Send request'}
+          </button>
+          {result !== null && (
+            <span className="text-sm text-muted">
+              {result === 0 ? 'No one matched that group.' : `Emailed ${result} ${result === 1 ? 'person' : 'people'} ✓`}
+            </span>
+          )}
+        </div>
       </div>
     </Card>
   )
