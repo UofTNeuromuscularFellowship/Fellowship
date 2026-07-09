@@ -4,21 +4,22 @@
 // read query against the database, which counts as activity, so the
 // free-tier Supabase project never pauses from inactivity.
 //
-// The key below is the project's PUBLISHABLE key. It is safe to keep
-// in the repo — it's the same public key a visitor's browser would
-// use, and the database is protected by Row Level Security.
+// The key below is the project's public ANON key — the same key the
+// website itself ships to every visitor's browser. It is safe to keep
+// in the repo; the database is protected by Row Level Security.
 
 const SUPABASE_URL = "https://joraxuxuzynyrfmtqghp.supabase.co";
-const SUPABASE_KEY = "sb_publishable_-0Fywty7bVfJetjWfDc8dA_M-B1DpNv";
+const SUPABASE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpvcmF4dXh1enlueXJmbXRxZ2hwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyMTM2MzYsImV4cCI6MjA5Nzc4OTYzNn0.qwPFeRc7U6DsZiiP1Yfj-LczCa-eAATpCnTnKvSjegk";
 
 export default async function handler(req, res) {
   try {
     const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/app_settings?select=*&limit=1`,
+      `${SUPABASE_URL}/rest/v1/app_settings?select=key&limit=1`,
       {
         headers: {
-          apikey: SUPABASE_KEY,
-          Authorization: `Bearer ${SUPABASE_KEY}`,
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
         },
       }
     );
