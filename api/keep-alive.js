@@ -11,7 +11,7 @@
 const SUPABASE_URL = "https://joraxuxuzynyrfmtqghp.supabase.co";
 const SUPABASE_KEY = "sb_publishable_-0Fywty7bVfJetjWfDc8dA_M-B1DpNv";
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   try {
     const response = await fetch(
       `${SUPABASE_URL}/rest/v1/app_settings?select=*&limit=1`,
@@ -31,4 +31,4 @@ module.exports = async (req, res) => {
   } catch (error) {
     res.status(500).json({ ok: false, error: String(error) });
   }
-};
+}
