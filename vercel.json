@@ -3,5 +3,11 @@
     { "src": "/", "dest": "/program.html" },
     { "handle": "filesystem" },
     { "src": "/.*", "dest": "/index.html" }
+  ],
+  "crons": [
+    {
+      "path": "/api/keep-alive",
+      "schedule": "0 12 * * *"
+    }
   ]
 }
