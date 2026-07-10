@@ -103,6 +103,8 @@ export default function Dashboard() {
         </div>
       )}
 
+      <GettingStartedCard userId={profile.id} role={profile.role} />
+
       {isDirector && (
         <Card>
           <CardHeader title="Director quick actions" />
@@ -175,11 +177,9 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <CalendarSubscribe userId={profile.id} />
-
-      {(profile.role === 'supervisor' || profile.role === 'director') && (
-        <AssistantEmailsCard userId={profile.id} />
-      )}
+      <div id="calendar-sync">
+        <CalendarSubscribe userId={profile.id} />
+      </div>
 
       <Card>
         <CardHeader title="Interesting reads" sub="Recent neuromuscular publications, refreshed weekly from PubMed" />
@@ -374,66 +374,69 @@ function CalendarSubscribe({ userId }: { userId: string }) {
   )
 }
 
-function AssistantEmailsCard({ userId }: { userId: string }) {
-  const [emails, setEmails] = useState<string[]>([])
-  const [draft, setDraft] = useState('')
-  const [status, setStatus] = useState<'idle' | 'saved' | string>('idle')
+function GettingStartedCard({ userId, role }: { userId: string; role: string }) {
+  const [dismissed, setDismissed] = useState<boolean | null>(null)
 
   useEffect(() => {
-    supabase.from('users').select('assistant_emails').eq('id', userId).maybeSingle()
-      .then(({ data }) => setEmails(((data?.assistant_emails as string[]) ?? [])))
+    supabase.from('users').select('onboarding_dismissed_at').eq('id', userId).maybeSingle()
+      .then(({ data }) => setDismissed(data ? data.onboarding_dismissed_at !== null : true))
   }, [userId])
 
-  async function save(next: string[]) {
-    setEmails(next)
-    const { error } = await supabase.from('users')
-      .update({ assistant_emails: next, updated_at: new Date().toISOString() })
+  async function dismiss() {
+    setDismissed(true)
+    await supabase.from('users')
+      .update({ onboarding_dismissed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
       .eq('id', userId)
-    if (error) { setStatus(error.message); return }
-    setStatus('saved'); setTimeout(() => setStatus('idle'), 2000)
   }
 
-  function add() {
-    const v = draft.trim().toLowerCase()
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) { setStatus('Please enter a valid email address.'); return }
-    if (emails.includes(v)) { setDraft(''); return }
-    save([...emails, v]); setDraft('')
-  }
+  if (dismissed !== false) return null
+
+  const isSupervisor = role === 'supervisor' || role === 'director'
+  const isFellow = role === 'fellow'
+
+  const steps = [
+    {
+      text: <>
+        <Link to="/settings" className="font-medium text-accent hover:underline">Change your password</Link>
+        {' '}— replace the temporary one you signed in with (Settings).
+      </>,
+    },
+    ...(isFellow || isSupervisor ? [{
+      text: <>
+        <Link to="/vacation" className="font-medium text-accent hover:underline">
+          {isFellow ? 'Request vacation & set away dates' : 'Set your away dates'}
+        </Link>
+        {' '}— so schedules are built around your availability.
+      </>,
+    }] : []),
+    ...(isSupervisor ? [{
+      text: <>
+        <Link to="/settings" className="font-medium text-accent hover:underline">Add your admin assistant's email</Link>
+        {' '}— they'll get a copy of every portal email so they can help manage your schedule (Settings).
+      </>,
+    }] : []),
+    {
+      text: <>
+        <a href="#calendar-sync" className="font-medium text-accent hover:underline">Subscribe to the calendar</a>
+        {' '}— see teaching and clinic activities in your own calendar app, updated automatically (below on this page).
+      </>,
+    },
+  ]
 
   return (
-    <Card>
-      <CardHeader
-        title="My admin assistant"
-        sub="Add your assistant's email and they'll receive a copy of every email the portal sends you — teaching reminders, schedule updates, and requests — so they can manage your schedule."
-      />
-      <div className="space-y-3 px-5 py-4">
-        {emails.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {emails.map((e) => (
-              <span key={e} className="inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-1 text-xs font-medium text-ink">
-                {e}
-                <button onClick={() => save(emails.filter((x) => x !== e))} className="text-muted hover:text-ink">×</button>
-              </span>
-            ))}
-          </div>
-        )}
-        <div className="flex gap-2">
-          <input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') add() }}
-            placeholder="assistant@hospital.ca, then press Enter"
-            className="min-w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink"
-          />
-          <button onClick={add}
-            className="rounded-md border border-line px-3 py-2 text-sm font-medium text-accent hover:underline">
-            Add
-          </button>
+    <div className="rounded-lg border-2 border-accent bg-accent-soft/60 px-5 py-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-display text-base font-semibold text-ink">Welcome! A few quick steps to get set up</p>
+          <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-sm text-ink">
+            {steps.map((s, i) => <li key={i}>{s.text}</li>)}
+          </ol>
         </div>
-        <p className="text-xs text-muted">
-          {status === 'saved' ? 'Saved ✓' : status !== 'idle' ? status : 'Changes save automatically.'}
-        </p>
       </div>
-    </Card>
+      <button onClick={dismiss}
+        className="mt-3 rounded-md border border-accent px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent-soft">
+        Got it — don't show this again
+      </button>
+    </div>
   )
 }

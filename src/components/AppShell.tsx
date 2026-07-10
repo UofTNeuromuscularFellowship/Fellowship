@@ -42,7 +42,7 @@ const SECTIONS: NavSection[] = [
     items: [
       { to: '/handbook', label: 'Handbook' },
       { to: '/people', label: 'People', allow: ['director', 'admin'] },
-      { to: '/settings', label: 'Settings', allow: ['director'] },
+      { to: '/settings', label: 'Settings' },
     ],
   },
 ]

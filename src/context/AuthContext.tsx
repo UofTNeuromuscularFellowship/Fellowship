@@ -59,6 +59,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(s)
       if (s?.user) loadProfile(s.user.id)
       else setProfile(null)
+      // Arriving via a password-reset email link: take them straight to
+      // the change-password screen, wherever the link landed.
+      if (_event === 'PASSWORD_RECOVERY' && window.location.pathname !== '/change-password') {
+        window.location.assign('/change-password')
+      }
     })
     return () => sub.subscription.unsubscribe()
   }, [])

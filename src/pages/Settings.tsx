@@ -2,18 +2,23 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
+import { AssistantEmailsCard } from '../components/AssistantEmails'
 
 export default function Settings() {
   const { profile } = useAuth()
   const [msg, setMsg] = useState<string | null>(null)
 
-  if (!profile || profile.role !== 'director') return null
+  if (!profile) return null
+  const isDirector = profile.role === 'director'
+  const hasAssistants = profile.role === 'supervisor' || profile.role === 'director'
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="font-display text-2xl font-bold text-ink">Settings</h1>
-        <p className="mt-1 text-sm text-muted">Program configuration and announcements</p>
+        <p className="mt-1 text-sm text-muted">
+          {isDirector ? 'Your account, program configuration, and announcements' : 'Your account settings'}
+        </p>
       </div>
 
       {msg && (
@@ -22,11 +27,62 @@ export default function Settings() {
         </div>
       )}
 
-      <Broadcast onError={setMsg} />
-      <RequestAwayDates onError={setMsg} />
-      <ScheduleCcEmails onError={setMsg} />
-      <PubmedTerms onError={setMsg} />
+      <ChangePasswordCard />
+      {hasAssistants && <AssistantEmailsCard userId={profile.id} />}
+
+      {isDirector && (
+        <>
+          <Broadcast onError={setMsg} />
+          <RequestAwayDates onError={setMsg} />
+          <ScheduleCcEmails onError={setMsg} />
+          <PubmedTerms onError={setMsg} />
+        </>
+      )}
     </div>
+  )
+}
+
+function ChangePasswordCard() {
+  const [pw1, setPw1] = useState('')
+  const [pw2, setPw2] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [status, setStatus] = useState<'idle' | 'saved' | string>('idle')
+
+  async function save() {
+    if (pw1.length < 8) { setStatus('Password must be at least 8 characters.'); return }
+    if (pw1 !== pw2) { setStatus('Passwords do not match.'); return }
+    setBusy(true)
+    const { error } = await supabase.auth.updateUser({ password: pw1 })
+    setBusy(false)
+    if (error) { setStatus(error.message); return }
+    setPw1(''); setPw2('')
+    setStatus('saved'); setTimeout(() => setStatus('idle'), 2500)
+  }
+
+  return (
+    <Card>
+      <CardHeader title="Change password" sub="Choose a new password for your account (at least 8 characters)" />
+      <div className="flex flex-wrap items-end gap-2 px-5 py-4">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-muted">New password</label>
+          <input type="password" value={pw1} onChange={(e) => setPw1(e.target.value)} autoComplete="new-password"
+            className="w-52 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink" />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-muted">Confirm new password</label>
+          <input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} autoComplete="new-password"
+            onKeyDown={(e) => { if (e.key === 'Enter') save() }}
+            className="w-52 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink" />
+        </div>
+        <button onClick={save} disabled={busy || !pw1 || !pw2}
+          className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+          {busy ? 'Saving…' : status === 'saved' ? 'Saved ✓' : 'Save new password'}
+        </button>
+        {status !== 'idle' && status !== 'saved' && (
+          <p className="w-full text-sm text-red-700">{status}</p>
+        )}
+      </div>
+    </Card>
   )
 }
 
