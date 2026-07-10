@@ -16,6 +16,9 @@ interface Session {
   delivered_at: string | null
   is_break: boolean
   assignment_draft: boolean
+  provider_confirmed: boolean
+  conflict_flagged: boolean
+  conflict_reason: string | null
 }
 
 interface FeedbackRow { rating: number; comments: string | null; created_at: string }
@@ -28,7 +31,8 @@ export default function MyTeaching() {
   const isDirector = profile?.role === 'director'
   const [sessions, setSessions] = useState<Session[]>([])
   const [loading, setLoading] = useState(true)
-  const [openPanel, setOpenPanel] = useState<{ id: string; kind: 'feedback' | 'attendance' | 'zoom' | 'edit' } | null>(null)
+  const [openPanel, setOpenPanel] = useState<{ id: string; kind: 'feedback' | 'attendance' | 'zoom' | 'edit' | 'conflict' } | null>(null)
+  const [showAdd, setShowAdd] = useState(false)
   const [providers, setProviders] = useState<Person[]>([])
   const [msg, setMsg] = useState<string | null>(null)
 
@@ -36,7 +40,7 @@ export default function MyTeaching() {
     setLoading(true)
     let q = supabase
       .from('teaching_sessions')
-      .select('id, session_date, start_time, end_time, topic, provider_name, provider_id, zoom_link, delivered_at, is_break, assignment_draft')
+      .select('id, session_date, start_time, end_time, topic, provider_name, provider_id, zoom_link, delivered_at, is_break, assignment_draft, provider_confirmed, conflict_flagged, conflict_reason')
       .eq('is_break', false)
       .order('session_date')
     if (!isDirector && profile) q = q.eq('provider_id', profile.id).eq('assignment_draft', false)
@@ -67,11 +71,18 @@ export default function MyTeaching() {
 
   if (!profile) return null
 
-  function togglePanel(id: string, kind: 'feedback' | 'attendance' | 'zoom' | 'edit') {
+  function togglePanel(id: string, kind: 'feedback' | 'attendance' | 'zoom' | 'edit' | 'conflict') {
     setOpenPanel(openPanel?.id === id && openPanel.kind === kind ? null : { id, kind })
   }
 
+  async function confirmSession(s: Session) {
+    const { error } = await supabase.rpc('confirm_teaching', { p_session: s.id })
+    if (error) setMsg(error.message)
+    else load()
+  }
+
   function renderSession(s: Session, isPast: boolean) {
+    const isMine = s.provider_id === profile!.id
     return (
       <li key={s.id} className="px-5 py-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -81,11 +92,20 @@ export default function MyTeaching() {
               {s.assignment_draft && (
                 <span className="ml-2 rounded-full border border-accent px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">Draft</span>
               )}
+              {!isPast && s.conflict_flagged && (
+                <span className="ml-2 rounded-full border border-red-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-600">Conflict flagged</span>
+              )}
+              {!isPast && !s.conflict_flagged && s.provider_confirmed && (
+                <span className="ml-2 rounded-full border border-line px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted">Confirmed</span>
+              )}
             </p>
             <p className="text-sm text-muted">
               {formatDate(s.session_date)} · {s.start_time.slice(0, 5)}–{s.end_time.slice(0, 5)}
               {isDirector && s.provider_name ? ` · ${s.provider_name}` : ''}
             </p>
+            {!isPast && s.conflict_flagged && s.conflict_reason && (
+              <p className="text-sm text-red-700">Reason: {s.conflict_reason}</p>
+            )}
           </div>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-4 text-sm">
@@ -97,6 +117,16 @@ export default function MyTeaching() {
           {!isPast && (
             <button className="font-medium text-accent hover:underline" onClick={() => togglePanel(s.id, 'zoom')}>
               {s.zoom_link ? 'Edit link' : 'Add link'}
+            </button>
+          )}
+          {!isPast && isMine && !s.provider_confirmed && !s.conflict_flagged && (
+            <button className="font-medium text-accent hover:underline" onClick={() => confirmSession(s)}>
+              Confirm session
+            </button>
+          )}
+          {!isPast && isMine && !s.conflict_flagged && (
+            <button className="font-medium text-red-600 hover:underline" onClick={() => togglePanel(s.id, 'conflict')}>
+              Flag a conflict
             </button>
           )}
           {isPast && (s.delivered_at ? (
@@ -129,6 +159,9 @@ export default function MyTeaching() {
         {openPanel?.id === s.id && openPanel.kind === 'edit' && (
           <EditSessionPanel session={s} providers={providers} onDone={() => { setOpenPanel(null); load() }} onError={setMsg} />
         )}
+        {openPanel?.id === s.id && openPanel.kind === 'conflict' && (
+          <ConflictPanel session={s} onDone={() => { setOpenPanel(null); load() }} onError={setMsg} />
+        )}
       </li>
     )
   }
@@ -151,7 +184,23 @@ export default function MyTeaching() {
       {isDirector && <AutoAssignToolbar draftCount={draftCount} onChanged={load} onError={setMsg} />}
 
       <Card>
-        <CardHeader title="Upcoming sessions" sub={`${upcoming.length} scheduled`} />
+        <CardHeader
+          title="Upcoming sessions"
+          sub={`${upcoming.length} scheduled`}
+          action={isDirector ? (
+            <button
+              onClick={() => setShowAdd(!showAdd)}
+              className="rounded-md bg-accent px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90"
+            >
+              {showAdd ? 'Close' : 'Add session'}
+            </button>
+          ) : undefined}
+        />
+        {showAdd && isDirector && (
+          <div className="border-b border-line px-5 py-4">
+            <AddSessionPanel providers={providers} onDone={() => { setShowAdd(false); load() }} onError={setMsg} />
+          </div>
+        )}
         {loading ? (
           <p className="px-5 py-4 text-sm text-muted">Loading…</p>
         ) : upcoming.length === 0 ? (
@@ -234,6 +283,127 @@ function AutoAssignToolbar({ draftCount, onChanged, onError }: { draftCount: num
   )
 }
 
+function AddSessionPanel({ providers, onDone, onError }: {
+  providers: Person[]; onDone: () => void; onError: (m: string) => void
+}) {
+  const [date, setDate] = useState('')
+  const [startTime, setStartTime] = useState('08:00')
+  const [endTime, setEndTime] = useState('09:00')
+  const [topic, setTopic] = useState('')
+  const [choice, setChoice] = useState<string>('none')
+  const [customName, setCustomName] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function save() {
+    if (!date) { onError('Choose a date for the new session.'); return }
+    let provider_id: string | null = null
+    let provider_name: string | null = null
+    if (choice === 'custom') {
+      provider_name = customName.trim() || null
+    } else if (choice !== 'none') {
+      const p = providers.find((x) => x.id === choice)
+      provider_id = choice
+      provider_name = p?.full_name ?? null
+    }
+    setBusy(true)
+    const { error } = await supabase.from('teaching_sessions').insert({
+      session_date: date,
+      start_time: startTime,
+      end_time: endTime,
+      topic: topic.trim() || null,
+      provider_id,
+      provider_name,
+      is_break: false,
+      assignment_draft: false,
+    })
+    setBusy(false)
+    if (error) onError(error.message)
+    else onDone()
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-3">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-muted">Date</label>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+            className="rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink" />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-muted">Start</label>
+          <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)}
+            className="rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink" />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-muted">End</label>
+          <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)}
+            className="rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink" />
+        </div>
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-medium text-muted">Topic</label>
+        <input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="e.g. Myasthenia gravis"
+          className="w-full max-w-md rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink" />
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-medium text-muted">Teacher</label>
+        <select value={choice} onChange={(e) => setChoice(e.target.value)}
+          className="w-full max-w-md rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink">
+          <option value="none">Unassigned</option>
+          {providers.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+          <option value="custom">Other (name only, no portal account)</option>
+        </select>
+        {choice === 'custom' && (
+          <input value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder="Teacher's name"
+            className="mt-2 w-full max-w-md rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink" />
+        )}
+        <p className="mt-1 text-xs text-muted">
+          The session is published immediately: it appears on the teaching schedule, and a teacher picked from the list sees it on their My Teaching page and gets the usual reminder emails.
+        </p>
+      </div>
+      <button onClick={save} disabled={busy}
+        className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+        {busy ? 'Adding…' : 'Add session'}
+      </button>
+    </div>
+  )
+}
+
+function ConflictPanel({ session, onDone, onError }: { session: Session; onDone: () => void; onError: (m: string) => void }) {
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function submit() {
+    setBusy(true)
+    const { error } = await supabase.rpc('flag_teaching_conflict', {
+      p_session: session.id,
+      p_reason: reason.trim() || null,
+    })
+    setBusy(false)
+    if (error) onError(error.message)
+    else onDone()
+  }
+
+  return (
+    <div className="mt-3 space-y-3 rounded-md border border-line p-4">
+      <p className="text-sm text-ink">
+        Flag a scheduling conflict for <strong>{session.topic ?? 'this session'}</strong> on {formatDate(session.session_date)}.
+        The fellowship director is notified by email so the session can be covered or rescheduled.
+      </p>
+      <div>
+        <label className="mb-1 block text-xs font-medium text-muted">Reason (optional)</label>
+        <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2}
+          placeholder="e.g. Away at a conference that week"
+          className="w-full max-w-md rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink" />
+      </div>
+      <button onClick={submit} disabled={busy}
+        className="rounded-md border border-red-600 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50">
+        {busy ? 'Sending…' : 'Flag conflict & notify director'}
+      </button>
+    </div>
+  )
+}
+
 function EditSessionPanel({ session, providers, onDone, onError }: {
   session: Session; providers: Person[]; onDone: () => void; onError: (m: string) => void
 }) {
@@ -267,6 +437,9 @@ function EditSessionPanel({ session, providers, onDone, onError }: {
         provider_id,
         provider_name,
         assignment_draft: false,
+        conflict_flagged: false,
+        conflict_reason: null,
+        ...(provider_id !== session.provider_id ? { provider_confirmed: false } : {}),
         updated_at: new Date().toISOString(),
       })
       .eq('id', session.id)

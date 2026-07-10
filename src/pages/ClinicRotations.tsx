@@ -17,7 +17,7 @@ interface Rotation {
   is_away: boolean
 }
 interface AwayDate { fellow_id: string; away_date: string }
-interface ClinicCat { id: string; provider_name: string | null; provider_id: string | null; weekday: number; site_code: string; fellow_capacity: number }
+interface ClinicCat { id: string; provider_name: string | null; provider_id: string | null; weekday: number; site_code: string; fellow_capacity: number; recurrence: 'weekly' | 'dates'; specific_dates: string[] | null }
 interface ProviderOpt { id: string; full_name: string }
 interface FellowOpt { id: string; full_name: string }
 interface Template { id: string; name: string; sort_order: number }
@@ -59,7 +59,7 @@ export default function ClinicRotations() {
       setAway((aw as AwayDate[]) ?? [])
       const { data: fl } = await supabase.rpc('list_fellows')
       setFellows((fl as FellowOpt[]) ?? [])
-      const { data: cat } = await supabase.from('clinic_template').select('id, provider_name, provider_id, weekday, site_code, fellow_capacity')
+      const { data: cat } = await supabase.from('clinic_template').select('id, provider_name, provider_id, weekday, site_code, fellow_capacity, recurrence, specific_dates')
       setCatalog((cat as ClinicCat[]) ?? [])
     } else if (isFellow && profile) {
       setFellows([{ id: profile.id, full_name: profile.full_name }])
@@ -109,6 +109,15 @@ export default function ClinicRotations() {
   }
 
   if (!profile) return null
+
+  // Clinics offered on the clicked date: weekly ones on that weekday,
+  // plus date-specific clinics that list this exact date.
+  const cellOptions = editCell
+    ? catalog.filter((c) =>
+        c.recurrence === 'dates'
+          ? (c.specific_dates ?? []).includes(editCell.date)
+          : c.weekday === editCell.weekday)
+    : []
 
   function cellContent(r: Rotation | undefined) {
     if (!r) return <span className="text-muted">—</span>
@@ -216,13 +225,14 @@ export default function ClinicRotations() {
               {fellows.find((f) => f.id === editCell.fellowId)?.full_name} · {WEEKDAYS[editCell.weekday - 1]} {shortDate(editCell.date)}
             </p>
             <div className="mt-4 space-y-1.5">
-              {catalog.filter((c) => c.weekday === editCell.weekday).length === 0 && (
-                <p className="text-sm text-muted">No clinics are defined for this weekday in the catalog.</p>
+              {cellOptions.length === 0 && (
+                <p className="text-sm text-muted">No clinics are defined for this day in the catalog.</p>
               )}
-              {catalog.filter((c) => c.weekday === editCell.weekday).map((c) => (
+              {cellOptions.map((c) => (
                 <button key={c.id} onClick={() => applyCell('clinic', c.id)}
                   className="block w-full rounded-md border border-line px-3 py-2 text-left text-sm text-ink hover:border-accent hover:text-accent">
                   {c.site_code} <span className="text-muted">· {c.provider_name}</span>
+                  {c.recurrence === 'dates' && <span className="ml-2 rounded-full border border-accent px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">This date</span>}
                 </button>
               ))}
               <div className="flex flex-wrap gap-2 pt-2">
@@ -269,7 +279,7 @@ function GeneratorToolbar({ draftCount, onChanged, onError }: {
     <Card>
       <CardHeader
         title="Schedule"
-        sub="Generates a draft across whatever range you choose — up to a full academic year. Each fellow follows their assigned template for 3 months, then automatically rotates to the next. Providers who are away are auto-substituted with an alternate clinic."
+        sub="Generates a draft across whatever range you choose — up to a full academic year. Each fellow follows their assigned template for 3 months, then automatically rotates to the next. Date-specific clinics are filled first on their listed dates, and providers who are away are auto-substituted with an alternate clinic."
       />
       <div className="flex flex-wrap items-end gap-2 px-5 py-4">
         <div>
@@ -307,14 +317,17 @@ function ProviderClinicCatalog({ onError }: { onError: (m: string) => void }) {
   const [providers, setProviders] = useState<ProviderOpt[]>([])
   const [choice, setChoice] = useState('custom')
   const [customName, setCustomName] = useState('')
+  const [recur, setRecur] = useState<'weekly' | 'dates'>('weekly')
   const [weekday, setWeekday] = useState(1)
+  const [dates, setDates] = useState<string[]>([])
+  const [dateDraft, setDateDraft] = useState('')
   const [site, setSite] = useState('')
   const [capacity, setCapacity] = useState('1')
   const [busy, setBusy] = useState(false)
 
   async function load() {
     const { data } = await supabase.from('clinic_template')
-      .select('id, provider_name, provider_id, weekday, site_code, fellow_capacity')
+      .select('id, provider_name, provider_id, weekday, site_code, fellow_capacity, recurrence, specific_dates')
       .order('weekday').order('provider_name')
     setRows((data as ClinicCat[]) ?? [])
   }
@@ -329,26 +342,45 @@ function ProviderClinicCatalog({ onError }: { onError: (m: string) => void }) {
     if (choice === 'custom') provider_name = customName.trim() || null
     else { provider_id = choice; provider_name = providers.find((p) => p.id === choice)?.full_name ?? null }
     if (!provider_name || !site.trim()) { onError('Provider name and clinic location are required.'); return }
+    if (recur === 'dates' && dates.length === 0) { onError('Add at least one date this clinic runs on.'); return }
     const cap = parseInt(capacity, 10)
     setBusy(true)
     const { error } = await supabase.from('clinic_template').insert({
-      provider_name, provider_id, weekday, site_code: site.trim(), fellow_capacity: cap && cap > 0 ? cap : 1,
+      provider_name, provider_id,
+      weekday: recur === 'dates' ? 0 : weekday,
+      recurrence: recur,
+      specific_dates: recur === 'dates' ? dates : [],
+      site_code: site.trim(), fellow_capacity: cap && cap > 0 ? cap : 1,
     })
     setBusy(false)
     if (error) { onError(error.message); return }
-    setSite(''); setCustomName(''); load()
+    setSite(''); setCustomName(''); setDates([]); load()
+  }
+
+  async function updateDates(row: ClinicCat, next: string[]) {
+    const { error } = await supabase.from('clinic_template').update({ specific_dates: next }).eq('id', row.id)
+    if (error) { onError(error.message); return }
+    load()
+  }
+
+  function addDate() {
+    if (!dateDraft) return
+    if (!dates.includes(dateDraft)) setDates([...dates, dateDraft].sort())
+    setDateDraft('')
   }
 
   async function remove(id: string) { await supabase.from('clinic_template').delete().eq('id', id); load() }
 
+  const weeklyRows = rows.filter((r) => r.recurrence !== 'dates')
+  const dateRows = rows.filter((r) => r.recurrence === 'dates')
   const byDay = new Map<number, ClinicCat[]>()
-  for (const r of rows) { if (!byDay.has(r.weekday)) byDay.set(r.weekday, []); byDay.get(r.weekday)!.push(r) }
+  for (const r of weeklyRows) { if (!byDay.has(r.weekday)) byDay.set(r.weekday, []); byDay.get(r.weekday)!.push(r) }
 
   return (
     <Card>
-      <CardHeader title="1 · Available provider clinics" sub="Every clinic offered each week — provider, day, location, and how many fellows it can take." />
+      <CardHeader title="1 · Available provider clinics" sub="Every clinic offered — weekly clinics run on a set day; date-specific clinics run only on the dates you list." />
       <div className="space-y-4 px-5 py-4">
-        {rows.length === 0 && <p className="text-sm text-muted">No clinics yet — add each recurring provider clinic below.</p>}
+        {rows.length === 0 && <p className="text-sm text-muted">No clinics yet — add each provider clinic below.</p>}
         {[1, 2, 3, 4, 5].filter((wd) => byDay.has(wd)).map((wd) => (
           <div key={wd}>
             <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted">{WEEKDAYS[wd - 1]}</p>
@@ -364,6 +396,43 @@ function ProviderClinicCatalog({ onError }: { onError: (m: string) => void }) {
             </ul>
           </div>
         ))}
+        {dateRows.length > 0 && (
+          <div>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted">Specific dates only</p>
+            <ul className="divide-y divide-line">
+              {dateRows.map((r) => (
+                <li key={r.id} className="py-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-ink">{r.provider_name} · {r.site_code}
+                      <span className="ml-2 text-muted">{r.fellow_capacity} fellow{r.fellow_capacity === 1 ? '' : 's'}</span>
+                    </span>
+                    <button onClick={() => remove(r.id)} className="text-xs font-medium text-muted hover:text-ink">Remove</button>
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    {(r.specific_dates ?? []).map((dt) => (
+                      <span key={dt} className="inline-flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-xs text-ink">
+                        {shortDate(dt)}
+                        <button onClick={() => updateDates(r, (r.specific_dates ?? []).filter((x) => x !== dt))}
+                          className="text-muted hover:text-ink">×</button>
+                      </span>
+                    ))}
+                    <input type="date" className="rounded-md border border-line bg-surface px-2 py-0.5 text-xs text-ink"
+                      onChange={(e) => {
+                        const v = e.target.value
+                        if (v && !(r.specific_dates ?? []).includes(v)) {
+                          updateDates(r, [...(r.specific_dates ?? []), v].sort())
+                          e.target.value = ''
+                        }
+                      }} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-xs text-muted">
+              When you generate a schedule, an available fellow is auto-assigned to each listed date (it never bumps a protected or away day). You can also assign it by clicking a cell on the grid on one of its dates.
+            </p>
+          </div>
+        )}
         <div className="flex flex-wrap items-end gap-2 border-t border-line pt-3">
           <div>
             <label className="mb-1 block text-xs font-medium text-muted">Provider</label>
@@ -381,12 +450,39 @@ function ProviderClinicCatalog({ onError }: { onError: (m: string) => void }) {
             </div>
           )}
           <div>
-            <label className="mb-1 block text-xs font-medium text-muted">Day</label>
-            <select value={weekday} onChange={(e) => setWeekday(parseInt(e.target.value, 10))}
+            <label className="mb-1 block text-xs font-medium text-muted">Repeats</label>
+            <select value={recur} onChange={(e) => setRecur(e.target.value as 'weekly' | 'dates')}
               className="rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink">
-              {WEEKDAYS.map((d, i) => <option key={d} value={i + 1}>{d}</option>)}
+              <option value="weekly">Weekly</option>
+              <option value="dates">Specific dates only</option>
             </select>
           </div>
+          {recur === 'weekly' ? (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted">Day</label>
+              <select value={weekday} onChange={(e) => setWeekday(parseInt(e.target.value, 10))}
+                className="rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink">
+                {WEEKDAYS.map((d, i) => <option key={d} value={i + 1}>{d}</option>)}
+              </select>
+            </div>
+          ) : (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted">Clinic dates</label>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {dates.map((dt) => (
+                  <span key={dt} className="inline-flex items-center gap-1 rounded-full border border-line px-2 py-1 text-xs text-ink">
+                    {shortDate(dt)}
+                    <button onClick={() => setDates(dates.filter((x) => x !== dt))} className="text-muted hover:text-ink">×</button>
+                  </span>
+                ))}
+                <input type="date" value={dateDraft} onChange={(e) => setDateDraft(e.target.value)}
+                  className="rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink" />
+                <button onClick={addDate} className="rounded-md border border-line px-2 py-1.5 text-xs font-medium text-accent hover:underline">
+                  Add date
+                </button>
+              </div>
+            </div>
+          )}
           <div>
             <label className="mb-1 block text-xs font-medium text-muted">Clinic location</label>
             <input value={site} onChange={(e) => setSite(e.target.value)} placeholder="e.g., St. Michael's Hospital"

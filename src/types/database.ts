@@ -16,6 +16,7 @@ export interface AppUser {
   start_date: string | null
   end_date: string | null
   phone: string | null
+  assistant_emails?: string[] | null
 }
 
 export interface TeachingSession {
@@ -29,6 +30,9 @@ export interface TeachingSession {
   is_break: boolean
   break_label: string | null
   zoom_link: string | null
+  provider_confirmed?: boolean
+  conflict_flagged?: boolean
+  conflict_reason?: string | null
 }
 
 export interface ClinicRotation {

@@ -96,8 +96,8 @@ export default function Landing() {
               <p className="text-xs font-medium uppercase tracking-wider text-muted">Fellowship Director</p>
               <p className="mt-2 font-display text-base font-semibold">Dr. Aaron Izenberg</p>
               <p className="mt-1 text-sm text-muted">
-                <a href="mailto:aaron.izenberg@sunnybrook.ca" className="text-accent hover:underline">
-                  aaron.izenberg@sunnybrook.ca
+                <a href="mailto:uoftneuromuscularfellowship@gmail.com" className="text-accent hover:underline">
+                  uoftneuromuscularfellowship@gmail.com
                 </a>
                 <br />
                 416-480-4475

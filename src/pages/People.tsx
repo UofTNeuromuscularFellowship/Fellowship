@@ -7,6 +7,7 @@ import { cohortYears } from '../lib/caseOptions'
 
 interface UserRow {
   id: string; email: string; full_name: string; role: string; status: string; cohort_year: string | null
+  assistant_emails: string[] | null
 }
 
 export default function People() {
@@ -26,7 +27,7 @@ export default function People() {
   async function load() {
     const { data, error } = await supabase
       .from('users')
-      .select('id, email, full_name, role, status, cohort_year')
+      .select('id, email, full_name, role, status, cohort_year, assistant_emails')
       .order('full_name')
     if (error) setMsg(error.message)
     setUsers((data as UserRow[]) ?? [])
@@ -238,6 +239,10 @@ function UserItem({ user, canManage, onChanged, onError }: {
             </button>
           </div>
 
+          {user.role !== 'fellow' && (
+            <AssistantEmailsEditor user={user} onChanged={onChanged} onError={onError} />
+          )}
+
           <div className="flex flex-wrap items-center gap-3 border-t border-line pt-3">
             <button onClick={toggleStatus} disabled={busy !== null}
               className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink hover:bg-paper disabled:opacity-40">
@@ -273,5 +278,59 @@ function UserItem({ user, canManage, onChanged, onError }: {
         </div>
       )}
     </li>
+  )
+}
+
+function AssistantEmailsEditor({ user, onChanged, onError }: {
+  user: { id: string; assistant_emails: string[] | null }; onChanged: () => void; onError: (m: string) => void
+}) {
+  const [emails, setEmails] = useState<string[]>(user.assistant_emails ?? [])
+  const [draft, setDraft] = useState('')
+
+  async function save(next: string[]) {
+    setEmails(next)
+    const { error } = await supabase.from('users')
+      .update({ assistant_emails: next, updated_at: new Date().toISOString() })
+      .eq('id', user.id)
+    if (error) { onError(error.message); return }
+    onChanged()
+  }
+
+  function add() {
+    const v = draft.trim().toLowerCase()
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) { onError('Please enter a valid email address.'); return }
+    if (emails.includes(v)) { setDraft(''); return }
+    save([...emails, v]); setDraft('')
+  }
+
+  return (
+    <div className="border-t border-line pt-3">
+      <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted">
+        Admin assistant emails — copied on every email the portal sends this person
+      </p>
+      {emails.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {emails.map((e) => (
+            <span key={e} className="inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-1 text-xs font-medium text-ink">
+              {e}
+              <button onClick={() => save(emails.filter((x) => x !== e))} className="text-muted hover:text-ink">×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="flex gap-2">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') add() }}
+          placeholder="assistant@hospital.ca, then press Enter"
+          className="min-w-0 flex-1 rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink"
+        />
+        <button onClick={add}
+          className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-accent hover:underline">
+          Add
+        </button>
+      </div>
+    </div>
   )
 }
