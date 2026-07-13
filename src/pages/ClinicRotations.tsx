@@ -11,6 +11,8 @@ interface Rotation {
   rotation_date: string
   site_code: string | null
   provider_name: string | null
+  supervisor_id: string | null
+  status: 'confirmed' | 'pending' | 'cancelled'
   is_draft: boolean
   is_protected: boolean | null
   has_conflict: boolean
@@ -30,6 +32,7 @@ export default function ClinicRotations() {
   const { profile } = useAuth()
   const isManager = profile?.role === 'director' || profile?.role === 'admin'
   const isFellow = profile?.role === 'fellow'
+  const isSupervisor = profile?.role === 'supervisor'
   const [rotations, setRotations] = useState<Rotation[]>([])
   const [away, setAway] = useState<AwayDate[]>([])
   const [fellows, setFellows] = useState<FellowOpt[]>([])
@@ -37,6 +40,7 @@ export default function ClinicRotations() {
   const [msg, setMsg] = useState<string | null>(null)
   const [showConfig, setShowConfig] = useState(false)
   const [editCell, setEditCell] = useState<{ fellowId: string; date: string; weekday: number } | null>(null)
+  const [cancelTarget, setCancelTarget] = useState<Rotation | null>(null)
 
   const today = new Date().toISOString().slice(0, 10)
 
@@ -44,7 +48,7 @@ export default function ClinicRotations() {
     const horizon = new Date(); horizon.setDate(horizon.getDate() + 90)
     let q = supabase
       .from('clinic_rotations')
-      .select('id, fellow_id, fellow_label, rotation_date, site_code, provider_name, is_draft, is_protected, has_conflict, is_away')
+      .select('id, fellow_id, fellow_label, rotation_date, site_code, provider_name, supervisor_id, status, is_draft, is_protected, has_conflict, is_away')
       .gte('rotation_date', today)
       .lte('rotation_date', horizon.toISOString().slice(0, 10))
       .order('rotation_date')
@@ -118,16 +122,36 @@ export default function ClinicRotations() {
           ? (c.specific_dates ?? []).includes(editCell.date)
           : c.weekday === editCell.weekday)
     : []
+  const editCellRotation = editCell ? byCell.get(`${editCell.fellowId}|${editCell.date}`) : undefined
+  const editCellCancellable = Boolean(
+    editCellRotation && !editCellRotation.is_draft && !editCellRotation.is_protected
+    && !editCellRotation.is_away && editCellRotation.status !== 'cancelled',
+  )
 
   function cellContent(r: Rotation | undefined) {
     if (!r) return <span className="text-muted">—</span>
     if (r.is_away) return <span className="font-medium text-red-600">Fellow Away</span>
     if (r.is_protected) return <span className="text-ink">Protected</span>
+    if (r.status === 'cancelled') {
+      return (
+        <span className="text-muted">
+          <span className="line-through">{r.site_code}</span>
+          <span className="block text-xs font-semibold text-red-600">Cancelled</span>
+        </span>
+      )
+    }
     return (
       <span className="text-ink">
         {r.site_code}
         {r.provider_name && <span className="block text-xs text-muted">{r.provider_name}</span>}
       </span>
+    )
+  }
+
+  function supervisorCanCancel(r: Rotation | undefined, dt: string): r is Rotation {
+    return Boolean(
+      isSupervisor && r && !r.is_draft && !r.is_protected && !r.is_away
+      && r.status !== 'cancelled' && r.supervisor_id === profile!.id && dt >= today,
     )
   }
 
@@ -199,10 +223,17 @@ export default function ClinicRotations() {
                       {dates.map((dt, i) => {
                         const r = byCell.get(`${f.id}|${dt}`)
                         const conflicted = r ? (r.has_conflict || awaySet.has(`${f.id}|${dt}`)) : false
+                        const canCancel = supervisorCanCancel(r, dt)
+                        const clickable = isManager || canCancel
                         return (
                           <td key={dt}
-                            onClick={isManager ? () => setEditCell({ fellowId: f.id, date: dt, weekday: i + 1 }) : undefined}
-                            className={`p-2 ${isManager ? 'cursor-pointer hover:bg-paper' : ''} ${conflicted ? 'bg-red-50 outline outline-1 outline-red-400' : ''}`}>
+                            onClick={
+                              isManager ? () => setEditCell({ fellowId: f.id, date: dt, weekday: i + 1 })
+                              : canCancel ? () => setCancelTarget(r!)
+                              : undefined
+                            }
+                            title={canCancel ? 'Your clinic — click to cancel it if something has come up' : undefined}
+                            className={`p-2 ${clickable ? 'cursor-pointer hover:bg-paper' : ''} ${conflicted ? 'bg-red-50 outline outline-1 outline-red-400' : ''}`}>
                             {cellContent(r)}
                             {r?.is_draft && <span className="mt-0.5 block text-[10px] font-semibold uppercase tracking-wide text-accent">Draft</span>}
                           </td>
@@ -239,6 +270,12 @@ export default function ClinicRotations() {
                 <button onClick={() => applyCell('protected')} className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink hover:bg-paper">Protected</button>
                 <button onClick={() => applyCell('away')} className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink hover:bg-paper">Fellow Away</button>
                 <button onClick={() => applyCell('clear')} className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-muted hover:text-ink">Clear</button>
+                {editCellCancellable && (
+                  <button onClick={() => { setCancelTarget(editCellRotation!); setEditCell(null) }}
+                    className="rounded-md border border-red-600 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50">
+                    Cancel clinic & notify
+                  </button>
+                )}
                 <button onClick={() => setEditCell(null)} className="ml-auto rounded-md px-3 py-1.5 text-sm font-medium text-muted hover:text-ink">Cancel</button>
               </div>
             </div>
@@ -246,7 +283,67 @@ export default function ClinicRotations() {
         </div>
       )}
 
+      {cancelTarget && (
+        <CancelClinicModal
+          rotation={cancelTarget}
+          onClose={() => setCancelTarget(null)}
+          onDone={() => { setCancelTarget(null); load() }}
+          onError={setMsg}
+        />
+      )}
+
       <ClinicTally isManager={isManager} />
+    </div>
+  )
+}
+
+function CancelClinicModal({ rotation, onClose, onDone, onError }: {
+  rotation: Rotation; onClose: () => void; onDone: () => void; onError: (m: string) => void
+}) {
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function submit() {
+    setBusy(true)
+    const { error } = await supabase.rpc('cancel_clinic', {
+      p_rotation: rotation.id,
+      p_reason: reason.trim() || null,
+    })
+    setBusy(false)
+    if (error) { onError(error.message); onClose(); return }
+    onDone()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-lg border border-line bg-surface p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <p className="font-display text-base font-semibold text-ink">Cancel this clinic?</p>
+        <p className="mt-2 text-sm text-ink">
+          <strong>{rotation.site_code}</strong>
+          {rotation.provider_name ? ` (${rotation.provider_name})` : ''} on {shortDate(rotation.rotation_date)}
+          {rotation.fellow_label ? <> — assigned to <strong>{rotation.fellow_label}</strong></> : ''}.
+        </p>
+        <p className="mt-2 text-sm text-muted">
+          The fellowship director, program admin, and the fellow are notified by email, and the clinic
+          is removed from subscribed calendars. The director can reassign the fellow to another clinic
+          for that day.
+        </p>
+        <div className="mt-3">
+          <label className="mb-1 block text-xs font-medium text-muted">Reason (optional)</label>
+          <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2}
+            placeholder="e.g. Called away for an urgent consult"
+            className="w-full rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink" />
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button onClick={submit} disabled={busy}
+            className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+            {busy ? 'Cancelling…' : 'Cancel clinic & notify'}
+          </button>
+          <button onClick={onClose} className="ml-auto rounded-md px-3 py-1.5 text-sm font-medium text-muted hover:text-ink">
+            Keep the clinic
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

@@ -19,6 +19,7 @@ interface Session {
   provider_confirmed: boolean
   conflict_flagged: boolean
   conflict_reason: string | null
+  status: 'confirmed' | 'pending_confirmation' | 'rescheduled' | 'cancelled'
 }
 
 interface FeedbackRow { rating: number; comments: string | null; created_at: string }
@@ -31,7 +32,7 @@ export default function MyTeaching() {
   const isDirector = profile?.role === 'director'
   const [sessions, setSessions] = useState<Session[]>([])
   const [loading, setLoading] = useState(true)
-  const [openPanel, setOpenPanel] = useState<{ id: string; kind: 'feedback' | 'attendance' | 'zoom' | 'edit' | 'conflict' } | null>(null)
+  const [openPanel, setOpenPanel] = useState<{ id: string; kind: 'feedback' | 'attendance' | 'zoom' | 'edit' | 'conflict' | 'cancel' } | null>(null)
   const [showAdd, setShowAdd] = useState(false)
   const [providers, setProviders] = useState<Person[]>([])
   const [msg, setMsg] = useState<string | null>(null)
@@ -40,7 +41,7 @@ export default function MyTeaching() {
     setLoading(true)
     let q = supabase
       .from('teaching_sessions')
-      .select('id, session_date, start_time, end_time, topic, provider_name, provider_id, zoom_link, delivered_at, is_break, assignment_draft, provider_confirmed, conflict_flagged, conflict_reason')
+      .select('id, session_date, start_time, end_time, topic, provider_name, provider_id, zoom_link, delivered_at, is_break, assignment_draft, provider_confirmed, conflict_flagged, conflict_reason, status')
       .eq('is_break', false)
       .order('session_date')
     if (!isDirector && profile) q = q.eq('provider_id', profile.id).eq('assignment_draft', false)
@@ -71,7 +72,7 @@ export default function MyTeaching() {
 
   if (!profile) return null
 
-  function togglePanel(id: string, kind: 'feedback' | 'attendance' | 'zoom' | 'edit' | 'conflict') {
+  function togglePanel(id: string, kind: 'feedback' | 'attendance' | 'zoom' | 'edit' | 'conflict' | 'cancel') {
     setOpenPanel(openPanel?.id === id && openPanel.kind === kind ? null : { id, kind })
   }
 
@@ -83,19 +84,23 @@ export default function MyTeaching() {
 
   function renderSession(s: Session, isPast: boolean) {
     const isMine = s.provider_id === profile!.id
+    const cancelled = s.status === 'cancelled'
     return (
       <li key={s.id} className="px-5 py-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <div>
-            <p className="text-sm font-medium text-ink">
+            <p className={`text-sm font-medium ${cancelled ? 'text-muted line-through' : 'text-ink'}`}>
               {s.topic ?? 'TBD'}
               {s.assignment_draft && (
                 <span className="ml-2 rounded-full border border-accent px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">Draft</span>
               )}
-              {!isPast && s.conflict_flagged && (
+              {cancelled && (
+                <span className="ml-2 rounded-full border border-red-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-600 no-underline">Cancelled</span>
+              )}
+              {!isPast && !cancelled && s.conflict_flagged && (
                 <span className="ml-2 rounded-full border border-red-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-600">Conflict flagged</span>
               )}
-              {!isPast && !s.conflict_flagged && s.provider_confirmed && (
+              {!isPast && !cancelled && !s.conflict_flagged && s.provider_confirmed && (
                 <span className="ml-2 rounded-full border border-line px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted">Confirmed</span>
               )}
             </p>
@@ -109,27 +114,35 @@ export default function MyTeaching() {
           </div>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-4 text-sm">
-          {!isPast && (s.zoom_link ? (
+          {!isPast && !cancelled && (s.zoom_link ? (
             <a href={s.zoom_link} target="_blank" rel="noreferrer" className="font-medium text-accent hover:underline">Join Zoom</a>
           ) : (
             <span className="text-muted">No Zoom link yet</span>
           ))}
-          {!isPast && (
+          {!isPast && !cancelled && (
             <button className="font-medium text-accent hover:underline" onClick={() => togglePanel(s.id, 'zoom')}>
               {s.zoom_link ? 'Edit link' : 'Add link'}
             </button>
           )}
-          {!isPast && isMine && !s.provider_confirmed && !s.conflict_flagged && (
+          {!isPast && !cancelled && isMine && !s.provider_confirmed && !s.conflict_flagged && (
             <button className="font-medium text-accent hover:underline" onClick={() => confirmSession(s)}>
               Confirm session
             </button>
           )}
-          {!isPast && isMine && !s.conflict_flagged && (
+          {!isPast && !cancelled && isMine && !s.conflict_flagged && (
             <button className="font-medium text-red-600 hover:underline" onClick={() => togglePanel(s.id, 'conflict')}>
               Flag a conflict
             </button>
           )}
-          {isPast && (s.delivered_at ? (
+          {!isPast && !cancelled && (isMine || isDirector) && (
+            <button className="font-medium text-red-600 hover:underline" onClick={() => togglePanel(s.id, 'cancel')}>
+              Cancel session
+            </button>
+          )}
+          {!isPast && cancelled && isDirector && (
+            <span className="text-muted">Edit the session to reinstate or reschedule it.</span>
+          )}
+          {isPast && !cancelled && (s.delivered_at ? (
             <span className="text-muted">Delivered {new Date(s.delivered_at).toLocaleDateString('en-CA')}</span>
           ) : (
             <button className="font-medium text-accent hover:underline" onClick={() => markDelivered(s)}>Mark as delivered</button>
@@ -161,6 +174,9 @@ export default function MyTeaching() {
         )}
         {openPanel?.id === s.id && openPanel.kind === 'conflict' && (
           <ConflictPanel session={s} onDone={() => { setOpenPanel(null); load() }} onError={setMsg} />
+        )}
+        {openPanel?.id === s.id && openPanel.kind === 'cancel' && (
+          <CancelSessionPanel session={s} onDone={() => { setOpenPanel(null); load() }} onError={setMsg} />
         )}
       </li>
     )
@@ -404,6 +420,42 @@ function ConflictPanel({ session, onDone, onError }: { session: Session; onDone:
   )
 }
 
+function CancelSessionPanel({ session, onDone, onError }: { session: Session; onDone: () => void; onError: (m: string) => void }) {
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function submit() {
+    setBusy(true)
+    const { error } = await supabase.rpc('cancel_teaching', {
+      p_session: session.id,
+      p_reason: reason.trim() || null,
+    })
+    setBusy(false)
+    if (error) onError(error.message)
+    else onDone()
+  }
+
+  return (
+    <div className="mt-3 space-y-3 rounded-md border border-red-600 p-4">
+      <p className="text-sm text-ink">
+        Cancel <strong>{session.topic ?? 'this session'}</strong> on {formatDate(session.session_date)}?
+        The fellowship director, program admin, and the fellows are all notified by email, and the
+        session is removed from reminders and subscribed calendars. Only the director can reinstate it.
+      </p>
+      <div>
+        <label className="mb-1 block text-xs font-medium text-muted">Reason (optional)</label>
+        <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2}
+          placeholder="e.g. Called in to cover the EMG lab"
+          className="w-full max-w-md rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink" />
+      </div>
+      <button onClick={submit} disabled={busy}
+        className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+        {busy ? 'Cancelling…' : 'Cancel session & notify everyone'}
+      </button>
+    </div>
+  )
+}
+
 function EditSessionPanel({ session, providers, onDone, onError }: {
   session: Session; providers: Person[]; onDone: () => void; onError: (m: string) => void
 }) {
@@ -439,6 +491,7 @@ function EditSessionPanel({ session, providers, onDone, onError }: {
         assignment_draft: false,
         conflict_flagged: false,
         conflict_reason: null,
+        status: 'confirmed', // editing reinstates a cancelled session
         ...(provider_id !== session.provider_id ? { provider_confirmed: false } : {}),
         updated_at: new Date().toISOString(),
       })

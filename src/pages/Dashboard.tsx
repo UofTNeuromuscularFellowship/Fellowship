@@ -5,8 +5,8 @@ import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
 import { shortDate } from '../lib/format'
 
-interface Rotation { id: string; rotation_date: string; site_code: string; fellow_label: string | null; is_draft: boolean }
-interface Session { id: string; session_date: string; start_time: string; topic: string | null; provider_name: string | null; zoom_link: string | null }
+interface Rotation { id: string; rotation_date: string; site_code: string; fellow_label: string | null; is_draft: boolean; status: string }
+interface Session { id: string; session_date: string; start_time: string; topic: string | null; provider_name: string | null; zoom_link: string | null; status: string }
 interface Notification { id: string; title: string; body: string | null; link: string | null; created_at: string }
 interface Publication { title: string; journal: string | null; authors: string | null; published_on: string | null; url: string | null }
 
@@ -43,7 +43,7 @@ export default function Dashboard() {
 
     let rq = supabase
       .from('clinic_rotations')
-      .select('id, rotation_date, site_code, fellow_label, is_draft')
+      .select('id, rotation_date, site_code, fellow_label, is_draft, status')
       .gte('rotation_date', from).lte('rotation_date', to)
       .eq('is_draft', false)
       .order('rotation_date')
@@ -52,7 +52,7 @@ export default function Dashboard() {
 
     supabase
       .from('teaching_sessions')
-      .select('id, session_date, start_time, topic, provider_name, zoom_link')
+      .select('id, session_date, start_time, topic, provider_name, zoom_link, status')
       .gte('session_date', from).lte('session_date', to)
       .eq('is_break', false)
       .order('session_date')
@@ -129,10 +129,13 @@ export default function Dashboard() {
             <ul className="divide-y divide-line">
               {rotations.map((r) => (
                 <li key={r.id} className="flex items-baseline justify-between px-5 py-3 text-sm">
-                  <span className="font-medium text-ink">
+                  <span className={r.status === 'cancelled' ? 'font-medium text-muted line-through' : 'font-medium text-ink'}>
                     {r.site_code}{!isFellow && r.fellow_label ? ` — ${r.fellow_label}` : ''}
                   </span>
-                  <span className="text-muted">{shortDate(r.rotation_date)}</span>
+                  <span className="text-muted">
+                    {r.status === 'cancelled' && <span className="mr-2 font-semibold text-red-600">Cancelled</span>}
+                    {shortDate(r.rotation_date)}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -148,12 +151,15 @@ export default function Dashboard() {
               {sessions.map((s) => (
                 <li key={s.id} className="px-5 py-3 text-sm">
                   <div className="flex items-baseline justify-between">
-                    <span className="font-medium text-ink">{s.topic ?? 'TBD'}</span>
-                    <span className="text-muted">{shortDate(s.session_date)} · {s.start_time.slice(0, 5)}</span>
+                    <span className={s.status === 'cancelled' ? 'font-medium text-muted line-through' : 'font-medium text-ink'}>{s.topic ?? 'TBD'}</span>
+                    <span className="text-muted">
+                      {s.status === 'cancelled' && <span className="mr-2 font-semibold text-red-600">Cancelled</span>}
+                      {shortDate(s.session_date)} · {s.start_time.slice(0, 5)}
+                    </span>
                   </div>
                   <div className="mt-0.5 flex items-center gap-3 text-muted">
                     {s.provider_name && <span>{s.provider_name}</span>}
-                    {s.zoom_link && (
+                    {s.status !== 'cancelled' && s.zoom_link && (
                       <a href={s.zoom_link} target="_blank" rel="noreferrer" className="font-medium text-accent hover:underline">Join Zoom</a>
                     )}
                   </div>

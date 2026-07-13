@@ -21,7 +21,7 @@ export default function TeachingSchedule() {
 
   const todayIso = new Date().toISOString().slice(0, 10)
   const nextId = useMemo(
-    () => rows.find((r) => r.session_date >= todayIso && !r.is_break && r.topic)?.id,
+    () => rows.find((r) => r.session_date >= todayIso && !r.is_break && r.topic && r.status !== 'cancelled')?.id,
     [rows, todayIso],
   )
 
@@ -50,6 +50,7 @@ export default function TeachingSchedule() {
                 )
               }
               const isNext = r.id === nextId
+              const cancelled = r.status === 'cancelled'
               return (
                 <li
                   key={r.id}
@@ -59,11 +60,16 @@ export default function TeachingSchedule() {
                     {formatDate(r.session_date)}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-ink">
+                    <p className={`text-sm font-medium ${cancelled ? 'text-muted line-through' : 'text-ink'}`}>
                       {r.topic ?? <span className="text-muted">To be confirmed</span>}
                     </p>
-                    {r.provider_name && <p className="text-xs text-muted">{r.provider_name}</p>}
+                    {r.provider_name && <p className={`text-xs text-muted ${cancelled ? 'line-through' : ''}`}>{r.provider_name}</p>}
                   </div>
+                  {cancelled && (
+                    <span className="shrink-0 rounded-full border border-red-600 px-2 py-0.5 text-[11px] font-semibold text-red-600">
+                      Cancelled
+                    </span>
+                  )}
                   {isNext && (
                     <span className="shrink-0 rounded-full bg-accent px-2 py-0.5 text-[11px] font-semibold text-white">
                       Next
