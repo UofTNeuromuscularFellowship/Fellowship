@@ -5,13 +5,14 @@ import { Card, CardHeader } from '../components/ui/Card'
 import { formatDate } from '../lib/format'
 import {
   NCS_COMMON, NCS_INFREQUENT, RNS_SITES, SFEMG_SITES, EMG_MUSCLES, DIAGNOSIS_CATEGORIES,
+  NM_ULTRASOUND_SITES, MUSCLE_BIOPSY_OPTIONS,
 } from '../lib/caseOptions'
 
 interface CaseRow {
   id: string
   case_date: string
   title: string | null
-  nerves_tested: { common?: string[]; infrequent?: string[]; rns?: string[]; sfemg?: string[] } | null
+  nerves_tested: { common?: string[]; infrequent?: string[]; rns?: string[]; sfemg?: string[]; ultrasound?: string[]; biopsy?: string[] } | null
   muscles_tested: string[] | null
   diagnoses: { category: string; subtype: string | null }[] | null
   summary: string | null
@@ -152,6 +153,8 @@ function CaseForm({ fellowId, existing, onDone, onError }: {
   const [ncsInfrequent, setNcsInfrequent] = useState<string[]>(existing?.nerves_tested?.infrequent ?? [])
   const [rns, setRns] = useState<string[]>(existing?.nerves_tested?.rns ?? [])
   const [sfemg, setSfemg] = useState<string[]>(existing?.nerves_tested?.sfemg ?? [])
+  const [ultrasound, setUltrasound] = useState<string[]>(existing?.nerves_tested?.ultrasound ?? [])
+  const [biopsy, setBiopsy] = useState<string[]>(existing?.nerves_tested?.biopsy ?? [])
   const [muscles, setMuscles] = useState<string[]>(existing?.muscles_tested ?? [])
   const [diagCategory, setDiagCategory] = useState(existing?.diagnoses?.[0]?.category ?? '')
   const [diagSubtype, setDiagSubtype] = useState(existing?.diagnoses?.[0]?.subtype ?? '')
@@ -164,7 +167,7 @@ function CaseForm({ fellowId, existing, onDone, onError }: {
       fellow_id: fellowId,
       case_date: date,
       title: title.trim() || null,
-      nerves_tested: { common: ncsCommon, infrequent: ncsInfrequent, rns, sfemg },
+      nerves_tested: { common: ncsCommon, infrequent: ncsInfrequent, rns, sfemg, ultrasound, biopsy },
       muscles_tested: muscles,
       diagnoses: diagCategory ? [{ category: diagCategory, subtype: diagSubtype.trim() || null }] : [],
       ncs_count: ncsCommon.length + ncsInfrequent.length,
@@ -204,6 +207,8 @@ function CaseForm({ fellowId, existing, onDone, onError }: {
         <ChipGroup label="Nerve conduction — infrequent nerves" options={NCS_INFREQUENT} selected={ncsInfrequent} onChange={setNcsInfrequent} />
         <ChipGroup label="Repetitive nerve stimulation" options={RNS_SITES} selected={rns} onChange={setRns} />
         <ChipGroup label="Single fiber electromyography" options={SFEMG_SITES} selected={sfemg} onChange={setSfemg} />
+        <ChipGroup label="Neuromuscular ultrasound" options={NM_ULTRASOUND_SITES} selected={ultrasound} onChange={setUltrasound} />
+        <ChipGroup label="Muscle biopsy" options={MUSCLE_BIOPSY_OPTIONS} selected={biopsy} onChange={setBiopsy} />
 
         <div>
           <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted">Electromyography — muscles sampled</p>

@@ -23,6 +23,16 @@ export const RNS_SITES = ['Facial', 'Spinal accessory', 'ADM', 'High frequency']
 
 export const SFEMG_SITES = ['Frontalis', 'Orbicularis oculi']
 
+export const NM_ULTRASOUND_SITES = [
+  'Median nerve',
+  'Ulnar nerve',
+  'Peroneal nerve',
+  'Diaphragm',
+  'Brachial plexus',
+]
+
+export const MUSCLE_BIOPSY_OPTIONS = ['Performed']
+
 export const EMG_MUSCLES: { group: string; muscles: string[] }[] = [
   {
     group: 'Upper limb',

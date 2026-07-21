@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
 import {
   cohortYears, DIAGNOSIS_CATEGORIES,
-  NCS_COMMON, NCS_INFREQUENT, RNS_SITES, SFEMG_SITES, EMG_MUSCLES,
+  NCS_COMMON, NCS_INFREQUENT, RNS_SITES, SFEMG_SITES, EMG_MUSCLES, NM_ULTRASOUND_SITES,
 } from '../lib/caseOptions'
 
 interface Target {
@@ -23,7 +23,7 @@ interface CaseRow {
   emg_count: number | null
   rns_count: number | null
   sfemg_count: number | null
-  nerves_tested: { common?: string[]; infrequent?: string[]; rns?: string[]; sfemg?: string[] } | null
+  nerves_tested: { common?: string[]; infrequent?: string[]; rns?: string[]; sfemg?: string[]; ultrasound?: string[]; biopsy?: string[] } | null
   muscles_tested: string[] | null
   diagnoses: { category: string }[] | null
 }
@@ -34,17 +34,17 @@ const METRIC_GROUPS: { label: string; options: { value: string; label: string }[
   {
     label: 'Totals',
     options: [
-      { value: 'cases_total', label: 'Total cases logged' },
-      { value: 'ncs_total', label: 'Nerve conduction studies (total)' },
-      { value: 'emg_total', label: 'EMG muscles sampled (total)' },
       { value: 'rns_total', label: 'Repetitive nerve stimulation (total)' },
       { value: 'sfemg_total', label: 'Single fiber EMG (total)' },
+      { value: 'us_total', label: 'Neuromuscular ultrasound (total)' },
+      { value: 'biopsy_total', label: 'Muscle biopsy (total)' },
     ],
   },
   { label: 'Nerve conduction — common protocol', options: NCS_COMMON.map((n) => ({ value: `ncs:${n}`, label: n })) },
   { label: 'Nerve conduction — infrequent nerves', options: NCS_INFREQUENT.map((n) => ({ value: `ncs:${n}`, label: n })) },
   { label: 'Repetitive nerve stimulation', options: RNS_SITES.map((n) => ({ value: `rns:${n}`, label: n })) },
   { label: 'Single fiber EMG', options: SFEMG_SITES.map((n) => ({ value: `sfemg:${n}`, label: n })) },
+  { label: 'Neuromuscular ultrasound', options: NM_ULTRASOUND_SITES.map((n) => ({ value: `us:${n}`, label: n })) },
   ...EMG_MUSCLES.map((g) => ({
     label: `EMG muscles — ${g.group}`,
     options: g.muscles.map((m) => ({ value: `emg:${m}`, label: m })),
@@ -78,12 +78,15 @@ function countsFromCases(rows: CaseRow[]): Record<string, number> {
     for (const x of nt.infrequent ?? []) bump(`ncs:${x}`)
     for (const x of nt.rns ?? []) bump(`rns:${x}`)
     for (const x of nt.sfemg ?? []) bump(`sfemg:${x}`)
+    for (const x of nt.ultrasound ?? []) bump(`us:${x}`)
     for (const m of r.muscles_tested ?? []) bump(`emg:${m}`)
     for (const d of r.diagnoses ?? []) if (d?.category) bump(`diagnosis:${d.category}`)
     bump('ncs_total', r.ncs_count ?? ((nt.common?.length ?? 0) + (nt.infrequent?.length ?? 0)))
     bump('emg_total', r.emg_count ?? (r.muscles_tested?.length ?? 0))
     bump('rns_total', r.rns_count ?? (nt.rns?.length ?? 0))
     bump('sfemg_total', r.sfemg_count ?? (nt.sfemg?.length ?? 0))
+    bump('us_total', nt.ultrasound?.length ?? 0)
+    bump('biopsy_total', nt.biopsy?.length ?? 0)
   }
   c['cases_total'] = total
   return c
