@@ -27,6 +27,7 @@ const SECTIONS: NavSection[] = [
     items: [
       { to: '/cases', label: 'Case logger', allow: ['fellow', 'supervisor', 'director'] },
       { to: '/competency', label: 'Competency', allow: ['fellow', 'director', 'admin'] },
+      { to: '/calculators', label: 'EMG/NCS calculators', allow: ['fellow', 'supervisor', 'director'] },
     ],
   },
   {
