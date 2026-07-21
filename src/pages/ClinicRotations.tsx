@@ -23,7 +23,7 @@ interface ClinicCat { id: string; provider_name: string | null; provider_id: str
 interface ProviderOpt { id: string; full_name: string }
 interface FellowOpt { id: string; full_name: string }
 interface Template { id: string; name: string; sort_order: number }
-interface TemplateSlot { id: string; template_id: string; weekday: number; slot_type: string; clinic_template_id: string | null }
+interface TemplateSlot { id: string; template_id: string; weekday: number; slot_type: string; clinic_template_id: string | null; monthly_cap: number | null; fallback_clinic_template_id: string | null }
 interface TallyRow { fellow_id: string; fellow_label: string; provider_name: string; n: number }
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
@@ -608,8 +608,8 @@ function FellowTemplates({ onError }: { onError: (m: string) => void }) {
   async function load() {
     const [{ data: t }, { data: s }, { data: c }] = await Promise.all([
       supabase.from('fellow_templates').select('id, name, sort_order').order('sort_order').order('created_at'),
-      supabase.from('fellow_template_slots').select('id, template_id, weekday, slot_type, clinic_template_id'),
-      supabase.from('clinic_template').select('id, provider_name, provider_id, weekday, site_code, fellow_capacity'),
+      supabase.from('fellow_template_slots').select('id, template_id, weekday, slot_type, clinic_template_id, monthly_cap, fallback_clinic_template_id'),
+      supabase.from('clinic_template').select('id, provider_name, provider_id, weekday, site_code, fellow_capacity, recurrence, specific_dates'),
     ])
     setTemplates((t as Template[]) ?? [])
     setSlots((s as TemplateSlot[]) ?? [])
@@ -637,6 +637,9 @@ function FellowTemplates({ onError }: { onError: (m: string) => void }) {
         template_id: templateId, weekday,
         slot_type: value === 'protected' ? 'protected' : 'clinic',
         clinic_template_id: value === 'protected' ? null : value,
+        // Changing the primary clinic clears any cap/fallback tied to the old one
+        monthly_cap: null,
+        fallback_clinic_template_id: null,
       }
       if (existing) await supabase.from('fellow_template_slots').update(payload).eq('id', existing.id)
       else await supabase.from('fellow_template_slots').insert(payload)
@@ -644,8 +647,18 @@ function FellowTemplates({ onError }: { onError: (m: string) => void }) {
     load()
   }
 
+  async function setSlotField(slotId: string, patch: Partial<Pick<TemplateSlot, 'monthly_cap' | 'fallback_clinic_template_id'>>) {
+    const { error } = await supabase.from('fellow_template_slots').update(patch).eq('id', slotId)
+    if (error) { onError(error.message); return }
+    load()
+  }
+
+  function currentSlot(templateId: string, weekday: number): TemplateSlot | undefined {
+    return slots.find((x) => x.template_id === templateId && x.weekday === weekday)
+  }
+
   function slotValue(templateId: string, weekday: number): string {
-    const s = slots.find((x) => x.template_id === templateId && x.weekday === weekday)
+    const s = currentSlot(templateId, weekday)
     if (!s) return 'none'
     return s.slot_type === 'protected' ? 'protected' : (s.clinic_template_id ?? 'none')
   }
@@ -654,7 +667,7 @@ function FellowTemplates({ onError }: { onError: (m: string) => void }) {
     <Card>
       <CardHeader
         title="2 · Fellow schedule templates"
-        sub="Build one or more weekly patterns from the clinics above. Each fellow follows a template for 3 months, then rotates to the next — add a template per rotation block as the fellowship grows."
+        sub="Build one or more weekly patterns from the clinics above. Each fellow follows a template for 3 months, then rotates to the next. For a clinic offered weekly but that a fellow only needs occasionally, cap how often per month and pick what fills the other weeks."
       />
       <div className="space-y-5 px-5 py-4">
         {templates.map((t) => (
@@ -666,18 +679,54 @@ function FellowTemplates({ onError }: { onError: (m: string) => void }) {
             <div className="space-y-2">
               {WEEKDAYS.map((label, i) => {
                 const wd = i + 1
-                const dayClinics = clinics.filter((c) => c.weekday === wd)
+                const dayClinics = clinics.filter((c) => c.weekday === wd && c.recurrence !== 'dates')
+                const slot = currentSlot(t.id, wd)
+                const isClinic = slot?.slot_type === 'clinic' && !!slot.clinic_template_id
+                const capped = isClinic && slot!.monthly_cap != null
                 return (
-                  <div key={wd} className="flex items-center gap-2">
-                    <span className="w-10 text-xs font-medium text-muted">{label}</span>
-                    <select value={slotValue(t.id, wd)} onChange={(e) => setSlot(t.id, wd, e.target.value)}
-                      className="min-w-0 flex-1 rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink">
-                      <option value="none">— (nothing scheduled)</option>
-                      <option value="protected">Protected (fellow day)</option>
-                      {dayClinics.map((c) => (
-                        <option key={c.id} value={c.id}>{c.provider_name} · {c.site_code}</option>
-                      ))}
-                    </select>
+                  <div key={wd} className="flex flex-col gap-1.5 border-b border-line/60 pb-2 last:border-0 last:pb-0">
+                    <div className="flex items-center gap-2">
+                      <span className="w-10 text-xs font-medium text-muted">{label}</span>
+                      <select value={slotValue(t.id, wd)} onChange={(e) => setSlot(t.id, wd, e.target.value)}
+                        className="min-w-0 flex-1 rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink">
+                        <option value="none">— (nothing scheduled)</option>
+                        <option value="protected">Protected (fellow day)</option>
+                        {dayClinics.map((c) => (
+                          <option key={c.id} value={c.id}>{c.provider_name} · {c.site_code}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {isClinic && (
+                      <div className="flex flex-wrap items-center gap-2 pl-12 text-xs text-muted">
+                        <span>Assign</span>
+                        <select
+                          value={slot!.monthly_cap ?? ''}
+                          onChange={(e) => setSlotField(slot!.id, {
+                            monthly_cap: e.target.value ? parseInt(e.target.value, 10) : null,
+                            ...(e.target.value ? {} : { fallback_clinic_template_id: null }),
+                          })}
+                          className="rounded-md border border-line bg-surface px-2 py-1 text-xs text-ink">
+                          <option value="">every week</option>
+                          <option value="1">once a month</option>
+                          <option value="2">twice a month</option>
+                          <option value="3">3× a month</option>
+                        </select>
+                        {capped && (
+                          <>
+                            <span>then use</span>
+                            <select
+                              value={slot!.fallback_clinic_template_id ?? ''}
+                              onChange={(e) => setSlotField(slot!.id, { fallback_clinic_template_id: e.target.value || null })}
+                              className="min-w-0 max-w-[16rem] flex-1 rounded-md border border-line bg-surface px-2 py-1 text-xs text-ink">
+                              <option value="">nothing (leave the day open)</option>
+                              {dayClinics.filter((c) => c.id !== slot!.clinic_template_id).map((c) => (
+                                <option key={c.id} value={c.id}>{c.provider_name} · {c.site_code}</option>
+                              ))}
+                            </select>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )
               })}
