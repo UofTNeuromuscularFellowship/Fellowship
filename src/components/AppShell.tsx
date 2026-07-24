@@ -19,7 +19,7 @@ const SECTIONS: NavSection[] = [
     items: [
       { to: '/teaching', label: 'Teaching schedule' },
       { to: '/clinic', label: 'Clinic schedule' },
-      { to: '/vacation', label: 'Vacation & away dates', allow: ['fellow', 'supervisor', 'director'] },
+      { to: '/vacation', label: 'Vacation & away dates', allow: ['fellow', 'supervisor', 'director', 'assistant'] },
     ],
   },
   {
@@ -33,7 +33,7 @@ const SECTIONS: NavSection[] = [
   {
     heading: 'Teaching',
     items: [
-      { to: '/my-teaching', label: 'Teaching Assignments', allow: ['supervisor', 'director'] },
+      { to: '/my-teaching', label: 'Teaching Assignments', allow: ['supervisor', 'director', 'assistant'] },
       { to: '/rate-teaching', label: 'Rate Teaching', allow: ['fellow'] },
       { to: '/evaluations', label: 'Evaluations', allow: ['fellow', 'supervisor', 'director'] },
     ],

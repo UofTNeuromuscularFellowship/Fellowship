@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
 import { shortDate } from '../lib/format'
+import { useActingProvider, ActingForBar } from '../components/ActingFor'
 
 interface Rotation {
   id: string
@@ -33,6 +34,11 @@ export default function ClinicRotations() {
   const isManager = profile?.role === 'director' || profile?.role === 'admin'
   const isFellow = profile?.role === 'fellow'
   const isSupervisor = profile?.role === 'supervisor'
+  const acting = useActingProvider(profile?.role, profile?.id)
+  const isAssistant = acting.isAssistant
+  // The provider whose clinics the current user manages (their own, or the
+  // linked provider for an assistant). Null for fellows/managers.
+  const providerScopeId = isAssistant ? acting.effectiveId : (isSupervisor ? profile?.id ?? null : null)
   const [rotations, setRotations] = useState<Rotation[]>([])
   const [away, setAway] = useState<AwayDate[]>([])
   const [fellows, setFellows] = useState<FellowOpt[]>([])
@@ -160,7 +166,9 @@ export default function ClinicRotations() {
       <div>
         <h1 className="font-display text-2xl font-bold text-ink">Clinic schedule</h1>
         <p className="mt-1 text-sm text-muted">
-          {isFellow ? 'Your upcoming clinic assignments' : 'Clinic assignments for the next 12 weeks'}
+          {isFellow ? 'Your upcoming clinic assignments'
+            : (isSupervisor || isAssistant) ? 'The clinics this provider is running — cancel one if something comes up'
+            : 'Clinic assignments for the next 12 weeks'}
         </p>
       </div>
 
@@ -168,6 +176,14 @@ export default function ClinicRotations() {
         <div className="rounded-md border border-line bg-surface px-4 py-3 text-sm text-ink">
           {msg} <button className="ml-2 font-medium text-accent" onClick={() => setMsg(null)}>dismiss</button>
         </div>
+      )}
+
+      {isAssistant && (
+        <ActingForBar providers={acting.providers} providerId={acting.providerId} onChange={acting.setProviderId} />
+      )}
+
+      {providerScopeId && (
+        <ProviderClinicsList key={providerScopeId} providerId={providerScopeId} onError={setMsg} />
       )}
 
       {isManager && conflicts.length > 0 && (
@@ -198,7 +214,7 @@ export default function ClinicRotations() {
         </>
       )}
 
-      {weeks.length === 0 ? (
+      {(isManager || isFellow) && (weeks.length === 0 ? (
         <Card><p className="px-5 py-4 text-sm text-muted">No upcoming clinic assignments.</p></Card>
       ) : (
         weeks.map(({ weekStart, dates }) => (
@@ -246,7 +262,7 @@ export default function ClinicRotations() {
             </div>
           </Card>
         ))
-      )}
+      ))}
 
       {editCell && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => setEditCell(null)}>
@@ -292,8 +308,72 @@ export default function ClinicRotations() {
         />
       )}
 
-      <ClinicTally isManager={isManager} />
+      {!isAssistant && <ClinicTally isManager={isManager} />}
     </div>
+  )
+}
+
+function ProviderClinicsList({ providerId, onError }: { providerId: string; onError: (m: string) => void }) {
+  const [rows, setRows] = useState<Rotation[]>([])
+  const [loading, setLoading] = useState(true)
+  const [cancelTarget, setCancelTarget] = useState<Rotation | null>(null)
+  const today = new Date().toISOString().slice(0, 10)
+
+  async function load() {
+    setLoading(true)
+    const { data, error } = await supabase
+      .from('clinic_rotations')
+      .select('id, fellow_id, fellow_label, rotation_date, site_code, provider_name, supervisor_id, status, is_draft, is_protected, has_conflict, is_away')
+      .eq('supervisor_id', providerId)
+      .gte('rotation_date', today)
+      .order('rotation_date')
+    if (error) onError(error.message)
+    setRows((data as Rotation[]) ?? [])
+    setLoading(false)
+  }
+  useEffect(() => { load() }, [providerId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <Card>
+      <CardHeader
+        title="Upcoming clinics"
+        sub="Cancel a clinic if it can't run — the fellowship director, program admin, and the assigned fellow are notified"
+      />
+      {loading ? (
+        <p className="px-5 py-4 text-sm text-muted">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="px-5 py-4 text-sm text-muted">No upcoming clinics.</p>
+      ) : (
+        <ul className="divide-y divide-line">
+          {rows.map((r) => {
+            const cancellable = !r.is_draft && !r.is_protected && !r.is_away && r.status !== 'cancelled'
+            return (
+              <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 text-sm">
+                <div>
+                  <span className={r.status === 'cancelled' ? 'font-medium text-muted line-through' : 'font-medium text-ink'}>{r.site_code}</span>
+                  {r.fellow_label && <span className="text-muted"> — {r.fellow_label}</span>}
+                  {r.status === 'cancelled' && (
+                    <span className="ml-2 rounded-full border border-red-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-600">Cancelled</span>
+                  )}
+                  <span className="ml-2 text-muted">{shortDate(r.rotation_date)}</span>
+                </div>
+                {cancellable && (
+                  <button onClick={() => setCancelTarget(r)} className="text-xs font-medium text-red-600 hover:underline">Cancel clinic</button>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      {cancelTarget && (
+        <CancelClinicModal
+          rotation={cancelTarget}
+          onClose={() => setCancelTarget(null)}
+          onDone={() => { setCancelTarget(null); load() }}
+          onError={onError}
+        />
+      )}
+    </Card>
   )
 }
 

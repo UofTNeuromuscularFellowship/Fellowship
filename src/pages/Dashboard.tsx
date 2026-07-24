@@ -399,6 +399,7 @@ function GettingStartedCard({ userId, role }: { userId: string; role: string }) 
 
   const isSupervisor = role === 'supervisor' || role === 'director'
   const isFellow = role === 'fellow'
+  const isAssistant = role === 'assistant'
 
   const steps = [
     {
@@ -407,6 +408,15 @@ function GettingStartedCard({ userId, role }: { userId: string; role: string }) 
         {' '}— replace the temporary one you signed in with (Settings).
       </>,
     },
+    ...(isAssistant ? [{
+      text: <>
+        Use the <span className="font-medium text-ink">“Managing schedule for”</span> selector on the
+        {' '}<Link to="/my-teaching" className="font-medium text-accent hover:underline">Teaching</Link>,
+        {' '}<Link to="/clinic" className="font-medium text-accent hover:underline">Clinic</Link>, and
+        {' '}<Link to="/vacation" className="font-medium text-accent hover:underline">Away dates</Link> pages to
+        act on behalf of the provider you support.
+      </>,
+    }] : []),
     ...(isFellow || isSupervisor ? [{
       text: <>
         <Link to="/vacation" className="font-medium text-accent hover:underline">
@@ -421,12 +431,12 @@ function GettingStartedCard({ userId, role }: { userId: string; role: string }) 
         {' '}— they'll get a copy of every portal email so they can help manage your schedule (Settings).
       </>,
     }] : []),
-    {
+    ...(!isAssistant ? [{
       text: <>
         <a href="#calendar-sync" className="font-medium text-accent hover:underline">Subscribe to the calendar</a>
         {' '}— see teaching and clinic activities in your own calendar app, updated automatically (below on this page).
       </>,
-    },
+    }] : []),
   ]
 
   return (

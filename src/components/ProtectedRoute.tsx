@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext'
 
 interface Props {
   children: ReactNode
-  allow?: ('fellow' | 'supervisor' | 'director' | 'admin')[]
+  allow?: ('fellow' | 'supervisor' | 'director' | 'admin' | 'assistant')[]
   skipPasswordGate?: boolean
 }
 

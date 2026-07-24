@@ -19,7 +19,7 @@ import Evaluations from './pages/Evaluations'
 import Settings from './pages/Settings'
 import NotFound from './pages/NotFound'
 
-function Shell({ children, allow }: { children: React.ReactNode; allow?: ('fellow' | 'supervisor' | 'director' | 'admin')[] }) {
+function Shell({ children, allow }: { children: React.ReactNode; allow?: ('fellow' | 'supervisor' | 'director' | 'admin' | 'assistant')[] }) {
   return (
     <ProtectedRoute allow={allow}>
       <AppShell>{children}</AppShell>
@@ -48,9 +48,9 @@ export default function App() {
       <Route path="/calculators" element={<Shell allow={['fellow', 'supervisor', 'director']}><Calculators /></Shell>} />
       <Route path="/handbook" element={<Shell><Handbook /></Shell>} />
       <Route path="/people" element={<Shell allow={['director', 'admin']}><People /></Shell>} />
-      <Route path="/my-teaching" element={<Shell allow={['supervisor', 'director']}><MyTeaching /></Shell>} />
+      <Route path="/my-teaching" element={<Shell allow={['supervisor', 'director', 'assistant']}><MyTeaching /></Shell>} />
       <Route path="/rate-teaching" element={<Shell allow={['fellow']}><RateTeaching /></Shell>} />
-      <Route path="/vacation" element={<Shell allow={['fellow', 'supervisor', 'director']}><Vacation /></Shell>} />
+      <Route path="/vacation" element={<Shell allow={['fellow', 'supervisor', 'director', 'assistant']}><Vacation /></Shell>} />
       <Route path="/evaluations" element={<Shell allow={['fellow', 'supervisor', 'director']}><Evaluations /></Shell>} />
       <Route path="/settings" element={<Shell><Settings /></Shell>} />
       {/* Legacy path redirects */}

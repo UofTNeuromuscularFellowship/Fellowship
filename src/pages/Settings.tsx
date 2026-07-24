@@ -28,6 +28,7 @@ export default function Settings() {
       )}
 
       <ChangePasswordCard />
+      {hasAssistants && <ProviderAssistantLogins providerId={profile.id} onError={setMsg} />}
       {hasAssistants && <AssistantEmailsCard userId={profile.id} />}
 
       {isDirector && (
@@ -323,6 +324,76 @@ function RequestAwayDates({ onError }: { onError: (m: string) => void }) {
             </span>
           )}
         </div>
+      </div>
+    </Card>
+  )
+}
+
+interface AsstOpt { id: string; full_name: string; email: string }
+
+function ProviderAssistantLogins({ providerId, onError }: { providerId: string; onError: (m: string) => void }) {
+  const [linked, setLinked] = useState<{ assistant_id: string; full_name: string; email: string }[]>([])
+  const [all, setAll] = useState<AsstOpt[]>([])
+  const [choice, setChoice] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function load() {
+    const [{ data: l }, { data: a }] = await Promise.all([
+      supabase.rpc('provider_assistant_names', { p_provider: providerId }),
+      supabase.rpc('list_assistants'),
+    ])
+    setLinked((l as { assistant_id: string; full_name: string; email: string }[]) ?? [])
+    setAll((a as AsstOpt[]) ?? [])
+  }
+  useEffect(() => { load() }, [providerId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function add() {
+    if (!choice) return
+    setBusy(true)
+    const { error } = await supabase.from('provider_assistants').insert({ provider_id: providerId, assistant_id: choice })
+    setBusy(false)
+    if (error) { onError(error.message); return }
+    setChoice(''); load()
+  }
+  async function remove(id: string) {
+    const { error } = await supabase.from('provider_assistants').delete().eq('provider_id', providerId).eq('assistant_id', id)
+    if (error) { onError(error.message); return }
+    load()
+  }
+
+  const linkedIds = new Set(linked.map((x) => x.assistant_id))
+  const available = all.filter((a) => !linkedIds.has(a.id))
+
+  return (
+    <Card>
+      <CardHeader
+        title="Assistant logins"
+        sub="Assistants you link here can sign in with their own account and manage your away dates, teaching sessions, and clinic cancellations on your behalf. Their account is created by the fellowship director."
+      />
+      <div className="space-y-3 px-5 py-4">
+        {linked.length > 0 && (
+          <ul className="space-y-1">
+            {linked.map((a) => (
+              <li key={a.assistant_id} className="flex items-center justify-between gap-2 text-sm">
+                <span className="text-ink">{a.full_name} <span className="text-muted">· {a.email}</span></span>
+                <button onClick={() => remove(a.assistant_id)} className="text-xs font-medium text-muted hover:text-ink">Remove</button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {all.length === 0 ? (
+          <p className="text-sm text-muted">No assistant accounts exist yet. Ask the fellowship director to create one (People → Add a person → Administrative assistant), then link it here.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            <select value={choice} onChange={(e) => setChoice(e.target.value)}
+              className="min-w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink">
+              <option value="">Add an assistant…</option>
+              {available.map((a) => <option key={a.id} value={a.id}>{a.full_name} · {a.email}</option>)}
+            </select>
+            <button onClick={add} disabled={busy || !choice}
+              className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">Link assistant</button>
+          </div>
+        )}
       </div>
     </Card>
   )

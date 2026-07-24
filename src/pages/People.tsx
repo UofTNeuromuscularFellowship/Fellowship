@@ -18,7 +18,7 @@ export default function People() {
 
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
-  const [role, setRole] = useState<'fellow' | 'supervisor' | 'director' | 'admin'>('fellow')
+  const [role, setRole] = useState<'fellow' | 'supervisor' | 'director' | 'admin' | 'assistant'>('fellow')
   const [cohort, setCohort] = useState('')
   const [busy, setBusy] = useState(false)
   const [createdCred, setCreatedCred] = useState<{ user_id: string; email: string; password: string } | null>(null)
@@ -106,6 +106,7 @@ export default function People() {
                   <option value="supervisor">Supervisor</option>
                   <option value="director">Director</option>
                   <option value="admin">Admin</option>
+                  <option value="assistant">Administrative assistant</option>
                 </select>
               </div>
               {role === 'fellow' && (
@@ -231,6 +232,7 @@ function UserItem({ user, canManage, onChanged, onError }: {
                 <option value="supervisor">Supervisor</option>
                 <option value="director">Director</option>
                 <option value="admin">Admin</option>
+                <option value="assistant">Administrative assistant</option>
               </select>
             </div>
             <button onClick={saveRole} disabled={busy !== null || role === user.role}
@@ -239,7 +241,11 @@ function UserItem({ user, canManage, onChanged, onError }: {
             </button>
           </div>
 
-          {user.role !== 'fellow' && (
+          {(user.role === 'supervisor' || user.role === 'director') && (
+            <AssistantLinksEditor providerId={user.id} onError={onError} />
+          )}
+
+          {user.role !== 'fellow' && user.role !== 'assistant' && (
             <AssistantEmailsEditor user={user} onChanged={onChanged} onError={onError} />
           )}
 
@@ -331,6 +337,75 @@ function AssistantEmailsEditor({ user, onChanged, onError }: {
           Add
         </button>
       </div>
+    </div>
+  )
+}
+
+interface AssistantOpt { id: string; full_name: string; email: string }
+
+function AssistantLinksEditor({ providerId, onError }: { providerId: string; onError: (m: string) => void }) {
+  const [linked, setLinked] = useState<{ assistant_id: string; full_name: string; email: string }[]>([])
+  const [all, setAll] = useState<AssistantOpt[]>([])
+  const [choice, setChoice] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function load() {
+    const [{ data: l }, { data: a }] = await Promise.all([
+      supabase.rpc('provider_assistant_names', { p_provider: providerId }),
+      supabase.rpc('list_assistants'),
+    ])
+    setLinked((l as { assistant_id: string; full_name: string; email: string }[]) ?? [])
+    setAll((a as AssistantOpt[]) ?? [])
+  }
+  useEffect(() => { load() }, [providerId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function add() {
+    if (!choice) return
+    setBusy(true)
+    const { error } = await supabase.from('provider_assistants').insert({ provider_id: providerId, assistant_id: choice })
+    setBusy(false)
+    if (error) { onError(error.message); return }
+    setChoice(''); load()
+  }
+
+  async function remove(assistantId: string) {
+    const { error } = await supabase.from('provider_assistants').delete()
+      .eq('provider_id', providerId).eq('assistant_id', assistantId)
+    if (error) { onError(error.message); return }
+    load()
+  }
+
+  const linkedIds = new Set(linked.map((x) => x.assistant_id))
+  const available = all.filter((a) => !linkedIds.has(a.id))
+
+  return (
+    <div className="border-t border-line pt-3">
+      <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted">
+        Administrative assistants — can log in and manage this provider's schedule
+      </p>
+      {linked.length > 0 && (
+        <ul className="mb-2 space-y-1">
+          {linked.map((a) => (
+            <li key={a.assistant_id} className="flex items-center justify-between gap-2 text-sm">
+              <span className="text-ink">{a.full_name} <span className="text-muted">· {a.email}</span></span>
+              <button onClick={() => remove(a.assistant_id)} className="text-xs font-medium text-muted hover:text-ink">Remove</button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {all.length === 0 ? (
+        <p className="text-xs text-muted">No assistant accounts yet. Create one above with the "Administrative assistant" role, then link it here.</p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          <select value={choice} onChange={(e) => setChoice(e.target.value)}
+            className="min-w-0 flex-1 rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink">
+            <option value="">Add an assistant…</option>
+            {available.map((a) => <option key={a.id} value={a.id}>{a.full_name} · {a.email}</option>)}
+          </select>
+          <button onClick={add} disabled={busy || !choice}
+            className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-accent hover:underline disabled:opacity-50">Link</button>
+        </div>
+      )}
     </div>
   )
 }

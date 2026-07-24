@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import type { AppUser, UserRole } from '../types/database'
 
 const FIELD = 'mt-1 w-full rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft'
-const ROLES: UserRole[] = ['fellow', 'supervisor', 'director', 'admin']
+const ROLES: UserRole[] = ['fellow', 'supervisor', 'director', 'admin', 'assistant']
 
 export function UserForm({
   existing, onClose, onSaved,

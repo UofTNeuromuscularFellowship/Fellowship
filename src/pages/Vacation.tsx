@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
 import { shortDate } from '../lib/format'
+import { useActingProvider, ActingForBar } from '../components/ActingFor'
 
 interface Request {
   id: string
@@ -19,6 +20,8 @@ export default function Vacation() {
   const isDirector = profile?.role === 'director'
   const isFellow = profile?.role === 'fellow'
   const isProvider = profile?.role === 'supervisor' || profile?.role === 'director'
+  const acting = useActingProvider(profile?.role, profile?.id)
+  const isAssistant = acting.isAssistant
   const [requests, setRequests] = useState<Request[]>([])
   const [names, setNames] = useState<Record<string, string>>({})
   const [start, setStart] = useState('')
@@ -109,9 +112,15 @@ export default function Vacation() {
         <p className="mt-1 text-sm text-muted">
           {isFellow
             ? 'Request vacation days — the fellowship director reviews each request.'
+            : isAssistant
+            ? 'Add or remove the away dates for the provider you support, so their schedule is built around them.'
             : 'Mark the dates you are away. Away dates are skipped during schedule generation, and any conflict with an already-published clinic is flagged for the director.'}
         </p>
       </div>
+
+      {isAssistant && (
+        <ActingForBar providers={acting.providers} providerId={acting.providerId} onChange={acting.setProviderId} />
+      )}
 
       {msg && (
         <div className="rounded-md border border-line bg-surface px-4 py-3 text-sm text-ink">
@@ -120,6 +129,9 @@ export default function Vacation() {
       )}
 
       {isProvider && profile && <ProviderAwayDates providerId={profile.id} onError={setMsg} />}
+      {isAssistant && acting.effectiveId && (
+        <ProviderAwayDates key={acting.effectiveId} providerId={acting.effectiveId} onError={setMsg} />
+      )}
 
       {isFellow && (
         <Card>
@@ -177,6 +189,7 @@ export default function Vacation() {
         </Card>
       )}
 
+      {!isAssistant && (
       <Card>
         <CardHeader title={isDirector ? 'All requests' : 'Your requests'} />
         {requests.length === 0 ? (
@@ -229,6 +242,7 @@ export default function Vacation() {
           </ul>
         )}
       </Card>
+      )}
     </div>
   )
 }

@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
 import { formatDate } from '../lib/format'
+import { useActingProvider, ActingForBar } from '../components/ActingFor'
 
 interface Session {
   id: string
@@ -30,6 +31,8 @@ type AttendanceStatus = 'attended' | 'absent' | 'excused' | 'session_cancelled'
 export default function MyTeaching() {
   const { profile } = useAuth()
   const isDirector = profile?.role === 'director'
+  const acting = useActingProvider(profile?.role, profile?.id)
+  const isAssistant = acting.isAssistant
   const [sessions, setSessions] = useState<Session[]>([])
   const [loading, setLoading] = useState(true)
   const [openPanel, setOpenPanel] = useState<{ id: string; kind: 'feedback' | 'attendance' | 'zoom' | 'edit' | 'conflict' | 'cancel' } | null>(null)
@@ -44,7 +47,7 @@ export default function MyTeaching() {
       .select('id, session_date, start_time, end_time, topic, provider_name, provider_id, zoom_link, delivered_at, is_break, assignment_draft, provider_confirmed, conflict_flagged, conflict_reason, status')
       .eq('is_break', false)
       .order('session_date')
-    if (!isDirector && profile) q = q.eq('provider_id', profile.id).eq('assignment_draft', false)
+    if (!isDirector && acting.effectiveId) q = q.eq('provider_id', acting.effectiveId).eq('assignment_draft', false)
     const { data, error } = await q
     if (error) setMsg(error.message)
     setSessions((data as Session[]) ?? [])
@@ -52,12 +55,14 @@ export default function MyTeaching() {
   }
 
   useEffect(() => {
-    if (profile) load()
+    if (!profile) return
+    if (isAssistant && !acting.effectiveId) { setSessions([]); setLoading(false); return }
+    load()
     if (isDirector) {
       supabase.rpc('list_providers').then(({ data }) => setProviders((data as Person[]) ?? []))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile?.id])
+  }, [profile?.id, acting.effectiveId])
 
   const today = new Date().toISOString().slice(0, 10)
   const upcoming = useMemo(() => sessions.filter((s) => s.session_date >= today), [sessions, today])
@@ -83,7 +88,7 @@ export default function MyTeaching() {
   }
 
   function renderSession(s: Session, isPast: boolean) {
-    const isMine = s.provider_id === profile!.id
+    const isMine = s.provider_id === acting.effectiveId
     const cancelled = s.status === 'cancelled'
     return (
       <li key={s.id} className="px-5 py-4">
@@ -142,18 +147,21 @@ export default function MyTeaching() {
           {!isPast && cancelled && isDirector && (
             <span className="text-muted">Edit the session to reinstate or reschedule it.</span>
           )}
-          {isPast && !cancelled && (s.delivered_at ? (
+          {isPast && !cancelled && !isAssistant && (s.delivered_at ? (
             <span className="text-muted">Delivered {new Date(s.delivered_at).toLocaleDateString('en-CA')}</span>
           ) : (
             <button className="font-medium text-accent hover:underline" onClick={() => markDelivered(s)}>Mark as delivered</button>
           ))}
-          {isPast && (
+          {isPast && isAssistant && s.delivered_at && (
+            <span className="text-muted">Delivered {new Date(s.delivered_at).toLocaleDateString('en-CA')}</span>
+          )}
+          {isPast && !isAssistant && (
             <button className="font-medium text-accent hover:underline" onClick={() => togglePanel(s.id, 'attendance')}>Attendance</button>
           )}
-          {isPast && (
+          {isPast && !isAssistant && (
             <button className="font-medium text-accent hover:underline" onClick={() => togglePanel(s.id, 'feedback')}>Feedback</button>
           )}
-          {isPast && s.delivered_at && (
+          {isPast && !isAssistant && s.delivered_at && (
             <button className="font-medium text-accent hover:underline" onClick={() => openCompletionLetter(s)}>Completion letter</button>
           )}
           {isDirector && (
@@ -185,11 +193,17 @@ export default function MyTeaching() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-display text-2xl font-bold text-ink">My Teaching</h1>
+        <h1 className="font-display text-2xl font-bold text-ink">{isAssistant ? 'Teaching' : 'My Teaching'}</h1>
         <p className="mt-1 text-sm text-muted">
-          {isDirector ? 'All teaching sessions, assignments, delivery status, and feedback' : 'Your assigned sessions, delivery log, and feedback'}
+          {isDirector ? 'All teaching sessions, assignments, delivery status, and feedback'
+            : isAssistant ? 'Confirm, flag a conflict, cancel, or add a Zoom link on behalf of the provider you manage'
+            : 'Your assigned sessions, delivery log, and feedback'}
         </p>
       </div>
+
+      {isAssistant && (
+        <ActingForBar providers={acting.providers} providerId={acting.providerId} onChange={acting.setProviderId} />
+      )}
 
       {msg && (
         <div className="rounded-md border border-line bg-surface px-4 py-3 text-sm text-ink">

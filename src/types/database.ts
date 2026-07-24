@@ -2,7 +2,7 @@
 // Regenerate the full set from your schema with:
 //   npx supabase gen types typescript --project-id <ref> > src/types/database.ts
 
-export type UserRole = 'fellow' | 'supervisor' | 'director' | 'admin'
+export type UserRole = 'fellow' | 'supervisor' | 'director' | 'admin' | 'assistant'
 export type UserStatus = 'active' | 'alumni' | 'inactive'
 
 export interface AppUser {
