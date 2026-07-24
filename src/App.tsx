@@ -10,6 +10,7 @@ import ClinicRotations from './pages/ClinicRotations'
 import Cases from './pages/Cases'
 import Competency from './pages/Competency'
 import Calculators from './pages/Calculators'
+import NerveGuide from './pages/NerveGuide'
 import Handbook from './pages/Handbook'
 import People from './pages/People'
 import MyTeaching from './pages/MyTeaching'
@@ -46,6 +47,7 @@ export default function App() {
       <Route path="/cases" element={<Shell allow={['fellow', 'supervisor', 'director']}><Cases /></Shell>} />
       <Route path="/competency" element={<Shell allow={['fellow', 'director', 'admin']}><Competency /></Shell>} />
       <Route path="/calculators" element={<Shell allow={['fellow', 'supervisor', 'director']}><Calculators /></Shell>} />
+      <Route path="/nerve-guide" element={<Shell allow={['fellow', 'supervisor', 'director']}><NerveGuide /></Shell>} />
       <Route path="/handbook" element={<Shell><Handbook /></Shell>} />
       <Route path="/people" element={<Shell allow={['director', 'admin']}><People /></Shell>} />
       <Route path="/my-teaching" element={<Shell allow={['supervisor', 'director', 'assistant']}><MyTeaching /></Shell>} />
