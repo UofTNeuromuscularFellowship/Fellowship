@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Card, CardHeader } from '../components/ui/Card'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import { EMG_MUSCLES } from '../data/emgAtlas'
+import { NERVE_STUDIES } from '../data/nerveGuide'
 import {
   generateQuiz,
   generateFromKeys,
@@ -9,6 +11,91 @@ import {
   type QuizQuestion,
   type QuizSource,
 } from '../data/quiz'
+
+// Renders the full source-page details for the item a quiz question came from,
+// shown as an explanation once the question is answered.
+function ExplRow({ label, value }: { label: string; value?: string }) {
+  if (!value) return null
+  return (
+    <div className="grid grid-cols-[7rem_1fr] gap-3 py-1.5 sm:grid-cols-[8.5rem_1fr]">
+      <dt className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</dt>
+      <dd className="text-sm text-ink">{value}</dd>
+    </div>
+  )
+}
+
+function ExplList({ label, items }: { label: string; items?: string[] }) {
+  if (!items || items.length === 0) return null
+  return (
+    <div className="py-1.5">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</p>
+      <ul className="mt-1 space-y-1">
+        {items.map((it, i) => (
+          <li key={i} className="flex gap-2 text-sm text-ink">
+            <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-accent" />
+            <span>{it}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function SourceExplanation({ q }: { q: QuizQuestion }) {
+  if (q.source === 'emg') {
+    const m = EMG_MUSCLES.find((x) => x.id === q.itemId)
+    if (!m) return null
+    const plexus = [m.cord, m.trunk, m.division].filter(Boolean).join(' · ')
+    return (
+      <Card>
+        <CardHeader title={m.name} sub={`EMG atlas · ${m.region}`} />
+        <div className="px-5 py-4">
+          <dl className="divide-y divide-line/60">
+            <ExplRow label="Nerve" value={m.nerve} />
+            <ExplRow label="Roots" value={m.roots} />
+            {plexus ? <ExplRow label="Plexus" value={plexus} /> : null}
+            <ExplRow label="Action" value={m.action} />
+            <ExplRow label="Position" value={m.position} />
+            <ExplRow label="Insertion" value={m.localization} />
+            <ExplRow label="Activation" value={m.maneuver} />
+            <ExplRow label="Pitfalls" value={m.pitfalls} />
+            <ExplRow label="Pearls" value={m.pearls} />
+          </dl>
+        </div>
+      </Card>
+    )
+  }
+  const s = NERVE_STUDIES.find((x) => x.id === q.itemId)
+  if (!s) return null
+  return (
+    <Card>
+      <CardHeader title={s.name} sub={`NCS guide · ${s.region} · ${s.type}`} />
+      <div className="px-5 py-4">
+        <dl className="divide-y divide-line/60">
+          <ExplRow label="Roots / trunk" value={s.roots} />
+          <ExplRow label="Recording" value={s.recording} />
+          <ExplRow label="Active (G1)" value={s.active} />
+          <ExplRow label="Reference (G2)" value={s.reference} />
+          <ExplRow label="Ground" value={s.ground} />
+          <ExplRow label="Position" value={s.position} />
+          <ExplRow label="Distance" value={s.distance} />
+          <ExplRow label="Settings" value={s.settings} />
+        </dl>
+        <div className="mt-1 space-y-1">
+          <ExplList label="Stimulation sites" items={s.stim} />
+          <ExplList label="Key normal limits (all subjects)" items={s.cutoffs} />
+          <ExplList label="Acceptable side-to-side / segment differences" items={s.sideToSide} />
+        </div>
+        {s.notes ? (
+          <p className="mt-2 text-sm text-ink">
+            <span className="font-semibold">Notes: </span>
+            {s.notes}
+          </p>
+        ) : null}
+      </div>
+    </Card>
+  )
+}
 
 // ---------------------------------------------------------------------------
 // Test mode — self-quiz drawn from the nerve conduction guide and EMG atlas.
@@ -385,7 +472,7 @@ export default function TestMode() {
         <Card>
           <div className="px-5 py-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-              {q.source === 'emg' ? 'EMG atlas' : 'Nerve guide'} · {q.aspectLabel}
+              {q.source === 'emg' ? 'EMG atlas' : 'NCS guide'} · {q.aspectLabel}
             </p>
             <h2 className="mt-1 font-display text-lg font-semibold text-ink">{q.prompt}</h2>
             <div className="mt-4 space-y-2">
@@ -410,24 +497,36 @@ export default function TestMode() {
             </div>
 
             {answered && (
-              <div className="mt-4 flex items-center justify-between gap-4">
-                <p className="text-sm font-medium">
-                  {picked === q.correct ? (
-                    <span className="text-emerald-600">Correct</span>
-                  ) : (
-                    <span className="text-rose-600">Not quite — saved for review</span>
-                  )}
-                </p>
-                <button
-                  onClick={next}
-                  className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent/90"
-                >
-                  {idx + 1 >= questions.length ? 'See results' : 'Next question'}
-                </button>
-              </div>
+              <p className="mt-4 text-sm font-medium">
+                {picked === q.correct ? (
+                  <span className="text-emerald-600">Correct</span>
+                ) : (
+                  <span className="text-rose-600">Not quite — saved for review</span>
+                )}
+              </p>
             )}
           </div>
         </Card>
+
+        {answered && (
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+              Explanation — from the {q.source === 'emg' ? 'EMG atlas' : 'NCS guide'}
+            </p>
+            <SourceExplanation q={q} />
+          </div>
+        )}
+
+        {answered && (
+          <div className="flex justify-end">
+            <button
+              onClick={next}
+              className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent/90"
+            >
+              {idx + 1 >= questions.length ? 'See results' : 'Next question'}
+            </button>
+          </div>
+        )}
       </div>
     )
   }

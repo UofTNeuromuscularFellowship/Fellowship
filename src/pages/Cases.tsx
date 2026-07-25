@@ -160,6 +160,13 @@ function CaseForm({ fellowId, existing, onDone, onError }: {
   const [diagSubtype, setDiagSubtype] = useState(existing?.diagnoses?.[0]?.subtype ?? '')
   const [summary, setSummary] = useState(existing?.summary ?? '')
   const [busy, setBusy] = useState(false)
+  const [showMore, setShowMore] = useState(
+    (existing?.nerves_tested?.infrequent?.length ?? 0) > 0 ||
+      (existing?.nerves_tested?.rns?.length ?? 0) > 0 ||
+      (existing?.nerves_tested?.sfemg?.length ?? 0) > 0 ||
+      (existing?.nerves_tested?.ultrasound?.length ?? 0) > 0 ||
+      (existing?.nerves_tested?.biopsy?.length ?? 0) > 0,
+  )
 
   async function save() {
     setBusy(true)
@@ -203,31 +210,48 @@ function CaseForm({ fellowId, existing, onDone, onError }: {
           </div>
         </div>
 
-        <ChipGroup label="Nerve conduction — common protocol" options={NCS_COMMON} selected={ncsCommon} onChange={setNcsCommon} />
-        <ChipGroup label="Nerve conduction — infrequent nerves" options={NCS_INFREQUENT} selected={ncsInfrequent} onChange={setNcsInfrequent} />
-        <ChipGroup label="Repetitive nerve stimulation" options={RNS_SITES} selected={rns} onChange={setRns} />
-        <ChipGroup label="Single fiber electromyography" options={SFEMG_SITES} selected={sfemg} onChange={setSfemg} />
-        <ChipGroup label="Neuromuscular ultrasound" options={NM_ULTRASOUND_SITES} selected={ultrasound} onChange={setUltrasound} />
-        <ChipGroup label="Muscle biopsy" options={MUSCLE_BIOPSY_OPTIONS} selected={biopsy} onChange={setBiopsy} />
+        <div className="space-y-4 border-t border-line pt-5">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted">Studies performed</p>
 
-        <div>
-          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted">Electromyography — muscles sampled</p>
-          <div className="space-y-3">
-            {EMG_MUSCLES.map((g) => (
-              <div key={g.group}>
-                <p className="mb-1 text-xs font-medium text-muted">{g.group}</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {g.muscles.map((m) => (
-                    <Chip key={m} label={m} active={muscles.includes(m)}
-                      onToggle={() => setMuscles(muscles.includes(m) ? muscles.filter((x) => x !== m) : [...muscles, m])} />
-                  ))}
+          <ChipGroup label="Nerve conduction — common protocol" options={NCS_COMMON} selected={ncsCommon} onChange={setNcsCommon} />
+
+          <div>
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted">Electromyography — muscles sampled</p>
+            <div className="space-y-3">
+              {EMG_MUSCLES.map((g) => (
+                <div key={g.group}>
+                  <p className="mb-1 text-xs font-medium text-muted">{g.group}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {g.muscles.map((m) => (
+                      <Chip key={m} label={m} active={muscles.includes(m)}
+                        onToggle={() => setMuscles(muscles.includes(m) ? muscles.filter((x) => x !== m) : [...muscles, m])} />
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
+
+          {showMore ? (
+            <div className="space-y-4">
+              <ChipGroup label="Nerve conduction — infrequent nerves" options={NCS_INFREQUENT} selected={ncsInfrequent} onChange={setNcsInfrequent} />
+              <ChipGroup label="Repetitive nerve stimulation" options={RNS_SITES} selected={rns} onChange={setRns} />
+              <ChipGroup label="Single fiber electromyography" options={SFEMG_SITES} selected={sfemg} onChange={setSfemg} />
+              <ChipGroup label="Neuromuscular ultrasound" options={NM_ULTRASOUND_SITES} selected={ultrasound} onChange={setUltrasound} />
+              <ChipGroup label="Muscle biopsy" options={MUSCLE_BIOPSY_OPTIONS} selected={biopsy} onChange={setBiopsy} />
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowMore(true)}
+              className="text-sm font-medium text-accent hover:underline"
+            >
+              + Add other study types (infrequent NCS, RNS, SFEMG, ultrasound, biopsy)
+            </button>
+          )}
         </div>
 
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap gap-3 border-t border-line pt-5">
           <div>
             <label className="mb-1 block text-xs font-medium text-muted">Diagnosis</label>
             <select value={diagCategory} onChange={(e) => setDiagCategory(e.target.value)}
