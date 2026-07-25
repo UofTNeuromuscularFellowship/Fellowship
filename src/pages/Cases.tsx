@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
@@ -8,15 +8,35 @@ import {
   NM_ULTRASOUND_SITES, MUSCLE_BIOPSY_OPTIONS,
 } from '../lib/caseOptions'
 
+interface Diagnosis { category: string; subtype: string | null }
+interface NervesTested { common?: string[]; infrequent?: string[]; rns?: string[]; sfemg?: string[]; ultrasound?: string[]; biopsy?: string[] }
+
 interface CaseRow {
   id: string
   case_date: string
   title: string | null
-  nerves_tested: { common?: string[]; infrequent?: string[]; rns?: string[]; sfemg?: string[]; ultrasound?: string[]; biopsy?: string[] } | null
+  nerves_tested: NervesTested | null
   muscles_tested: string[] | null
-  diagnoses: { category: string; subtype: string | null }[] | null
+  diagnoses: Diagnosis[] | null
   summary: string | null
+  supervisor_id: string | null
 }
+
+interface SharedCase {
+  id: string
+  fellow_id: string
+  fellow_name: string
+  case_date: string
+  title: string | null
+  nerves_tested: NervesTested | null
+  muscles_tested: string[] | null
+  diagnoses: Diagnosis[] | null
+  summary: string | null
+  created_at: string
+}
+
+interface Provider { id: string; full_name: string }
+interface Feedback { id: string; case_id: string; body: string; author_id: string; created_at: string }
 
 interface InterestingCase {
   id: string
@@ -25,6 +45,12 @@ interface InterestingCase {
   provider_name: string | null
   follow_up: string | null
   resolved: boolean
+}
+
+const CASE_SELECT = 'id, case_date, title, nerves_tested, muscles_tested, diagnoses, summary, supervisor_id'
+
+function diagnosisLine(diagnoses: Diagnosis[] | null): string {
+  return (diagnoses ?? []).map((d) => (d.subtype ? `${d.category} — ${d.subtype}` : d.category)).join('; ')
 }
 
 function Chip({ label, active, onToggle }: { label: string; active: boolean; onToggle: () => void }) {
@@ -56,43 +82,85 @@ function ChipGroup({ label, options, selected, onChange }: {
   )
 }
 
+function FeedbackThread({ items, nameFor }: { items: Feedback[]; nameFor: (id: string) => string }) {
+  if (items.length === 0) return null
+  return (
+    <div className="mt-2 space-y-2 rounded-md border border-line bg-paper/50 p-3">
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted">Supervisor feedback</p>
+      {items.map((f) => (
+        <div key={f.id} className="text-sm">
+          <p className="whitespace-pre-wrap text-ink">{f.body}</p>
+          <p className="mt-0.5 text-xs text-muted">{nameFor(f.author_id)} · {formatDate(f.created_at)}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function Cases() {
   const { profile } = useAuth()
-  const isFellow = profile?.role === 'fellow'
+  if (!profile) return null
+  if (profile.role === 'fellow') return <FellowCases fellowId={profile.id} />
+  if (profile.role === 'supervisor' || profile.role === 'director') {
+    return <SupervisorCases userId={profile.id} selfName={profile.full_name ?? 'You'} />
+  }
+  return null
+}
+
+// ---------------------------------------------------------------------------
+// Fellow view: log cases, share each with a supervisor, read their feedback.
+// ---------------------------------------------------------------------------
+function FellowCases({ fellowId }: { fellowId: string }) {
   const [cases, setCases] = useState<CaseRow[]>([])
+  const [supervisors, setSupervisors] = useState<Provider[]>([])
+  const [feedback, setFeedback] = useState<Record<string, Feedback[]>>({})
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<CaseRow | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
 
+  const nameFor = useMemo(() => {
+    const m = new Map(supervisors.map((s) => [s.id, s.full_name]))
+    return (id: string) => m.get(id) ?? 'Supervisor'
+  }, [supervisors])
+
   async function load() {
-    const { data, error } = await supabase
-      .from('cases')
-      .select('id, case_date, title, nerves_tested, muscles_tested, diagnoses, summary')
-      .order('case_date', { ascending: false })
-      .limit(100)
+    const { data, error } = await supabase.from('cases').select(CASE_SELECT).order('case_date', { ascending: false }).limit(200)
     if (error) setMsg(error.message)
-    setCases((data as CaseRow[]) ?? [])
+    const rows = (data as CaseRow[]) ?? []
+    setCases(rows)
+    const ids = rows.map((r) => r.id)
+    if (ids.length) {
+      const { data: fb } = await supabase
+        .from('case_feedback')
+        .select('id, case_id, body, author_id, created_at')
+        .in('case_id', ids)
+        .order('created_at', { ascending: true })
+      const map: Record<string, Feedback[]> = {}
+      for (const f of (fb as Feedback[]) ?? []) (map[f.case_id] ??= []).push(f)
+      setFeedback(map)
+    } else {
+      setFeedback({})
+    }
   }
 
-  useEffect(() => { if (profile) load() }, [profile?.id]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  if (!profile) return null
+  useEffect(() => {
+    load()
+    supabase.rpc('list_supervisors').then(({ data }: { data: Provider[] | null }) => setSupervisors(data ?? []))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-2xl font-bold text-ink">Case logger</h1>
-          <p className="mt-1 text-sm text-muted">Log electrodiagnostic cases with structured study details</p>
+          <p className="mt-1 text-sm text-muted">Log electrodiagnostic cases and optionally share one with a supervisor for feedback</p>
         </div>
-        {isFellow && (
-          <button
-            onClick={() => { setEditing(null); setShowForm(!showForm) }}
-            className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-          >
-            {showForm ? 'Close form' : '+ Log a case'}
-          </button>
-        )}
+        <button
+          onClick={() => { setEditing(null); setShowForm(!showForm) }}
+          className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+        >
+          {showForm ? 'Close form' : '+ Log a case'}
+        </button>
       </div>
 
       {msg && (
@@ -103,8 +171,9 @@ export default function Cases() {
 
       {(showForm || editing) && (
         <CaseForm
-          fellowId={profile.id}
+          fellowId={fellowId}
           existing={editing}
+          supervisors={supervisors}
           onDone={() => { setShowForm(false); setEditing(null); load() }}
           onError={setMsg}
         />
@@ -123,32 +192,38 @@ export default function Cases() {
                   <span className="text-muted">{formatDate(c.case_date)}</span>
                 </div>
                 <p className="mt-0.5 text-sm text-muted">
-                  {[
-                    (c.diagnoses ?? []).map((d) => d.subtype ? `${d.category} — ${d.subtype}` : d.category).join('; '),
-                    (c.muscles_tested?.length ?? 0) > 0 ? `${c.muscles_tested!.length} muscles` : null,
-                  ].filter(Boolean).join(' · ') || 'No study details yet'}
-                  {isFellow && (
-                    <button className="ml-2 font-medium text-accent hover:underline" onClick={() => { setEditing(c); setShowForm(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
-                      Edit
-                    </button>
-                  )}
+                  {[diagnosisLine(c.diagnoses), (c.muscles_tested?.length ?? 0) > 0 ? `${c.muscles_tested!.length} muscles` : null]
+                    .filter(Boolean).join(' · ') || 'No study details yet'}
+                  <button className="ml-2 font-medium text-accent hover:underline" onClick={() => { setEditing(c); setShowForm(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
+                    Edit
+                  </button>
                 </p>
+                <p className="mt-0.5 text-xs">
+                  {c.supervisor_id ? (
+                    <span className="text-accent">Shared with {nameFor(c.supervisor_id)}</span>
+                  ) : (
+                    <span className="text-muted">Private — not shared</span>
+                  )}
+                  {(feedback[c.id]?.length ?? 0) > 0 && <span className="ml-2 text-muted">· {feedback[c.id].length} feedback</span>}
+                </p>
+                <FeedbackThread items={feedback[c.id] ?? []} nameFor={nameFor} />
               </li>
             ))}
           </ul>
         )}
       </Card>
 
-      {isFellow && <InterestingCases fellowId={profile.id} onError={setMsg} />}
+      <InterestingCases fellowId={fellowId} onError={setMsg} />
     </div>
   )
 }
 
-function CaseForm({ fellowId, existing, onDone, onError }: {
-  fellowId: string; existing: CaseRow | null; onDone: () => void; onError: (m: string) => void
+function CaseForm({ fellowId, existing, supervisors, onDone, onError }: {
+  fellowId: string; existing: CaseRow | null; supervisors: Provider[]; onDone: () => void; onError: (m: string) => void
 }) {
   const [date, setDate] = useState(existing?.case_date ?? new Date().toISOString().slice(0, 10))
   const [title, setTitle] = useState(existing?.title ?? '')
+  const [supervisorId, setSupervisorId] = useState(existing?.supervisor_id ?? '')
   const [ncsCommon, setNcsCommon] = useState<string[]>(existing?.nerves_tested?.common ?? [])
   const [ncsInfrequent, setNcsInfrequent] = useState<string[]>(existing?.nerves_tested?.infrequent ?? [])
   const [rns, setRns] = useState<string[]>(existing?.nerves_tested?.rns ?? [])
@@ -174,6 +249,8 @@ function CaseForm({ fellowId, existing, onDone, onError }: {
       fellow_id: fellowId,
       case_date: date,
       title: title.trim() || null,
+      supervisor_id: supervisorId || null,
+      visibility: supervisorId ? 'shared' : 'private',
       nerves_tested: { common: ncsCommon, infrequent: ncsInfrequent, rns, sfemg, ultrasound, biopsy },
       muscles_tested: muscles,
       diagnoses: diagCategory ? [{ category: diagCategory, subtype: diagSubtype.trim() || null }] : [],
@@ -210,6 +287,18 @@ function CaseForm({ fellowId, existing, onDone, onError }: {
           </div>
         </div>
 
+        <div>
+          <label className="mb-1 block text-xs font-medium text-muted">Share with supervisor (optional)</label>
+          <select value={supervisorId} onChange={(e) => setSupervisorId(e.target.value)}
+            className="w-full max-w-md rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink sm:w-auto">
+            <option value="">— Keep private (don't share) —</option>
+            {supervisors.map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+          </select>
+          <p className="mt-1 text-xs text-muted">
+            Choosing a supervisor lets that one person view this case and leave you feedback. It stays hidden from everyone else.
+          </p>
+        </div>
+
         <div className="space-y-4 border-t border-line pt-5">
           <p className="text-xs font-semibold uppercase tracking-wider text-muted">Studies performed</p>
 
@@ -241,11 +330,7 @@ function CaseForm({ fellowId, existing, onDone, onError }: {
               <ChipGroup label="Muscle biopsy" options={MUSCLE_BIOPSY_OPTIONS} selected={biopsy} onChange={setBiopsy} />
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => setShowMore(true)}
-              className="text-sm font-medium text-accent hover:underline"
-            >
+            <button type="button" onClick={() => setShowMore(true)} className="text-sm font-medium text-accent hover:underline">
               + Add other study types (infrequent NCS, RNS, SFEMG, ultrasound, biopsy)
             </button>
           )}
@@ -280,6 +365,152 @@ function CaseForm({ fellowId, existing, onDone, onError }: {
         </button>
       </div>
     </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Supervisor / director view: cases fellows have shared with me, grouped by
+// fellow, each with a feedback thread I can add to.
+// ---------------------------------------------------------------------------
+function SupervisorCases({ userId, selfName }: { userId: string; selfName: string }) {
+  const [cases, setCases] = useState<SharedCase[]>([])
+  const [feedback, setFeedback] = useState<Record<string, Feedback[]>>({})
+  const [supervisors, setSupervisors] = useState<Provider[]>([])
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [openId, setOpenId] = useState<string | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [msg, setMsg] = useState<string | null>(null)
+
+  const nameFor = useMemo(() => {
+    const m = new Map(supervisors.map((s) => [s.id, s.full_name]))
+    m.set(userId, selfName)
+    return (id: string) => m.get(id) ?? 'Supervisor'
+  }, [supervisors, userId, selfName])
+
+  async function loadFeedback(ids: string[]) {
+    if (ids.length === 0) { setFeedback({}); return }
+    const { data } = await supabase
+      .from('case_feedback')
+      .select('id, case_id, body, author_id, created_at')
+      .in('case_id', ids)
+      .order('created_at', { ascending: true })
+    const map: Record<string, Feedback[]> = {}
+    for (const f of (data as Feedback[]) ?? []) (map[f.case_id] ??= []).push(f)
+    setFeedback(map)
+  }
+
+  async function load() {
+    const { data, error } = await supabase.rpc('supervisor_shared_cases')
+    if (error) { setMsg(error.message); return }
+    const rows = (data as SharedCase[]) ?? []
+    setCases(rows)
+    loadFeedback(rows.map((r) => r.id))
+  }
+
+  useEffect(() => {
+    load()
+    supabase.rpc('list_supervisors').then(({ data }: { data: Provider[] | null }) => setSupervisors(data ?? []))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function sendFeedback(caseId: string) {
+    const body = (drafts[caseId] ?? '').trim()
+    if (!body) return
+    setBusy(caseId)
+    const { error } = await supabase.from('case_feedback').insert({ case_id: caseId, author_id: userId, body })
+    setBusy(null)
+    if (error) { setMsg(error.message); return }
+    setDrafts((d) => ({ ...d, [caseId]: '' }))
+    loadFeedback(cases.map((c) => c.id))
+  }
+
+  const groups: [string, SharedCase[]][] = useMemo(() => {
+    const m = new Map<string, SharedCase[]>()
+    for (const c of cases) {
+      const key = c.fellow_name || 'Unknown fellow'
+      if (!m.has(key)) m.set(key, [])
+      m.get(key)!.push(c)
+    }
+    return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]))
+  }, [cases])
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="font-display text-2xl font-bold text-ink">Cases shared with you</h1>
+        <p className="mt-1 text-sm text-muted">Cases fellows have shared for your review — grouped by fellow. Add feedback and they'll see it.</p>
+      </div>
+
+      {msg && (
+        <div className="rounded-md border border-line bg-surface px-4 py-3 text-sm text-ink">
+          {msg} <button className="ml-2 font-medium text-accent" onClick={() => setMsg(null)}>dismiss</button>
+        </div>
+      )}
+
+      {cases.length === 0 ? (
+        <Card>
+          <p className="px-5 py-6 text-sm text-muted">
+            No cases have been shared with you yet. When a fellow selects you as the supervisor on a case they log, it will appear here.
+          </p>
+        </Card>
+      ) : (
+        groups.map(([fellowName, list]) => (
+          <Card key={fellowName}>
+            <CardHeader title={fellowName} sub={`${list.length} case${list.length === 1 ? '' : 's'} shared`} />
+            <ul className="divide-y divide-line">
+              {list.map((c) => {
+                const open = openId === c.id
+                return (
+                  <li key={c.id} className="px-5 py-3">
+                    <button className="flex w-full flex-wrap items-baseline justify-between gap-2 text-left" onClick={() => setOpenId(open ? null : c.id)}>
+                      <span className="text-sm font-medium text-ink">{c.title ?? 'Untitled case'}</span>
+                      <span className="text-sm text-muted">
+                        {formatDate(c.case_date)}
+                        {(feedback[c.id]?.length ?? 0) > 0 && <span className="ml-2">· {feedback[c.id].length} feedback</span>}
+                        <span className="ml-2 text-accent">{open ? 'Hide' : 'Open'}</span>
+                      </span>
+                    </button>
+
+                    {open && (
+                      <div className="mt-2 space-y-3">
+                        <div className="text-sm text-ink">
+                          <p>{diagnosisLine(c.diagnoses) || 'No diagnosis recorded'}</p>
+                          <p className="mt-0.5 text-muted">
+                            {[
+                              (c.muscles_tested?.length ?? 0) > 0 ? `${c.muscles_tested!.length} muscles on needle EMG` : null,
+                              (c.nerves_tested?.common?.length ?? 0) > 0 ? `${c.nerves_tested!.common!.length} common NCS` : null,
+                            ].filter(Boolean).join(' · ') || 'No study details recorded'}
+                          </p>
+                          {c.summary && <p className="mt-2 whitespace-pre-wrap">{c.summary}</p>}
+                        </div>
+
+                        <FeedbackThread items={feedback[c.id] ?? []} nameFor={nameFor} />
+
+                        <div>
+                          <textarea
+                            value={drafts[c.id] ?? ''}
+                            onChange={(e) => setDrafts((d) => ({ ...d, [c.id]: e.target.value }))}
+                            rows={3}
+                            placeholder="Feedback for the fellow on this case…"
+                            className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink"
+                          />
+                          <button
+                            onClick={() => sendFeedback(c.id)}
+                            disabled={busy === c.id || !(drafts[c.id] ?? '').trim()}
+                            className="mt-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                          >
+                            {busy === c.id ? 'Sending…' : 'Send feedback'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          </Card>
+        ))
+      )}
+    </div>
   )
 }
 
