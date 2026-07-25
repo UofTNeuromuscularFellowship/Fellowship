@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Card, CardHeader } from '../components/ui/Card'
+import { DiagramPlaceholder } from '../components/DiagramPlaceholder'
 import { NERVE_STUDIES, REGION_ORDER, type NerveStudy } from '../data/nerveGuide'
 
 // ---------------------------------------------------------------------------
@@ -79,6 +80,13 @@ function StudyDetail({ study }: { study: NerveStudy }) {
           )}
         </div>
       </Card>
+
+      <DiagramPlaceholder
+        src={study.diagram}
+        alt={`Electrode and stimulation placement for ${study.name}`}
+        label="Electrode & stimulation placement"
+        caption="A labelled diagram of the recording electrodes and stimulation site will appear here."
+      />
 
       {(study.cutoffs?.length || study.sideToSide?.length) && (
         <Card>

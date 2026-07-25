@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Card, CardHeader } from '../components/ui/Card'
+import { DiagramPlaceholder } from '../components/DiagramPlaceholder'
 import { EMG_MUSCLES, EMG_REGION_ORDER, EMG_REGION_GROUPS, type EmgMuscle } from '../data/emgAtlas'
 
 // ---------------------------------------------------------------------------
@@ -58,7 +59,7 @@ function MuscleDetail({ muscle }: { muscle: EmgMuscle }) {
 
       {(muscle.position || muscle.localization || muscle.maneuver) && (
         <Card>
-          <CardHeader title="Needle localization" sub="Paraphrased technique — verify against a primary source" />
+          <CardHeader title="Needle localization" sub="Verify landmarks against a primary source" />
           <div className="px-5 py-4">
             <dl className="divide-y divide-line/60">
               <Field label="Position" value={muscle.position} />
@@ -68,6 +69,13 @@ function MuscleDetail({ muscle }: { muscle: EmgMuscle }) {
           </div>
         </Card>
       )}
+
+      <DiagramPlaceholder
+        src={muscle.diagram}
+        alt={`Needle insertion site for ${muscle.name}`}
+        label="Needle insertion diagram"
+        caption="A labelled diagram of the needle insertion site will appear here."
+      />
 
       {muscle.pitfalls && (
         <Card>
@@ -86,13 +94,6 @@ function MuscleDetail({ muscle }: { muscle: EmgMuscle }) {
           </div>
         </Card>
       )}
-
-      <p className="px-1 text-xs text-muted">
-        Innervation and root levels are anatomical facts; technique is a concise paraphrase
-        summarised from Perotto/Delagi, <span className="italic">Anatomical Guide for the
-        Electromyographer</span>, 5th ed. (Charles C Thomas). The book's text and figures are
-        not reproduced — confirm landmarks against a primary anatomical source and your own practice.
-      </p>
     </div>
   )
 }
@@ -128,12 +129,10 @@ export default function EmgAtlas() {
       </div>
 
       <div className="rounded-md border border-amber-400 bg-amber-50 px-4 py-3 text-sm text-ink">
-        <span className="font-semibold">Educational reference only.</span> Innervation and root
-        levels are anatomical facts; needle-localization technique is paraphrased and summarised
-        from <span className="italic">Perotto/Delagi, Anatomical Guide for the Electromyographer</span>,
-        5th ed. (Charles C Thomas) — the book's text and figures are not reproduced. These summaries
-        are not medical advice and do not replace hands-on training; confirm landmarks against a
-        primary anatomical source and your own supervised practice.
+        <span className="font-semibold">Educational reference only.</span> Adapted from{' '}
+        <span className="italic">Perotto/Delagi, Anatomical Guide for the Electromyographer</span>,
+        5th ed. (Charles C Thomas). Not medical advice and no substitute for hands-on training —
+        confirm landmarks against a primary anatomical source and your own supervised practice.
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">

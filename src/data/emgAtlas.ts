@@ -26,6 +26,7 @@ export interface EmgMuscle {
   maneuver?: string
   pitfalls?: string
   pearls?: string
+  diagram?: string
 }
 
 export interface EmgRegionGroup {

@@ -36,6 +36,7 @@ export interface NerveStudy {
   cutoffs?: string[]
   sideToSide?: string[]
   notes?: string
+  diagram?: string
 }
 
 export const REGION_ORDER: NerveRegion[] = [
