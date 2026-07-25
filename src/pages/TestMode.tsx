@@ -1,5 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Card, CardHeader } from '../components/ui/Card'
+import { supabase } from '../lib/supabase'
+import { useAuth } from '../context/AuthContext'
 import {
   generateQuiz,
   generateFromKeys,
@@ -26,9 +28,11 @@ interface Mistake {
   ts: number
 }
 
-// localStorage wrapper that degrades to in-memory if storage is unavailable.
+// Local (per-browser) store used when the fellow is signed out, and as an
+// offline fallback if the account sync ever fails. Degrades to in-memory if
+// localStorage is unavailable.
 let memoryStore: Mistake[] | null = null
-function loadMistakes(): Mistake[] {
+function loadLocal(): Mistake[] {
   if (memoryStore) return memoryStore
   try {
     const raw = window.localStorage.getItem(MISTAKES_KEY)
@@ -37,7 +41,7 @@ function loadMistakes(): Mistake[] {
     return memoryStore ?? []
   }
 }
-function saveMistakes(list: Mistake[]) {
+function saveLocal(list: Mistake[]) {
   memoryStore = list
   try {
     window.localStorage.setItem(MISTAKES_KEY, JSON.stringify(list))
@@ -60,7 +64,58 @@ export default function TestMode() {
   const [wrongKeys, setWrongKeys] = useState<QuizQuestion[]>([])
   const [correctCount, setCorrectCount] = useState(0)
 
-  const [mistakes, setMistakes] = useState<Mistake[]>(() => loadMistakes())
+  const { session } = useAuth()
+  const userId = session?.user?.id ?? null
+  const [mistakes, setMistakes] = useState<Mistake[]>([])
+  const [synced, setSynced] = useState(false)
+
+  // Load the review list: from the fellow's account when signed in (synced
+  // across devices), otherwise from this browser's local store.
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      if (userId) {
+        const { data, error } = await supabase
+          .from('quiz_review_items')
+          .select('item_key, source, item_name, aspect_label, prompt, correct, created_at')
+          .order('created_at', { ascending: true })
+        if (cancelled) return
+        if (!error && data) {
+          setSynced(true)
+          setMistakes(
+            data.map((r: {
+              item_key: string
+              source: QuizSource
+              item_name: string
+              aspect_label: string
+              prompt: string
+              correct: string
+              created_at: string | null
+            }) => ({
+              key: r.item_key,
+              source: r.source,
+              itemName: r.item_name,
+              aspectLabel: r.aspect_label,
+              prompt: r.prompt,
+              correct: r.correct,
+              ts: r.created_at ? Date.parse(r.created_at) : 0,
+            })),
+          )
+        } else {
+          // account fetch failed — fall back to the local copy
+          setSynced(false)
+          setMistakes(loadLocal())
+        }
+      } else {
+        setSynced(false)
+        setMistakes(loadLocal())
+      }
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
 
   const sources: QuizSource[] = useMemo(() => {
     const s: QuizSource[] = []
@@ -90,14 +145,58 @@ export default function TestMode() {
     startQuiz(qs)
   }
 
+  // Persist one change to the fellow's account (or local store when signed
+  // out). `nextList` is the resulting review list, used for the local fallback.
+  function persistAdd(q: QuizQuestion, nextList: Mistake[]) {
+    if (userId) {
+      supabase
+        .from('quiz_review_items')
+        .upsert(
+          {
+            user_id: userId,
+            item_key: q.key,
+            source: q.source,
+            item_name: q.itemName,
+            aspect_label: q.aspectLabel,
+            prompt: q.prompt,
+            correct: q.correct,
+          },
+          { onConflict: 'user_id,item_key' },
+        )
+        .then(({ error }: { error: unknown }) => {
+          if (error) saveLocal(nextList)
+        })
+    } else {
+      saveLocal(nextList)
+    }
+  }
+
+  function persistRemove(key: string, nextList: Mistake[]) {
+    if (userId) {
+      supabase
+        .from('quiz_review_items')
+        .delete()
+        .eq('user_id', userId)
+        .eq('item_key', key)
+        .then(({ error }: { error: unknown }) => {
+          if (error) saveLocal(nextList)
+        })
+    } else {
+      saveLocal(nextList)
+    }
+  }
+
   function recordResult(q: QuizQuestion, isCorrect: boolean) {
     setMistakes((prev) => {
-      let next: Mistake[]
-      if (isCorrect) {
+      const exists = prev.some((m) => m.key === q.key)
+      if (isCorrect && exists) {
         // mastered → drop from the review list
-        next = prev.filter((m) => m.key !== q.key)
-      } else if (!prev.some((m) => m.key === q.key)) {
-        next = [
+        const next = prev.filter((m) => m.key !== q.key)
+        persistRemove(q.key, next)
+        return next
+      }
+      if (!isCorrect && !exists) {
+        const next = [
           ...prev,
           {
             key: q.key,
@@ -109,11 +208,10 @@ export default function TestMode() {
             ts: Date.now(),
           },
         ]
-      } else {
-        next = prev
+        persistAdd(q, next)
+        return next
       }
-      saveMistakes(next)
-      return next
+      return prev
     })
   }
 
@@ -138,7 +236,17 @@ export default function TestMode() {
 
   function clearMistakes() {
     setMistakes([])
-    saveMistakes([])
+    if (userId) {
+      supabase
+        .from('quiz_review_items')
+        .delete()
+        .eq('user_id', userId)
+        .then(({ error }: { error: unknown }) => {
+          if (error) saveLocal([])
+        })
+    } else {
+      saveLocal([])
+    }
   }
 
   // ---- SETUP --------------------------------------------------------------
@@ -210,13 +318,17 @@ export default function TestMode() {
         <Card>
           <CardHeader
             title="Review list"
-            sub={mistakes.length ? `${mistakes.length} question${mistakes.length === 1 ? '' : 's'} to revisit` : 'Missed questions are saved here'}
+            sub={
+              synced
+                ? 'Synced to your account — available on any device'
+                : 'Saved on this browser — sign in to sync across devices'
+            }
           />
           <div className="px-5 py-4">
             {mistakes.length === 0 ? (
               <p className="text-sm text-muted">
-                No saved mistakes yet. Questions you miss are stored here (on this browser) so you can study
-                them later; answering one correctly removes it from the list.
+                No saved mistakes yet. Questions you miss are saved here{synced ? ' to your account' : ''} so you
+                can study them later; answering one correctly removes it from the list.
               </p>
             ) : (
               <div className="space-y-3">
