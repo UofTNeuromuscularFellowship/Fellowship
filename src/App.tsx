@@ -11,6 +11,7 @@ import Cases from './pages/Cases'
 import Competency from './pages/Competency'
 import Calculators from './pages/Calculators'
 import StudyTools from './pages/StudyTools'
+import TeachingCases from './pages/TeachingCases'
 import Handbook from './pages/Handbook'
 import People from './pages/People'
 import MyTeaching from './pages/MyTeaching'
@@ -45,6 +46,7 @@ export default function App() {
       <Route path="/teaching" element={<Shell><TeachingSchedule /></Shell>} />
       <Route path="/clinic" element={<Shell><ClinicRotations /></Shell>} />
       <Route path="/cases" element={<Shell allow={['fellow', 'supervisor', 'director']}><Cases /></Shell>} />
+      <Route path="/teaching-cases" element={<Shell allow={['supervisor', 'director']}><TeachingCases /></Shell>} />
       <Route path="/competency" element={<Shell allow={['fellow', 'director', 'admin']}><Competency /></Shell>} />
       <Route path="/calculators" element={<Shell allow={['fellow', 'supervisor', 'director']}><Calculators /></Shell>} />
       <Route path="/study" element={<Shell allow={['fellow', 'supervisor', 'director']}><StudyTools /></Shell>} />
