@@ -28,9 +28,7 @@ const SECTIONS: NavSection[] = [
       { to: '/cases', label: 'Case logger', allow: ['fellow', 'supervisor', 'director'] },
       { to: '/competency', label: 'Competency', allow: ['fellow', 'director', 'admin'] },
       { to: '/calculators', label: 'EMG/NCS calculators', allow: ['fellow', 'supervisor', 'director'] },
-      { to: '/nerve-guide', label: 'Nerve conduction guide', allow: ['fellow', 'supervisor', 'director'] },
-      { to: '/emg-atlas', label: 'EMG muscle atlas', allow: ['fellow', 'supervisor', 'director'] },
-      { to: '/test-mode', label: 'Test mode (quiz)', allow: ['fellow', 'supervisor', 'director'] },
+      { to: '/study', label: 'Study tools', allow: ['fellow', 'supervisor', 'director'] },
     ],
   },
   {

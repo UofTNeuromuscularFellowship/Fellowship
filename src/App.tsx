@@ -10,9 +10,7 @@ import ClinicRotations from './pages/ClinicRotations'
 import Cases from './pages/Cases'
 import Competency from './pages/Competency'
 import Calculators from './pages/Calculators'
-import NerveGuide from './pages/NerveGuide'
-import EmgAtlas from './pages/EmgAtlas'
-import TestMode from './pages/TestMode'
+import StudyTools from './pages/StudyTools'
 import Handbook from './pages/Handbook'
 import People from './pages/People'
 import MyTeaching from './pages/MyTeaching'
@@ -49,9 +47,11 @@ export default function App() {
       <Route path="/cases" element={<Shell allow={['fellow', 'supervisor', 'director']}><Cases /></Shell>} />
       <Route path="/competency" element={<Shell allow={['fellow', 'director', 'admin']}><Competency /></Shell>} />
       <Route path="/calculators" element={<Shell allow={['fellow', 'supervisor', 'director']}><Calculators /></Shell>} />
-      <Route path="/nerve-guide" element={<Shell allow={['fellow', 'supervisor', 'director']}><NerveGuide /></Shell>} />
-      <Route path="/emg-atlas" element={<Shell allow={['fellow', 'supervisor', 'director']}><EmgAtlas /></Shell>} />
-      <Route path="/test-mode" element={<Shell allow={['fellow', 'supervisor', 'director']}><TestMode /></Shell>} />
+      <Route path="/study" element={<Shell allow={['fellow', 'supervisor', 'director']}><StudyTools /></Shell>} />
+      {/* Legacy deep-links open the combined page on the matching tab */}
+      <Route path="/emg-atlas" element={<Shell allow={['fellow', 'supervisor', 'director']}><StudyTools initialTab="emg" /></Shell>} />
+      <Route path="/nerve-guide" element={<Shell allow={['fellow', 'supervisor', 'director']}><StudyTools initialTab="ncs" /></Shell>} />
+      <Route path="/test-mode" element={<Shell allow={['fellow', 'supervisor', 'director']}><StudyTools initialTab="test" /></Shell>} />
       <Route path="/handbook" element={<Shell><Handbook /></Shell>} />
       <Route path="/people" element={<Shell allow={['director', 'admin']}><People /></Shell>} />
       <Route path="/my-teaching" element={<Shell allow={['supervisor', 'director', 'assistant']}><MyTeaching /></Shell>} />
