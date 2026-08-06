@@ -236,7 +236,7 @@ function ScheduleCcEmails({ onError }: { onError: (m: string) => void }) {
     return (
       <div>
         <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted">
-          {which === 'teaching' ? 'Teaching schedule — copied on publish' : 'Clinic schedule — copied on publish'}
+          {which === 'teaching' ? 'Teaching schedule — copied on publish + Journal Club reminders' : 'Clinic schedule — copied on publish'}
         </p>
         {list.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-1.5">
@@ -269,7 +269,7 @@ function ScheduleCcEmails({ onError }: { onError: (m: string) => void }) {
     <Card>
       <CardHeader
         title="Schedule email CC list"
-        sub="Extra addresses copied whenever a schedule is published — e.g. a program coordinator or admin assistant who isn't a portal user. These receive the same 'schedule updated' email."
+        sub="Extra addresses copied whenever a schedule is published — e.g. a program coordinator or admin assistant who isn't a portal user. These receive the same 'schedule updated' email. The teaching list is also copied on Journal Club reminders (one week and one day before)."
       />
       <div className="space-y-5 px-5 py-4">
         <ListEditor which="teaching" list={teaching} draft={draftT} setDraft={setDraftT} />
