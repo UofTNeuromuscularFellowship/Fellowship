@@ -1,0 +1,69 @@
+import { Routes, Route, Navigate } from 'react-router-dom'
+import { ProtectedRoute } from './components/ProtectedRoute'
+import { AppShell } from './components/AppShell'
+import Landing from './pages/Landing'
+import Login from './pages/Login'
+import ChangePassword from './pages/ChangePassword'
+import Dashboard from './pages/Dashboard'
+import TeachingSchedule from './pages/TeachingSchedule'
+import ClinicRotations from './pages/ClinicRotations'
+import Cases from './pages/Cases'
+import Competency from './pages/Competency'
+import Calculators from './pages/Calculators'
+import StudyTools from './pages/StudyTools'
+import TeachingCases from './pages/TeachingCases'
+import Handbook from './pages/Handbook'
+import People from './pages/People'
+import MyTeaching from './pages/MyTeaching'
+import RateTeaching from './pages/RateTeaching'
+import Vacation from './pages/Vacation'
+import Evaluations from './pages/Evaluations'
+import Settings from './pages/Settings'
+import NotFound from './pages/NotFound'
+
+function Shell({ children, allow }: { children: React.ReactNode; allow?: ('fellow' | 'supervisor' | 'director' | 'admin' | 'assistant')[] }) {
+  return (
+    <ProtectedRoute allow={allow}>
+      <AppShell>{children}</AppShell>
+    </ProtectedRoute>
+  )
+}
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<Landing />} />
+      <Route path="/login" element={<Login />} />
+      <Route
+        path="/change-password"
+        element={
+          <ProtectedRoute skipPasswordGate>
+            <ChangePassword />
+          </ProtectedRoute>
+        }
+      />
+      <Route path="/dashboard" element={<Shell><Dashboard /></Shell>} />
+      <Route path="/teaching" element={<Shell><TeachingSchedule /></Shell>} />
+      <Route path="/clinic" element={<Shell><ClinicRotations /></Shell>} />
+      <Route path="/cases" element={<Shell allow={['fellow', 'supervisor', 'director']}><Cases /></Shell>} />
+      <Route path="/teaching-cases" element={<Shell allow={['supervisor', 'director']}><TeachingCases /></Shell>} />
+      <Route path="/competency" element={<Shell allow={['fellow', 'director', 'admin']}><Competency /></Shell>} />
+      <Route path="/calculators" element={<Shell allow={['fellow', 'supervisor', 'director']}><Calculators /></Shell>} />
+      <Route path="/study" element={<Shell allow={['fellow', 'supervisor', 'director']}><StudyTools /></Shell>} />
+      {/* Legacy deep-links open the combined page on the matching tab */}
+      <Route path="/emg-atlas" element={<Shell allow={['fellow', 'supervisor', 'director']}><StudyTools initialTab="emg" /></Shell>} />
+      <Route path="/nerve-guide" element={<Shell allow={['fellow', 'supervisor', 'director']}><StudyTools initialTab="ncs" /></Shell>} />
+      <Route path="/test-mode" element={<Shell allow={['fellow', 'supervisor', 'director']}><StudyTools initialTab="test" /></Shell>} />
+      <Route path="/handbook" element={<Shell><Handbook /></Shell>} />
+      <Route path="/people" element={<Shell allow={['director', 'admin']}><People /></Shell>} />
+      <Route path="/my-teaching" element={<Shell allow={['supervisor', 'director', 'assistant']}><MyTeaching /></Shell>} />
+      <Route path="/rate-teaching" element={<Shell allow={['fellow']}><RateTeaching /></Shell>} />
+      <Route path="/vacation" element={<Shell allow={['fellow', 'supervisor', 'director', 'assistant']}><Vacation /></Shell>} />
+      <Route path="/evaluations" element={<Shell allow={['fellow', 'supervisor', 'director']}><Evaluations /></Shell>} />
+      <Route path="/settings" element={<Shell><Settings /></Shell>} />
+      {/* Legacy path redirects */}
+      <Route path="/home" element={<Navigate to="/dashboard" replace />} />
+      <Route path="*" element={<NotFound />} />
+    </Routes>
+  )
+}
