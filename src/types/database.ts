@@ -17,6 +17,8 @@ export interface AppUser {
   end_date: string | null
   phone: string | null
   assistant_emails?: string[] | null
+  /** Supervisor who teaches but runs no fellowship clinics. */
+  teaching_only?: boolean
 }
 
 export interface TeachingSession {

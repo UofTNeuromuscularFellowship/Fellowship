@@ -66,9 +66,16 @@ export function AppShell({ children }: { children: ReactNode }) {
     navigate('/login')
   }
 
+  // A teaching-only supervisor runs no fellowship clinics, so the clinic
+  // schedule is noise for them. Everything teaching-related stays put.
+  const hideClinic = role === 'supervisor' && profile?.teaching_only === true
+
   const visibleSections = SECTIONS.map((s) => ({
     ...s,
-    items: s.items.filter((i) => !i.allow || (role && i.allow.includes(role))),
+    items: s.items.filter((i) => {
+      if (hideClinic && i.to === '/clinic') return false
+      return !i.allow || (role && i.allow.includes(role))
+    }),
   })).filter((s) => s.items.length > 0)
 
   const navClass = ({ isActive }: { isActive: boolean }) =>

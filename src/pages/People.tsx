@@ -8,6 +8,7 @@ import { cohortYears } from '../lib/caseOptions'
 interface UserRow {
   id: string; email: string; full_name: string; role: string; status: string; cohort_year: string | null
   assistant_emails: string[] | null
+  teaching_only: boolean
 }
 
 export default function People() {
@@ -27,7 +28,7 @@ export default function People() {
   async function load() {
     const { data, error } = await supabase
       .from('users')
-      .select('id, email, full_name, role, status, cohort_year, assistant_emails')
+      .select('id, email, full_name, role, status, cohort_year, assistant_emails, teaching_only')
       .order('full_name')
     if (error) setMsg(error.message)
     setUsers((data as UserRow[]) ?? [])
@@ -218,7 +219,8 @@ function UserItem({ user, canManage, onChanged, onError }: {
         </div>
         <div className="flex items-center gap-3">
           <span className="text-muted">
-            {roleLabel(user.role)}{user.cohort_year ? ` · ${user.cohort_year}` : ''}{inactive ? ` · ${user.status}` : ''}
+            {roleLabel(user.role)}{user.cohort_year ? ` · ${user.cohort_year}` : ''}
+            {user.teaching_only ? ' · teaching only' : ''}{inactive ? ` · ${user.status}` : ''}
           </span>
           {canManage && (
             <button onClick={() => setOpen(!open)} className="text-xs font-medium text-accent hover:underline">
@@ -247,6 +249,10 @@ function UserItem({ user, canManage, onChanged, onError }: {
               {busy === 'set_role' ? 'Saving…' : 'Save role'}
             </button>
           </div>
+
+          {user.role === 'supervisor' && (
+            <TeachingOnlyToggle user={user} onChanged={onChanged} onError={onError} />
+          )}
 
           {user.role !== 'fellow' && user.role !== 'assistant' && (
             <AssistantEmailsEditor user={user} onChanged={onChanged} onError={onError} />
@@ -287,6 +293,45 @@ function UserItem({ user, canManage, onChanged, onError }: {
         </div>
       )}
     </li>
+  )
+}
+
+function TeachingOnlyToggle({ user, onChanged, onError }: {
+  user: { id: string; teaching_only: boolean }; onChanged: () => void; onError: (m: string) => void
+}) {
+  const [on, setOn] = useState(user.teaching_only)
+  const [busy, setBusy] = useState(false)
+
+  async function toggle(next: boolean) {
+    setBusy(true); setOn(next); onError('')
+    const { error } = await supabase.from('users')
+      .update({ teaching_only: next, updated_at: new Date().toISOString() })
+      .eq('id', user.id)
+    setBusy(false)
+    if (error) { setOn(!next); onError(error.message); return }
+    onChanged()
+  }
+
+  return (
+    <div className="border-t border-line pt-3">
+      <label className="flex items-start gap-2.5 text-sm text-ink">
+        <input
+          type="checkbox"
+          checked={on}
+          disabled={busy}
+          onChange={(e) => toggle(e.target.checked)}
+          className="mt-0.5 h-4 w-4 rounded border-line text-accent"
+        />
+        <span>
+          <span className="font-medium">Teaching only — runs no fellowship clinics</span>
+          <span className="mt-0.5 block text-xs text-muted">
+            They stay fully in the teaching schedule: assignable as a teacher, and they still receive the
+            published teaching schedule, session reminders, Journal Club announcements and away-date requests.
+            They are left off the clinic schedule email and the clinic view.
+          </span>
+        </span>
+      </label>
+    </div>
   )
 }
 

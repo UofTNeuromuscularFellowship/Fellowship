@@ -11,6 +11,7 @@ export interface Profile {
   status: string
   cohort_year: string | null
   must_change_password: boolean
+  teaching_only: boolean
 }
 
 interface AuthContextValue {
@@ -39,7 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function loadProfile(userId: string) {
     const { data } = await supabase
       .from('users')
-      .select('id, email, full_name, role, status, cohort_year, must_change_password')
+      .select('id, email, full_name, role, status, cohort_year, must_change_password, teaching_only')
       .eq('id', userId)
       .single()
     setProfile((data as Profile) ?? null)

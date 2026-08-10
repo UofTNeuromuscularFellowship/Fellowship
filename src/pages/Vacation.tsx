@@ -114,6 +114,8 @@ export default function Vacation() {
             ? 'Request vacation days — the fellowship director reviews each request.'
             : isAssistant
             ? 'Add or remove the away dates for the provider you support, so their schedule is built around them.'
+            : isDirector
+            ? 'Mark the dates you are away, or record them for a supervisor or fellow who has asked you to enter them. Away dates are skipped during schedule generation, and any conflict with an already-published clinic is flagged.'
             : 'Mark the dates you are away. Away dates are skipped during schedule generation, and any conflict with an already-published clinic is flagged for the director.'}
         </p>
       </div>
@@ -128,9 +130,19 @@ export default function Vacation() {
         </div>
       )}
 
-      {isProvider && profile && <ProviderAwayDates providerId={profile.id} onError={setMsg} />}
+      {isDirector && profile && <DirectorAwayDates selfId={profile.id} onError={setMsg} />}
+      {!isDirector && isProvider && profile && (
+        <AwayDates source="provider" personId={profile.id} isSelf onError={setMsg} />
+      )}
       {isAssistant && acting.effectiveId && (
-        <ProviderAwayDates key={acting.effectiveId} providerId={acting.effectiveId} onError={setMsg} />
+        <AwayDates
+          key={acting.effectiveId}
+          source="provider"
+          personId={acting.effectiveId}
+          personName={acting.providers.find((p) => p.id === acting.effectiveId)?.full_name}
+          isSelf={false}
+          onError={setMsg}
+        />
       )}
 
       {isFellow && (
@@ -247,26 +259,119 @@ export default function Vacation() {
   )
 }
 
-interface AwayRow { id: string; away_date: string; reason: string | null }
+interface AwayRow { id: string; away_date: string; reason: string | null; entered_by: string | null }
+interface AwayPerson { id: string; full_name: string; role: string; source: 'provider' | 'fellow' }
 
-function ProviderAwayDates({ providerId, onError }: { providerId: string; onError: (m: string) => void }) {
+const AWAY_TABLE = {
+  provider: { table: 'provider_away_dates', idCol: 'provider_id' },
+  fellow: { table: 'fellow_away_dates', idCol: 'fellow_id' },
+} as const
+
+/**
+ * The director can record away dates for anyone. Row-level security already
+ * permits it; this is the picker that exposes it. Everyone else only ever sees
+ * their own card.
+ */
+function DirectorAwayDates({ selfId, onError }: { selfId: string; onError: (m: string) => void }) {
+  const [people, setPeople] = useState<AwayPerson[]>([])
+  const [personId, setPersonId] = useState(selfId)
+
+  useEffect(() => {
+    supabase.rpc('away_people').then(({ data }: { data: AwayPerson[] | null }) => setPeople(data ?? []))
+  }, [])
+
+  const person = people.find((p) => p.id === personId)
+  const source: 'provider' | 'fellow' = person?.source ?? 'provider'
+  const isSelf = personId === selfId
+  const providers = people.filter((p) => p.source === 'provider')
+  const fellows = people.filter((p) => p.source === 'fellow')
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="min-w-0">
+          <label className="mb-1 block text-xs font-medium text-muted">Whose away dates</label>
+          <select
+            value={personId}
+            onChange={(e) => setPersonId(e.target.value)}
+            className="rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink">
+            <option value={selfId}>Mine</option>
+            {providers.length > 0 && (
+              <optgroup label="Supervisors & directors">
+                {providers.filter((p) => p.id !== selfId).map((p) => (
+                  <option key={p.id} value={p.id}>{p.full_name}</option>
+                ))}
+              </optgroup>
+            )}
+            {fellows.length > 0 && (
+              <optgroup label="Fellows">
+                {fellows.map((p) => (
+                  <option key={p.id} value={p.id}>{p.full_name}</option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+        </div>
+        {!isSelf && (
+          <p className="pb-2 text-xs text-muted">
+            You are entering these on {person?.full_name ?? 'their'}&rsquo;s behalf — the entry is recorded under your name.
+          </p>
+        )}
+      </div>
+
+      <AwayDates
+        key={personId}
+        source={source}
+        personId={personId}
+        personName={person?.full_name}
+        isSelf={isSelf}
+        onError={onError}
+      />
+    </div>
+  )
+}
+
+function AwayDates({ source, personId, personName, isSelf, onError }: {
+  source: 'provider' | 'fellow'
+  personId: string
+  personName?: string
+  isSelf: boolean
+  onError: (m: string) => void
+}) {
   const [rows, setRows] = useState<AwayRow[]>([])
+  const [enteredByNames, setEnteredByNames] = useState<Record<string, string>>({})
   const [start, setStart] = useState('')
   const [end, setEnd] = useState('')
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
 
+  const { table, idCol } = AWAY_TABLE[source]
+
   async function load() {
     const today = new Date().toISOString().slice(0, 10)
     const { data } = await supabase
-      .from('provider_away_dates')
-      .select('id, away_date, reason')
-      .eq('provider_id', providerId)
+      .from(table)
+      .select('id, away_date, reason, entered_by')
+      .eq(idCol, personId)
       .gte('away_date', today)
       .order('away_date')
-    setRows((data as AwayRow[]) ?? [])
+    const list = (data as AwayRow[]) ?? []
+    setRows(list)
+
+    // Name whoever entered a row on this person's behalf, so it is obvious
+    // where a date they did not add themselves came from.
+    const ids = Array.from(new Set(
+      list.map((r) => r.entered_by).filter((id): id is string => !!id && id !== personId),
+    ))
+    if (ids.length === 0) { setEnteredByNames({}); return }
+    try {
+      const { data: n } = await supabase.rpc('profile_names', { ids })
+      const map: Record<string, string> = {}
+      for (const x of (n as { id: string; full_name: string }[]) ?? []) map[x.id] = x.full_name
+      setEnteredByNames(map)
+    } catch { /* names are decoration */ }
   }
-  useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load() }, [source, personId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function eachDate(from: string, to: string): string[] {
     const out: string[] = []
@@ -281,23 +386,34 @@ function ProviderAwayDates({ providerId, onError }: { providerId: string; onErro
     const to = end || start
     if (to < start) { onError('End date must be on or after the start date.'); return }
     setBusy(true)
-    const payload = eachDate(start, to).map((away_date) => ({ provider_id: providerId, away_date, reason: reason.trim() || null }))
-    const { error } = await supabase.from('provider_away_dates').upsert(payload, { onConflict: 'provider_id,away_date' })
+    const { data: auth } = await supabase.auth.getUser()
+    const payload = eachDate(start, to).map((away_date) => ({
+      [idCol]: personId,
+      away_date,
+      reason: reason.trim() || null,
+      entered_by: auth?.user?.id ?? null,
+    }))
+    const { error } = await supabase.from(table).upsert(payload, { onConflict: `${idCol},away_date` })
     setBusy(false)
     if (error) { onError(error.message); return }
     setStart(''); setEnd(''); setReason(''); load()
   }
 
   async function remove(id: string) {
-    await supabase.from('provider_away_dates').delete().eq('id', id)
+    const { error } = await supabase.from(table).delete().eq('id', id)
+    if (error) { onError(error.message); return }
     load()
   }
 
   return (
     <Card>
       <CardHeader
-        title="My away dates"
-        sub="Add the days you're unavailable. The scheduler skips these and substitutes an alternate clinic; if you add a date after the schedule is published, the director is alerted to any conflict."
+        title={isSelf ? 'My away dates' : `Away dates — ${personName ?? 'selected person'}`}
+        sub={
+          isSelf
+            ? "Add the days you're unavailable. The scheduler skips these and substitutes an alternate clinic; if you add a date after the schedule is published, the director is alerted to any conflict."
+            : 'Add or remove the days this person is unavailable. The scheduler skips these, and they will see the dates on their own page.'
+        }
       />
       <div className="space-y-3 px-5 py-4">
         <div className="flex flex-wrap items-end gap-2">
@@ -322,14 +438,22 @@ function ProviderAwayDates({ providerId, onError }: { providerId: string; onErro
           </button>
         </div>
 
-        {rows.length > 0 && (
+        {rows.length === 0 ? (
+          <p className="pt-1 text-sm text-muted">No upcoming away dates recorded.</p>
+        ) : (
           <ul className="divide-y divide-line pt-1">
-            {rows.map((r) => (
-              <li key={r.id} className="flex items-center justify-between py-2 text-sm">
-                <span className="text-ink">{shortDate(r.away_date)}{r.reason ? ` · ${r.reason}` : ''}</span>
-                <button onClick={() => remove(r.id)} className="text-xs font-medium text-muted hover:text-ink">Remove</button>
-              </li>
-            ))}
+            {rows.map((r) => {
+              const by = r.entered_by && r.entered_by !== personId ? enteredByNames[r.entered_by] : null
+              return (
+                <li key={r.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                  <span className="text-ink">
+                    {shortDate(r.away_date)}{r.reason ? ` · ${r.reason}` : ''}
+                    {by && <span className="text-muted"> · entered by {by}</span>}
+                  </span>
+                  <button onClick={() => remove(r.id)} className="text-xs font-medium text-muted hover:text-ink">Remove</button>
+                </li>
+              )
+            })}
           </ul>
         )}
       </div>
