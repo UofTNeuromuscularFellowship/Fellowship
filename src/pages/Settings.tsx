@@ -284,10 +284,37 @@ function RequestAwayDates({ onError }: { onError: (m: string) => void }) {
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<number | null>(null)
   const [audience, setAudience] = useState<'everyone' | 'fellows' | 'supervisors'>('everyone')
+  // Optional month range, e.g. "2026-09". Leave both blank and the email reads
+  // as it always did, with no period named.
+  const [fromMonth, setFromMonth] = useState('')
+  const [toMonth, setToMonth] = useState('')
+
+  // "2026-09" -> "2026-09-01"; the function only ever formats the month.
+  const monthStart = (m: string) => (m ? `${m}-01` : null)
+
+  // Mirrors the wording the email will use, so the director can see it first.
+  function periodLabel(): string | null {
+    const a = fromMonth || toMonth
+    const b = toMonth || fromMonth
+    if (!a) return null
+    const [lo, hi] = a <= b ? [a, b] : [b, a]
+    const fmt = (m: string, withYear: boolean) => {
+      const d = new Date(`${m}-01T00:00:00`)
+      const name = d.toLocaleString('en-CA', { month: 'long' })
+      return withYear ? `${name} ${m.slice(0, 4)}` : name
+    }
+    if (lo === hi) return fmt(lo, true)
+    if (lo.slice(0, 4) === hi.slice(0, 4)) return `${fmt(lo, false)} – ${fmt(hi, true)}`
+    return `${fmt(lo, true)} – ${fmt(hi, true)}`
+  }
 
   async function push() {
     setBusy(true); setResult(null)
-    const { data, error } = await supabase.rpc('request_vacation_submissions', { p_audience: audience })
+    const { data, error } = await supabase.rpc('request_vacation_submissions', {
+      p_audience: audience,
+      p_from: monthStart(fromMonth),
+      p_to: monthStart(toMonth),
+    })
     setBusy(false)
     if (error) { onError(error.message); return }
     setResult(data as number)
@@ -297,7 +324,7 @@ function RequestAwayDates({ onError }: { onError: (m: string) => void }) {
     <Card>
       <CardHeader
         title="Request away dates"
-        sub="Emails the group you choose, asking them to submit vacation and away dates in the portal, so the next clinic and teaching schedules can be built around them."
+        sub="Emails the group you choose, asking them to submit vacation and away dates in the portal, so the next clinic and teaching schedules can be built around them. You can name the months the request covers."
       />
       <div className="space-y-3 px-5 py-4">
         <div>
@@ -312,6 +339,34 @@ function RequestAwayDates({ onError }: { onError: (m: string) => void }) {
               </button>
             ))}
           </div>
+        </div>
+        <div>
+          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted">
+            Months to cover <span className="normal-case font-normal">(optional)</span>
+          </p>
+          <div className="flex flex-wrap items-end gap-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted">From</label>
+              <input type="month" value={fromMonth}
+                onChange={(e) => { setFromMonth(e.target.value); setResult(null) }}
+                className="rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted">To</label>
+              <input type="month" value={toMonth}
+                onChange={(e) => { setToMonth(e.target.value); setResult(null) }}
+                className="rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink" />
+            </div>
+            {(fromMonth || toMonth) && (
+              <button onClick={() => { setFromMonth(''); setToMonth(''); setResult(null) }}
+                className="pb-2 text-xs font-medium text-muted hover:text-ink">Clear</button>
+            )}
+          </div>
+          <p className="mt-1.5 text-xs text-muted">
+            {periodLabel()
+              ? `The email will ask for away dates for ${periodLabel()}.`
+              : 'Leave blank to ask for away dates without naming a period.'}
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <button onClick={push} disabled={busy}
