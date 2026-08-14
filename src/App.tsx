@@ -34,14 +34,11 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
-      <Route
-        path="/change-password"
-        element={
-          <ProtectedRoute skipPasswordGate>
-            <ChangePassword />
-          </ProtectedRoute>
-        }
-      />
+      {/* Not wrapped in ProtectedRoute: someone arriving from a reset email has
+          no session yet — redeeming the token in the page is what creates one.
+          ChangePassword sends anyone with neither a token nor a session to
+          /login itself. */}
+      <Route path="/change-password" element={<ChangePassword />} />
       <Route path="/dashboard" element={<Shell><Dashboard /></Shell>} />
       <Route path="/teaching" element={<Shell><TeachingSchedule /></Shell>} />
       <Route path="/clinic" element={<Shell><ClinicRotations /></Shell>} />

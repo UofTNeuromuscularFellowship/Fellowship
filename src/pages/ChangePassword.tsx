@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { Waveform } from '../components/ui/Waveform'
@@ -13,15 +13,16 @@ import { Waveform } from '../components/ui/Waveform'
 type Phase = 'ready' | 'verifying' | 'expired'
 
 export default function ChangePassword() {
-  const { profile, refreshProfile } = useAuth()
+  const { session, profile, loading, refreshProfile } = useAuth()
   const navigate = useNavigate()
   const [pw1, setPw1] = useState('')
   const [pw2, setPw2] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const params = new URLSearchParams(window.location.search)
-  const tokenHash = params.get('token_hash')
+  // Read once and hold it: the token is stripped from the URL after a
+  // successful exchange, and re-reading would make it vanish mid-flow.
+  const [tokenHash] = useState(() => new URLSearchParams(window.location.search).get('token_hash'))
   const [phase, setPhase] = useState<Phase>(tokenHash ? 'verifying' : 'ready')
   const [resent, setResent] = useState(false)
 
@@ -49,6 +50,17 @@ export default function ChangePassword() {
     setBusy(false)
     navigate('/dashboard')
   }
+
+  // This route is deliberately outside ProtectedRoute so a reset link can reach
+  // it without a session. Anyone else still needs one.
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-sm text-muted">Loading…</p>
+      </div>
+    )
+  }
+  if (!session && !tokenHash && phase !== 'expired') return <Navigate to="/login" replace />
 
   async function requestFresh() {
     const email = window.prompt('Enter your email address and we will send a new reset link.')
