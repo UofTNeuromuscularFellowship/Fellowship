@@ -280,9 +280,11 @@ function ScheduleCcEmails({ onError }: { onError: (m: string) => void }) {
   )
 }
 
+interface SendResult { recipients: number; assistant_copies: number; total: number; period: string | null }
+
 function RequestAwayDates({ onError }: { onError: (m: string) => void }) {
   const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState<number | null>(null)
+  const [result, setResult] = useState<SendResult | null>(null)
   const [audience, setAudience] = useState<'everyone' | 'fellows' | 'supervisors'>('everyone')
   // Optional month range, e.g. "2026-09". Leave both blank and the email reads
   // as it always did, with no period named.
@@ -317,14 +319,14 @@ function RequestAwayDates({ onError }: { onError: (m: string) => void }) {
     })
     setBusy(false)
     if (error) { onError(error.message); return }
-    setResult(data as number)
+    setResult(data as SendResult)
   }
 
   return (
     <Card>
       <CardHeader
         title="Request away dates"
-        sub="Emails the group you choose, asking them to submit vacation and away dates in the portal, so the next clinic and teaching schedules can be built around them. You can name the months the request covers."
+        sub="Emails the group you choose, asking them to submit vacation and away dates in the portal, so the next clinic and teaching schedules can be built around them. You can name the months the request covers. Anyone with an administrative assistant on file is copied to them automatically."
       />
       <div className="space-y-3 px-5 py-4">
         <div>
@@ -375,7 +377,13 @@ function RequestAwayDates({ onError }: { onError: (m: string) => void }) {
           </button>
           {result !== null && (
             <span className="text-sm text-muted">
-              {result === 0 ? 'No one matched that group.' : `Emailed ${result} ${result === 1 ? 'person' : 'people'} ✓`}
+              {result.recipients === 0
+                ? 'No one matched that group.'
+                : `Queued for ${result.recipients} ${result.recipients === 1 ? 'person' : 'people'}` +
+                  (result.assistant_copies > 0
+                    ? `, plus ${result.assistant_copies} administrative assistant ${result.assistant_copies === 1 ? 'copy' : 'copies'}`
+                    : '') +
+                  ' ✓ Sending within 15 minutes.'}
             </span>
           )}
         </div>
