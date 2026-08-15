@@ -233,10 +233,10 @@ export default function ClinicRotations() {
           <Card key={weekStart}>
             <CardHeader title={`Week of ${shortDate(weekStart)}`} />
             <div className="overflow-x-auto px-2 py-2">
-              <table className="w-full min-w-[640px] border-collapse text-sm">
+              <table className="w-full min-w-[640px] table-fixed border-collapse text-sm">
                 <thead>
                   <tr>
-                    <th className="p-2 text-left text-xs font-semibold uppercase tracking-wider text-muted">Fellow</th>
+                    <th className="w-28 p-2 text-left text-xs font-semibold uppercase tracking-wider text-muted">Fellow</th>
                     {dates.map((dt, i) => (
                       <th key={dt} className="p-2 text-left text-xs font-semibold uppercase tracking-wider text-muted">
                         {WEEKDAYS[i]}<span className="block font-normal normal-case text-muted">{shortDate(dt)}</span>
@@ -265,7 +265,7 @@ export default function ClinicRotations() {
                             className={`p-2 ${clickable ? 'cursor-pointer hover:bg-paper' : ''} ${conflicted ? 'bg-red-50 outline outline-1 outline-red-400' : ''}`}>
                             {cellContent(r)}
                             {conflictReason && isManager && (
-                              <span className="mt-0.5 block text-[10px] font-semibold leading-snug text-red-600">⚠ {conflictReason}</span>
+                              <span className="mt-0.5 block break-words text-[10px] font-semibold leading-snug text-red-600">⚠ {conflictReason}</span>
                             )}
                             {r?.is_draft && <span className="mt-0.5 block text-[10px] font-semibold uppercase tracking-wide text-accent">Draft</span>}
                           </td>
