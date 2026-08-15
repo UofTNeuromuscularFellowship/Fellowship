@@ -18,6 +18,7 @@ interface Rotation {
   is_protected: boolean | null
   has_conflict: boolean
   is_away: boolean
+  notes: string | null
 }
 interface AwayDate { fellow_id: string; away_date: string }
 interface ClinicCat { id: string; provider_name: string | null; provider_id: string | null; weekday: number; site_code: string; fellow_capacity: number; recurrence: 'weekly' | 'dates'; specific_dates: string[] | null }
@@ -54,7 +55,7 @@ export default function ClinicRotations() {
     const horizon = new Date(); horizon.setDate(horizon.getDate() + 90)
     let q = supabase
       .from('clinic_rotations')
-      .select('id, fellow_id, fellow_label, rotation_date, site_code, provider_name, supervisor_id, status, is_draft, is_protected, has_conflict, is_away')
+      .select('id, fellow_id, fellow_label, rotation_date, site_code, provider_name, supervisor_id, status, is_draft, is_protected, has_conflict, is_away, notes')
       .gte('rotation_date', today)
       .lte('rotation_date', horizon.toISOString().slice(0, 10))
       .order('rotation_date')
@@ -134,6 +135,17 @@ export default function ClinicRotations() {
     && !editCellRotation.is_away && editCellRotation.status !== 'cancelled',
   )
 
+  // Why is this cell flagged red? Generator- and trigger-written reasons live
+  // in notes; a fellow away date added after publishing is detected client-side.
+  function conflictReasonFor(r: Rotation | undefined, fellowId: string, date: string): string | null {
+    if (!r) return null
+    const fellowAway = awaySet.has(`${fellowId}|${date}`)
+    if (!r.has_conflict && !fellowAway) return null
+    if (r.notes) return r.notes
+    if (fellowAway) return 'Fellow marked away after publishing — needs reassignment'
+    return 'Needs review'
+  }
+
   function cellContent(r: Rotation | undefined) {
     if (!r) return <span className="text-muted">—</span>
     if (r.is_away) return <span className="font-medium text-red-600">Fellow Away</span>
@@ -191,7 +203,7 @@ export default function ClinicRotations() {
           <p className="text-sm font-semibold text-ink">
             ⚠ {conflicts.length} clinic assignment{conflicts.length === 1 ? '' : 's'} need attention
           </p>
-          <p className="mt-0.5 text-xs text-muted">Red cells are conflicts (a provider set a new away date). Click the cell to reassign it to another clinic.</p>
+          <p className="mt-0.5 text-xs text-muted">Each red cell shows why it's flagged — provider away, clinic at fellow capacity, or an away date added after publishing. Click the cell to reassign it.</p>
         </div>
       )}
 
@@ -238,7 +250,8 @@ export default function ClinicRotations() {
                       <td className="p-2 font-medium text-ink">{f.full_name}</td>
                       {dates.map((dt, i) => {
                         const r = byCell.get(`${f.id}|${dt}`)
-                        const conflicted = r ? (r.has_conflict || awaySet.has(`${f.id}|${dt}`)) : false
+                        const conflictReason = conflictReasonFor(r, f.id, dt)
+                        const conflicted = conflictReason !== null
                         const canCancel = supervisorCanCancel(r, dt)
                         const clickable = isManager || canCancel
                         return (
@@ -248,9 +261,12 @@ export default function ClinicRotations() {
                               : canCancel ? () => setCancelTarget(r!)
                               : undefined
                             }
-                            title={canCancel ? 'Your clinic — click to cancel it if something has come up' : undefined}
+                            title={canCancel ? 'Your clinic — click to cancel it if something has come up' : conflictReason ?? undefined}
                             className={`p-2 ${clickable ? 'cursor-pointer hover:bg-paper' : ''} ${conflicted ? 'bg-red-50 outline outline-1 outline-red-400' : ''}`}>
                             {cellContent(r)}
+                            {conflictReason && isManager && (
+                              <span className="mt-0.5 block text-[10px] font-semibold leading-snug text-red-600">⚠ {conflictReason}</span>
+                            )}
                             {r?.is_draft && <span className="mt-0.5 block text-[10px] font-semibold uppercase tracking-wide text-accent">Draft</span>}
                           </td>
                         )
@@ -271,6 +287,11 @@ export default function ClinicRotations() {
             <p className="mt-0.5 text-sm text-muted">
               {fellows.find((f) => f.id === editCell.fellowId)?.full_name} · {WEEKDAYS[editCell.weekday - 1]} {shortDate(editCell.date)}
             </p>
+            {conflictReasonFor(editCellRotation, editCell.fellowId, editCell.date) && (
+              <p className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+                ⚠ {conflictReasonFor(editCellRotation, editCell.fellowId, editCell.date)}
+              </p>
+            )}
             <div className="mt-4 space-y-1.5">
               {cellOptions.length === 0 && (
                 <p className="text-sm text-muted">No clinics are defined for this day in the catalog.</p>
@@ -323,7 +344,7 @@ function ProviderClinicsList({ providerId, onError }: { providerId: string; onEr
     setLoading(true)
     const { data, error } = await supabase
       .from('clinic_rotations')
-      .select('id, fellow_id, fellow_label, rotation_date, site_code, provider_name, supervisor_id, status, is_draft, is_protected, has_conflict, is_away')
+      .select('id, fellow_id, fellow_label, rotation_date, site_code, provider_name, supervisor_id, status, is_draft, is_protected, has_conflict, is_away, notes')
       .eq('supervisor_id', providerId)
       .gte('rotation_date', today)
       .order('rotation_date')
