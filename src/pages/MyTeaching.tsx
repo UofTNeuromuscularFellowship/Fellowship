@@ -25,7 +25,27 @@ interface Session {
 
 interface FeedbackRow { rating: number; comments: string | null; created_at: string }
 interface NamedFeedbackRow extends FeedbackRow { fellow_name: string }
-interface Person { id: string; full_name: string }
+interface Person { id: string; full_name: string; role?: string }
+
+// Faculty and fellows both teach — Journal Club is usually a fellow — so the
+// picker lists both, grouped, rather than faculty only.
+function TeacherOptions({ providers }: { providers: Person[] }) {
+  const faculty = providers.filter((p) => p.role !== 'fellow')
+  const fellows = providers.filter((p) => p.role === 'fellow')
+  if (fellows.length === 0) {
+    return <>{providers.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</>
+  }
+  return (
+    <>
+      <optgroup label="Supervisors & directors">
+        {faculty.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+      </optgroup>
+      <optgroup label="Fellows">
+        {fellows.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+      </optgroup>
+    </>
+  )
+}
 type AttendanceStatus = 'attended' | 'absent' | 'excused' | 'session_cancelled'
 
 export default function MyTeaching() {
@@ -59,7 +79,7 @@ export default function MyTeaching() {
     if (isAssistant && !acting.effectiveId) { setSessions([]); setLoading(false); return }
     load()
     if (isDirector) {
-      supabase.rpc('list_providers').then(({ data }) => setProviders((data as Person[]) ?? []))
+      supabase.rpc('list_teachers').then(({ data }) => setProviders((data as Person[]) ?? []))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id, acting.effectiveId])
@@ -380,7 +400,7 @@ function AddSessionPanel({ providers, onDone, onError }: {
         <select value={choice} onChange={(e) => setChoice(e.target.value)}
           className="w-full max-w-md rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink">
           <option value="none">Unassigned</option>
-          {providers.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+          <TeacherOptions providers={providers} />
           <option value="custom">Other (name only, no portal account)</option>
         </select>
         {choice === 'custom' && (
@@ -544,7 +564,7 @@ function EditSessionPanel({ session, providers, onDone, onError }: {
         <select value={choice} onChange={(e) => setChoice(e.target.value)}
           className="w-full max-w-md rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink">
           <option value="none">Unassigned</option>
-          {providers.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+          <TeacherOptions providers={providers} />
           <option value="custom">Other (name only, no portal account)</option>
         </select>
         {choice === 'custom' && (

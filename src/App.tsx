@@ -53,7 +53,7 @@ export default function App() {
       <Route path="/test-mode" element={<Shell allow={['fellow', 'supervisor', 'director']}><StudyTools initialTab="test" /></Shell>} />
       <Route path="/handbook" element={<Shell><Handbook /></Shell>} />
       <Route path="/people" element={<Shell allow={['director', 'admin']}><People /></Shell>} />
-      <Route path="/my-teaching" element={<Shell allow={['supervisor', 'director', 'assistant']}><MyTeaching /></Shell>} />
+      <Route path="/my-teaching" element={<Shell allow={['fellow', 'supervisor', 'director', 'assistant']}><MyTeaching /></Shell>} />
       <Route path="/rate-teaching" element={<Shell allow={['fellow']}><RateTeaching /></Shell>} />
       <Route path="/vacation" element={<Shell allow={['fellow', 'supervisor', 'director', 'assistant']}><Vacation /></Shell>} />
       <Route path="/evaluations" element={<Shell allow={['fellow', 'supervisor', 'director']}><Evaluations /></Shell>} />
