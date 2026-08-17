@@ -329,7 +329,7 @@ export default function ClinicRotations() {
         />
       )}
 
-      {!isAssistant && <ClinicTally isManager={isManager} />}
+      {isManager && <ClinicTally />}
     </div>
   )
 }
@@ -904,7 +904,7 @@ function FellowAssignments({ onError }: { onError: (m: string) => void }) {
   )
 }
 
-function ClinicTally({ isManager }: { isManager: boolean }) {
+function ClinicTally() {
   const [rows, setRows] = useState<TallyRow[]>([])
   const [loaded, setLoaded] = useState(false)
 
@@ -918,7 +918,7 @@ function ClinicTally({ isManager }: { isManager: boolean }) {
   if (loaded && rows.length === 0) {
     return (
       <Card>
-        <CardHeader title="Clinics per provider this academic year" sub="Published clinics only, July–June" />
+        <CardHeader title="Clinics per provider this academic year" sub="Published clinics only, July–June · visible to program direction only" />
         <p className="px-5 py-4 text-sm text-muted">No published clinics yet this academic year. Once you publish a schedule, each fellow's clinic counts per provider will appear here.</p>
       </Card>
     )
@@ -926,14 +926,14 @@ function ClinicTally({ isManager }: { isManager: boolean }) {
 
   return (
     <Card>
-      <CardHeader title="Clinics per provider this academic year" sub="Published clinics only, July–June" />
+      <CardHeader title="Clinics per provider this academic year" sub="Published clinics only, July–June · visible to program direction only" />
       {!loaded ? (
         <p className="px-5 py-4 text-sm text-muted">Loading…</p>
       ) : (
         <div className="space-y-4 px-5 py-4">
           {Array.from(byFellow.entries()).map(([fellow, list]) => (
             <div key={fellow}>
-              {isManager && <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted">{fellow}</p>}
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted">{fellow}</p>
               <ul className="divide-y divide-line">
                 {list.map((r, i) => (
                   <li key={i} className="flex items-center justify-between py-1.5 text-sm">

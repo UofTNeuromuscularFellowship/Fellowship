@@ -284,7 +284,7 @@ function CalendarSubscribe({ userId }: { userId: string }) {
     <Card>
       <CardHeader
         title="Sync your schedule to your calendar"
-        sub="Add the fellowship schedule to Apple Calendar, Google Calendar, or Outlook. It updates automatically whenever the schedule changes — you never have to re-add it."
+        sub="Add your own fellowship schedule — your clinics and teaching sessions — to Apple Calendar, Google Calendar, or Outlook. It updates automatically whenever the schedule changes; the portal remains the master calendar for everyone's schedule."
       />
       <div className="space-y-4 px-5 py-4">
         <div>
