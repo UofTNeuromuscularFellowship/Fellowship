@@ -1,0 +1,111 @@
+{
+  "_comment": [
+    "Build recipe for each region model. Kept separate from src/data/atlas3d.ts",
+    "because this is pipeline input (what to extract, how hard to decimate),",
+    "while atlas3d.ts is runtime data (what the app loads and maps).",
+    "'knownUnmapped' lists clinical entries we have deliberately not mapped to a",
+    "mesh, with a reason. Those render as '3D view not available' rather than",
+    "being pointed at an approximate neighbour.",
+    "'excludeStructures' MUST be honoured: those models are NonCommercial or unknown-licence and cannot ship in a CC BY-SA build. See LICENSES-3D.md section 1."
+  ],
+  "budgets": {
+    "maxGlbBytes": 8388608,
+    "targetGlbBytes": 6291456,
+    "maxMeshes": 150
+  },
+  "regions": [
+    {
+      "id": "upper-limb",
+      "phase": 1,
+      "collections": [
+        "Muscles",
+        "Bones",
+        "Nerves"
+      ],
+      "boundingStructures": [
+        "Scapula",
+        "Clavicle",
+        "Humerus",
+        "Radius",
+        "Ulna",
+        "Carpus",
+        "Metacarpus",
+        "Phalanges of hand"
+      ],
+      "decimateRatio": 0.35,
+      "knownUnmapped": [],
+      "excludeStructures": []
+    },
+    {
+      "id": "lower-limb",
+      "phase": 3,
+      "collections": [
+        "Muscles",
+        "Bones",
+        "Nerves"
+      ],
+      "boundingStructures": [
+        "Hip bone",
+        "Femur",
+        "Patella",
+        "Tibia",
+        "Fibula",
+        "Tarsus",
+        "Metatarsus",
+        "Phalanges of foot"
+      ],
+      "decimateRatio": 0.35,
+      "knownUnmapped": [],
+      "excludeStructures": []
+    },
+    {
+      "id": "head-neck",
+      "phase": 3,
+      "collections": [
+        "Muscles",
+        "Bones",
+        "Nerves"
+      ],
+      "boundingStructures": [
+        "Skull",
+        "Mandible",
+        "Cervical vertebrae",
+        "Hyoid bone"
+      ],
+      "decimateRatio": 0.4,
+      "knownUnmapped": [],
+      "excludeStructures": [
+        "Inner ear",
+        "Internal ear",
+        "Cochlea",
+        "Vestibular apparatus",
+        "Semicircular canals",
+        "Brainder",
+        "White matter"
+      ]
+    },
+    {
+      "id": "trunk",
+      "phase": 3,
+      "collections": [
+        "Muscles",
+        "Bones",
+        "Nerves"
+      ],
+      "boundingStructures": [
+        "Thoracic vertebrae",
+        "Lumbar vertebrae",
+        "Sacrum",
+        "Ribs",
+        "Sternum",
+        "Hip bone"
+      ],
+      "decimateRatio": 0.35,
+      "knownUnmapped": [],
+      "excludeStructures": [
+        "Kidney",
+        "Kidneys"
+      ]
+    }
+  ]
+}

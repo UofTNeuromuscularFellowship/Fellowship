@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { AppShell } from './components/AppShell'
@@ -20,6 +21,16 @@ import Vacation from './pages/Vacation'
 import Evaluations from './pages/Evaluations'
 import Settings from './pages/Settings'
 import NotFound from './pages/NotFound'
+
+// Code-split: the 3D atlas pulls in three.js, which must not weigh down the
+// main portal bundle for the many users who never open it.
+const Atlas3D = lazy(() => import('./pages/Atlas3D'))
+
+function LazyPage({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={<p className="text-sm text-muted">Loading…</p>}>{children}</Suspense>
+  )
+}
 
 function Shell({ children, allow }: { children: React.ReactNode; allow?: ('fellow' | 'supervisor' | 'director' | 'admin' | 'assistant')[] }) {
   return (
@@ -51,6 +62,14 @@ export default function App() {
       <Route path="/emg-atlas" element={<Shell allow={['fellow', 'supervisor', 'director']}><StudyTools initialTab="emg" /></Shell>} />
       <Route path="/nerve-guide" element={<Shell allow={['fellow', 'supervisor', 'director']}><StudyTools initialTab="ncs" /></Shell>} />
       <Route path="/test-mode" element={<Shell allow={['fellow', 'supervisor', 'director']}><StudyTools initialTab="test" /></Shell>} />
+      <Route
+        path="/atlas-3d"
+        element={
+          <Shell allow={['fellow', 'supervisor', 'director']}>
+            <LazyPage><Atlas3D /></LazyPage>
+          </Shell>
+        }
+      />
       <Route path="/handbook" element={<Shell><Handbook /></Shell>} />
       <Route path="/people" element={<Shell allow={['director', 'admin']}><People /></Shell>} />
       <Route path="/my-teaching" element={<Shell allow={['fellow', 'supervisor', 'director', 'assistant']}><MyTeaching /></Shell>} />
