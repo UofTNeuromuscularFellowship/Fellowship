@@ -134,6 +134,12 @@ export default function Atlas3D() {
   const [hoverLabel, setHoverLabel] = useState<string | null>(null)
   const [showBones, setShowBones] = useState(true)
   const [isolate, setIsolate] = useState(true)
+  const [sectionOn, setSectionOn] = useState(false)
+  const [sectionPos, setSectionPos] = useState(0.5)
+  const [sectionFlip, setSectionFlip] = useState(false)
+  const [selectionCentre, setSelectionCentre] = useState<[number, number, number] | null>(null)
+  const [viewCutSignal, setViewCutSignal] = useState(0)
+  const [bounds, setBounds] = useState<{ minY: number; maxY: number } | null>(null)
   const [attributionOpen, setAttributionOpen] = useState(false)
 
   useEffect(() => {
@@ -184,6 +190,20 @@ export default function Atlas3D() {
     () => regionMuscles.filter((m) => meshesFor(m.id).length > 0).length,
     [regionMuscles],
   )
+
+  const section = useMemo(
+    () => (sectionOn ? { position: sectionPos, flip: sectionFlip } : null),
+    [sectionOn, sectionPos, sectionFlip],
+  )
+
+  // Jump the cut to the middle of the selected muscle's belly.
+  function cutAtSelection() {
+    if (!bounds || selectionCentre === null) return
+    const span = bounds.maxY - bounds.minY
+    if (span <= 0) return
+    setSectionOn(true)
+    setSectionPos(Math.min(1, Math.max(0, (selectionCentre[1] - bounds.minY) / span)))
+  }
 
   function accept() {
     writeAck()
@@ -251,6 +271,15 @@ export default function Atlas3D() {
               />
               Fade other muscles
             </label>
+            <label className="flex items-center gap-2 text-sm text-ink">
+              <input
+                type="checkbox"
+                checked={sectionOn}
+                onChange={(e) => setSectionOn(e.target.checked)}
+                className="h-4 w-4 rounded border-line text-accent focus:ring-accent"
+              />
+              Cross-section
+            </label>
             {selectedId && (
               <button
                 onClick={() => setSelectedId('')}
@@ -260,6 +289,51 @@ export default function Atlas3D() {
               </button>
             )}
           </div>
+
+          {sectionOn && (
+            <div className="space-y-2 border-b border-line bg-paper/60 px-5 py-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+                  Cut level
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.005}
+                  value={sectionPos}
+                  onChange={(e) => setSectionPos(Number(e.target.value))}
+                  aria-label="Cross-section level along the limb"
+                  className="h-2 min-w-[10rem] flex-1 cursor-pointer accent-accent"
+                />
+                <button
+                  onClick={() => setViewCutSignal((n) => n + 1)}
+                  className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold text-muted hover:text-ink"
+                >
+                  View cut face
+                </button>
+                <button
+                  onClick={() => setSectionFlip((f) => !f)}
+                  className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold text-muted hover:text-ink"
+                >
+                  Flip side
+                </button>
+                <button
+                  onClick={cutAtSelection}
+                  disabled={selectionCentre === null}
+                  className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold text-accent disabled:cursor-not-allowed disabled:text-muted/50"
+                >
+                  Cut at this muscle
+                </button>
+              </div>
+              <p className="text-xs text-muted">
+                Drag to move the cut along the limb, or use the arrow keys. Cut surfaces show
+                the interior of each structure — use it to read depth: what lies superficial and
+                deep to your target at that level. Fading is turned off while sectioning so the
+                tissue reads solid.
+              </p>
+            </div>
+          )}
 
           <div className="relative h-[380px] w-full sm:h-[520px]">
             {!region?.ready || !region.glbPath ? (
@@ -280,6 +354,10 @@ export default function Atlas3D() {
                   onHoverName={setHoverLabel}
                   showBones={showBones}
                   isolate={isolate}
+                  section={section}
+                  onBounds={setBounds}
+                  onSelectionCentre={setSelectionCentre}
+                  viewCutSignal={viewCutSignal}
                 />
               </Suspense>
             )}
