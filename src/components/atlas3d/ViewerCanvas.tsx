@@ -5,10 +5,11 @@
 // selected muscle among its neighbours. Clicking a muscle selects it; muscles
 // with no clinical entry are inert.
 //
-// The model is anatomy only. No needle-entry markers or electrode positions are
-// drawn on it — that detail lives in the reviewed text alongside (see
-// MuscleDetail). The 3D view answers "where is this muscle, and what is next to
-// it"; the text answers "where does the needle go".
+// Needle markers ARE drawn here, but none of them are invented: every marker
+// was placed by a supervisor or director in author mode and approved by a
+// director before a fellow can see it (RLS enforces that, not this file). The
+// reviewed text in MuscleDetail remains the authority on technique; the marker
+// shows where that text is pointing.
 //
 // Everything here (and its three.js imports) stays inside the lazily-loaded
 // /atlas-3d chunk so the main portal bundle is unaffected.
@@ -21,6 +22,8 @@ import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import { kindOf, type CameraPose, type StructureKind } from '../../data/atlas3d'
 import { ClipCaps, collectCapTargets, type CapTarget } from './ClipCaps'
+import { NeedleMarkers } from './NeedleMarkers'
+import type { NeedleMarker } from '../../lib/atlas3dMarkers'
 
 // Palette matches the app's Tailwind tokens; nerve/vessel colours follow the
 // convention every anatomy text uses, so they read without a legend.
@@ -67,6 +70,23 @@ export interface ViewerProps {
   onSelectionCentre?: (c: [number, number, number] | null) => void
   /** Bumping this number swings the camera round to face the cut. */
   viewCutSignal?: number
+
+  /** Approved (and, for reviewers, draft) needle markers to draw. */
+  markers?: NeedleMarker[]
+  activeMarkerId?: string | null
+  /**
+   * When true, a click places a needle instead of selecting a muscle. The
+   * captured point and direction are in the LOCAL space of the mesh that was
+   * hit — see lib/atlas3dMarkers.ts for why that matters.
+   */
+  placingNeedle?: boolean
+  onPlaceNeedle?: (p: {
+    meshName: string
+    local: [number, number, number]
+    direction: [number, number, number]
+  }) => void
+  /** Called when a placement click landed on something other than the target. */
+  onPlaceRejected?: (structureLabel: string) => void
 }
 
 /**
@@ -85,7 +105,6 @@ function ownerName(obj: THREE.Object3D, known: Set<string>): string | null {
   return null
 }
 
-/** Bone test that also considers ancestors, for the same reason as above. */
 /** The nearest ancestor that the pipeline recorded a kind for. */
 function structureName(obj: THREE.Object3D): string | null {
   let cur: THREE.Object3D | null = obj
@@ -117,6 +136,11 @@ function Model({
   onBounds,
   onSelectionCentre,
   viewCutSignal,
+  markers,
+  activeMarkerId,
+  placingNeedle,
+  onPlaceNeedle,
+  onPlaceRejected,
 }: Omit<ViewerProps, 'camera'>) {
   const { scene } = useGLTF(glbPath, '/draco/')
   const invalidate = useThree((s) => s.invalidate)
@@ -236,6 +260,33 @@ function Model({
     invalidate()
   }, [root, selected, known, hovered, layers, isolate, sectionOn, plane, invalidate])
 
+  // While placing a needle, ONLY the target muscle is clickable. Anything else
+  // — an overlying muscle, a vein crossing in front — has its raycast disabled,
+  // so a click cannot land on the wrong structure in the first place. Without
+  // this, placing a marker on anything but the most superficial muscle means
+  // fighting whatever happens to be in front of it.
+  useEffect(() => {
+    const touched: THREE.Mesh[] = []
+    root.traverse((o) => {
+      const mesh = o as THREE.Mesh
+      if (!mesh.isMesh) return
+      if (!placingNeedle) return
+      const structure = structureName(mesh)
+      if (structure && selected.has(structure)) return
+      mesh.userData.savedRaycast = mesh.raycast
+      mesh.raycast = () => {}
+      touched.push(mesh)
+    })
+    return () => {
+      for (const mesh of touched) {
+        if (mesh.userData.savedRaycast) {
+          mesh.raycast = mesh.userData.savedRaycast
+          delete mesh.userData.savedRaycast
+        }
+      }
+    }
+  }, [root, placingNeedle, selected])
+
   // Cap every visible structure the plane passes through, so the cut reads as
   // solid tissue. Each gets its own stencil pass (see ClipCaps).
   const capTargets: CapTarget[] = useMemo(
@@ -264,6 +315,48 @@ function Model({
   }
 
   function handleClick(e: ThreeEvent<MouseEvent>) {
+    if (placingNeedle && onPlaceNeedle) {
+      const structure = structureName(e.object)
+      if (!structure || !e.face) return
+      e.stopPropagation()
+
+      // A marker must anchor to the muscle it describes. Without this, a click
+      // that lands on an overlying muscle would file a correctly-shaped marker
+      // against the wrong anatomy — the kind of error nothing downstream can
+      // detect.
+      if (!selected.has(structure)) {
+        onPlaceRejected?.(prettyMeshName(structure))
+        return
+      }
+
+      const node = root.getObjectByName(structure)
+      if (!node) return
+      node.updateMatrixWorld(true)
+
+      // World hit point -> the anchor mesh's local space, so the marker keeps
+      // its place when the region model is rebuilt and recentred.
+      const local = node.worldToLocal(e.point.clone())
+
+      // The needle points INTO the tissue: the inward surface normal at the
+      // hit, expressed in the same local space. Using the camera ray instead
+      // would record the reviewer's viewing angle, not an anatomical one.
+      const hitNormal = e.face.normal.clone()
+      const normalMatrix = new THREE.Matrix3().getNormalMatrix(e.object.matrixWorld)
+      const worldNormal = hitNormal.applyMatrix3(normalMatrix).normalize()
+      const localNormal = worldNormal
+        .clone()
+        .applyMatrix3(new THREE.Matrix3().getNormalMatrix(node.matrixWorld).invert())
+        .normalize()
+        .negate()
+
+      onPlaceNeedle({
+        meshName: structure,
+        local: [local.x, local.y, local.z],
+        direction: [localNormal.x, localNormal.y, localNormal.z],
+      })
+      return
+    }
+
     const owner = ownerName(e.object, known)
     const target = owner ? meshToTarget[owner] : undefined
     if (!target) return
@@ -274,6 +367,9 @@ function Model({
   return (
     <>
       {sectionOn && <ClipCaps targets={capTargets} plane={plane} selected={selected} />}
+      {markers && markers.length > 0 && (
+        <NeedleMarkers root={root} markers={markers} activeId={activeMarkerId} />
+      )}
       <CutCamera
         signal={viewCutSignal}
         plane={sectionOn ? plane : null}

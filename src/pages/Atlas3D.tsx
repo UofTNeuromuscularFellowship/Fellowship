@@ -16,6 +16,16 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Card, CardHeader } from '../components/ui/Card'
 import { MuscleDetail } from '../components/MuscleDetail'
+import { NeedlePanel } from '../components/atlas3d/NeedlePanel'
+import { useAuth } from '../context/AuthContext'
+import {
+  canAuthorMarkers,
+  createMarker,
+  deleteMarker,
+  listMarkers,
+  updateMarker,
+  type NeedleMarker,
+} from '../lib/atlas3dMarkers'
 import { AttributionDialog } from '../components/atlas3d/AttributionDialog'
 import { detectWebgl, type WebglSupport } from '../components/atlas3d/webgl'
 import { REGION_MODELS, MESH_MAP, meshesFor } from '../data/atlas3d'
@@ -139,6 +149,14 @@ export default function Atlas3D() {
   const [sectionFlip, setSectionFlip] = useState(false)
   const [selectionCentre, setSelectionCentre] = useState<[number, number, number] | null>(null)
   const [viewCutSignal, setViewCutSignal] = useState(0)
+
+  const { profile } = useAuth()
+  const mayAuthor = canAuthorMarkers(profile?.role)
+  const [markers, setMarkers] = useState<NeedleMarker[]>([])
+  const [activeMarkerId, setActiveMarkerId] = useState<string | null>(null)
+  const [placing, setPlacing] = useState(false)
+  const [markerBusy, setMarkerBusy] = useState(false)
+  const [markerError, setMarkerError] = useState<string | null>(null)
   const [bounds, setBounds] = useState<{ minY: number; maxY: number; radius: number } | null>(null)
   const [attributionOpen, setAttributionOpen] = useState(false)
 
@@ -203,6 +221,87 @@ export default function Atlas3D() {
     if (span <= 0) return
     setSectionOn(true)
     setSectionPos(Math.min(1, Math.max(0, (selectionCentre[1] - bounds.minY) / span)))
+  }
+
+  // RLS decides what comes back here: fellows get approved markers only.
+  // A failure must not break the atlas, so it degrades to "no markers".
+  useEffect(() => {
+    if (!acked || !region?.ready) return
+    let cancelled = false
+    listMarkers(region.id)
+      .then((rows) => {
+        if (!cancelled) setMarkers(rows)
+      })
+      .catch((e) => {
+        if (!cancelled) setMarkerError(e instanceof Error ? e.message : String(e))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [acked, region?.id, region?.ready])
+
+  const visibleMarkers = useMemo(
+    () => markers.filter((m) => m.muscleId === selectedId),
+    [markers, selectedId],
+  )
+
+  async function handlePlaceNeedle(p: {
+    meshName: string
+    local: [number, number, number]
+    direction: [number, number, number]
+  }) {
+    if (!region || !selectedId || !profile) return
+    setMarkerBusy(true)
+    setMarkerError(null)
+    try {
+      const created = await createMarker(
+        {
+          muscleId: selectedId,
+          regionId: region.id,
+          meshName: p.meshName,
+          local: p.local,
+          direction: p.direction,
+          depthMm: 15,
+        },
+        profile.id,
+      )
+      setMarkers((all) => [...all, created])
+      setActiveMarkerId(created.id)
+    } catch (e) {
+      setMarkerError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setMarkerBusy(false)
+      setPlacing(false)
+    }
+  }
+
+  async function patchMarker(
+    id: string,
+    patch: { depthMm?: number; label?: string; note?: string; status?: 'draft' | 'approved' },
+  ) {
+    setMarkerBusy(true)
+    setMarkerError(null)
+    try {
+      const updated = await updateMarker(id, patch)
+      setMarkers((all) => all.map((m) => (m.id === id ? updated : m)))
+    } catch (e) {
+      setMarkerError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setMarkerBusy(false)
+    }
+  }
+
+  async function removeMarker(id: string) {
+    setMarkerBusy(true)
+    setMarkerError(null)
+    try {
+      await deleteMarker(id)
+      setMarkers((all) => all.filter((m) => m.id !== id))
+    } catch (e) {
+      setMarkerError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setMarkerBusy(false)
+    }
   }
 
   function accept() {
@@ -371,6 +470,17 @@ export default function Atlas3D() {
                   onBounds={setBounds}
                   onSelectionCentre={setSelectionCentre}
                   viewCutSignal={viewCutSignal}
+                  markers={visibleMarkers}
+                  activeMarkerId={activeMarkerId}
+                  placingNeedle={placing}
+                  onPlaceNeedle={handlePlaceNeedle}
+                  onPlaceRejected={(what) =>
+                    setMarkerError(
+                      `That click landed on ${what}. Rotate until the target muscle is ` +
+                        'in front, then click on it — a marker has to be anchored to the ' +
+                        'muscle it describes.',
+                    )
+                  }
                 />
               </Suspense>
             )}
@@ -484,7 +594,26 @@ export default function Atlas3D() {
               unaffected.
             </div>
           )}
-          <MuscleDetail muscle={current} />
+          <MuscleDetail muscle={current} showDiagram={false} />
+
+          {mayAuthor && (
+            <NeedlePanel
+              muscleName={current.name}
+              role={profile?.role}
+              markers={visibleMarkers}
+              placing={placing}
+              onTogglePlacing={() => setPlacing((p) => !p)}
+              activeId={activeMarkerId}
+              onSetActive={setActiveMarkerId}
+              onSave={(id, patch) => void patchMarker(id, patch)}
+              onApprove={(id, approved) =>
+                void patchMarker(id, { status: approved ? 'approved' : 'draft' })
+              }
+              onDelete={(id) => void removeMarker(id)}
+              busy={markerBusy}
+              error={markerError}
+            />
+          )}
         </div>
       ) : (
         <Card>

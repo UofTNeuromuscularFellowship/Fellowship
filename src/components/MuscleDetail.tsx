@@ -24,7 +24,18 @@ function chainParts(m: EmgMuscle): string {
   return [m.cord, m.trunk, m.division].filter(Boolean).join(' · ')
 }
 
-export function MuscleDetail({ muscle }: { muscle: EmgMuscle }) {
+export function MuscleDetail({
+  muscle,
+  showDiagram = true,
+}: {
+  muscle: EmgMuscle
+  /**
+   * The 3D Atlas turns this off: the model IS the diagram there, so an empty
+   * "a diagram will appear here" placeholder is just noise next to it.
+   * The text atlas keeps it.
+   */
+  showDiagram?: boolean
+}) {
   const chain = chainParts(muscle)
   return (
     <div className="space-y-4">
@@ -66,12 +77,14 @@ export function MuscleDetail({ muscle }: { muscle: EmgMuscle }) {
         </Card>
       )}
 
-      <DiagramPlaceholder
-        src={muscle.diagram}
-        alt={`Needle insertion site for ${muscle.name}`}
-        label="Needle insertion diagram"
-        caption="A labelled diagram of the needle insertion site will appear here."
-      />
+      {showDiagram && (
+        <DiagramPlaceholder
+          src={muscle.diagram}
+          alt={`Needle insertion site for ${muscle.name}`}
+          label="Needle insertion diagram"
+          caption="A labelled diagram of the needle insertion site will appear here."
+        />
+      )}
 
       {muscle.pitfalls && (
         <Card>
