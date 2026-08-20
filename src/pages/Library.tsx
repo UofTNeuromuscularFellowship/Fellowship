@@ -1,7 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
+
+// pdf.js is a big dependency and most visits to this page are a download, not a
+// read. Loaded only when someone actually opens a document.
+const PdfViewer = lazy(() => import('../components/PdfViewer'))
 
 // ---------------------------------------------------------------------------
 // Library — reference texts and documents for the fellowship.
@@ -13,7 +17,12 @@ import { Card, CardHeader } from '../components/ui/Card'
 // ---------------------------------------------------------------------------
 
 const BUCKET = 'library'
-const SIGNED_URL_TTL = 3600 // 1 hour
+const SIGNED_URL_TTL = 3600 // 1 hour — plenty for a download to start
+// Reading is a longer activity than downloading, and pdf.js keeps fetching byte
+// ranges as the reader scrolls: a link that expired mid-book would strand them
+// halfway through. Four hours covers a sitting without minting anything
+// long-lived.
+const VIEWER_URL_TTL = 4 * 3600
 
 const CATEGORIES = [
   'Textbook',
@@ -56,6 +65,8 @@ export default function Library() {
   const [showUpload, setShowUpload] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  const [reading, setReading] = useState<{ doc: LibraryDoc; url: string } | null>(null)
+  const [opening, setOpening] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
@@ -90,6 +101,23 @@ export default function Library() {
     }
     return Array.from(map.entries())
   }, [docs, query])
+
+  function isPdf(d: LibraryDoc) {
+    return d.mime_type === 'application/pdf' || d.file_name.toLowerCase().endsWith('.pdf')
+  }
+
+  async function read(d: LibraryDoc) {
+    setOpening(d.id)
+    const { data, error } = await supabase.storage
+      .from(BUCKET)
+      .createSignedUrl(d.storage_path, VIEWER_URL_TTL)
+    setOpening(null)
+    if (error || !data?.signedUrl) {
+      setMsg(error?.message ?? 'Could not open this document.')
+      return
+    }
+    setReading({ doc: d, url: data.signedUrl })
+  }
 
   async function download(d: LibraryDoc) {
     const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(d.storage_path, SIGNED_URL_TTL, {
@@ -191,6 +219,15 @@ export default function Library() {
                         {d.description && <p className="mt-0.5 text-sm text-muted">{d.description}</p>}
                       </div>
                       <div className="flex shrink-0 gap-4 text-sm">
+                        {isPdf(d) && (
+                          <button
+                            className="font-medium text-accent hover:underline disabled:opacity-50"
+                            disabled={opening === d.id}
+                            onClick={() => read(d)}
+                          >
+                            {opening === d.id ? 'Opening…' : 'Read'}
+                          </button>
+                        )}
                         <button className="font-medium text-accent hover:underline" onClick={() => download(d)}>
                           Download
                         </button>
@@ -208,6 +245,24 @@ export default function Library() {
           </div>
         )}
       </Card>
+
+      {reading && (
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+              <p className="rounded-md bg-surface px-5 py-4 text-sm text-ink">Loading reader…</p>
+            </div>
+          }
+        >
+          <PdfViewer
+            url={reading.url}
+            title={reading.doc.title}
+            fileName={reading.doc.file_name}
+            onDownload={() => download(reading.doc)}
+            onClose={() => setReading(null)}
+          />
+        </Suspense>
+      )}
 
       {canManage && (
         <p className="text-xs text-muted">

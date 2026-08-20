@@ -19,3 +19,43 @@ body {
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+/* ---------------------------------------------------------------------------
+   PDF text layer (library reader).
+
+   pdf.js paints the page to a canvas and then lays invisible, correctly
+   positioned text on top so the page can be selected, copied and searched.
+   These rules are the minimum that layer needs; we do not pull in the whole
+   pdf_viewer.css, which carries the toolbar and sidebar styling we replace.
+   --------------------------------------------------------------------------- */
+.pdf-text-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  line-height: 1;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 2;
+}
+.pdf-text-layer span,
+.pdf-text-layer br {
+  position: absolute;
+  white-space: pre;
+  color: transparent;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+.pdf-text-layer ::selection { background: rgba(43, 108, 176, 0.32); }
+
+/* Search hits. The text itself stays invisible — the canvas underneath is what
+   the reader sees — so a mark is a translucent wash over the matched glyphs. */
+.pdf-text-layer mark.pdf-hl {
+  color: transparent;
+  background: rgba(250, 204, 21, 0.45);
+  border-radius: 2px;
+}
+.pdf-text-layer mark.pdf-hl-current {
+  background: rgba(249, 115, 22, 0.7);
+  box-shadow: 0 0 0 1px rgba(194, 65, 12, 0.8);
+}

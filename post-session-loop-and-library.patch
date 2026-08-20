@@ -1,7 +1,7 @@
 From 8a095ae107e7576a804a9e396100f94d272ffa56 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Thu, 20 Aug 2026 14:53:13 +0000
-Subject: [PATCH 1/3] Close the post-session loop and add a resource library
+Subject: [PATCH 1/4] Close the post-session loop and add a resource library
 
 Three additions, all riding the existing email rails (email_queue ->
 email-dispatch every 15 min, enqueue_teaching_reminders daily at 9am ET):
@@ -1242,7 +1242,7 @@ index 0000000..f14082a
 From 4437566ff9aca6ab2d5106a20e3e0beb53397bab Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Thu, 20 Aug 2026 15:01:00 +0000
-Subject: [PATCH 2/3] Send post-session emails same day at 9:00 AM Toronto
+Subject: [PATCH 2/4] Send post-session emails same day at 9:00 AM Toronto
 
 The report and feedback requests were going out the morning after. They now
 go out the same day at 09:00 local, which is exactly when the standard
@@ -1513,7 +1513,7 @@ index 0000000..91c46f4
 From d20a943170782fa4a80144cb84597894666ed254 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Thu, 20 Aug 2026 15:35:43 +0000
-Subject: [PATCH 3/3] Treat a session as past once it ends, not at midnight
+Subject: [PATCH 3/4] Treat a session as past once it ends, not at midnight
 
 My Teaching split sessions on session_date >= today, so a session held this
 morning stayed under "Upcoming" until midnight and every isPast-gated
@@ -1667,6 +1667,704 @@ index a1e32a1..d283029 100644
      const map: Record<string, MyFeedback> = {}
      for (const row of (fb as MyFeedback[]) ?? []) map[row.session_id] = row
      setMine(map)
+-- 
+2.43.0
+
+
+From a493164e10b80ea07b5bb5013ff67aef86b35210 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 20 Aug 2026 20:47:55 +0000
+Subject: [PATCH 4/4] Add an in-portal PDF reader to the Library
+
+Library items gain a "Read" button beside "Download", opening the document
+in a pdf.js reader with page navigation, zoom, fit-to-width, selectable
+text and full-text search.
+
+pdf.js is not cheap, so it is behind React.lazy the way the 3D atlas is:
+the main bundle grows by ~3 kB, and the 373 kB reader chunk plus its
+worker load only when someone actually opens a document. The browser's
+built-in PDF frame would have been a fraction of the code but renders only
+the first page on iOS, which rules it out for textbook reading on an iPad.
+
+Pages render as they scroll into view and are released again once well off
+screen, so a 900-page text does not try to rasterise 900 canvases. Device
+pixel ratio is capped at 2.
+
+Search marks the matched characters rather than the whole text run pdf.js
+happened to emit, and counts occurrences rather than pages, so "3 of 19"
+means what a reader expects. Counting walks the same text runs the
+highlighter does, so the counter and the marks on the page cannot drift
+apart. A phrase split across two runs is neither marked nor counted --
+those boundaries are pdf.js's, not ours.
+
+Viewing signs a 4-hour URL rather than the 1-hour download link: pdf.js
+keeps fetching byte ranges as the reader scrolls, and an hour-old link
+would strand someone mid-book.
+
+Verified in headless Chromium at desktop and iPhone viewports: page
+raster, lazy render and release, zoom steps, page and match navigation,
+substring-only marks, and clean teardown of marks when the query is
+cleared.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01HV2TSLxfnBFbXmi2V2hHHf
+---
+ package.json                 |   1 +
+ src/components/PdfViewer.tsx | 477 +++++++++++++++++++++++++++++++++++
+ src/index.css                |  40 +++
+ src/pages/Library.tsx        |  59 ++++-
+ 4 files changed, 575 insertions(+), 2 deletions(-)
+ create mode 100644 src/components/PdfViewer.tsx
+
+diff --git a/package.json b/package.json
+index 6143dd1..a5e9f24 100644
+--- a/package.json
++++ b/package.json
+@@ -15,6 +15,7 @@
+     "@react-three/drei": "^9.122.0",
+     "@react-three/fiber": "^8.18.0",
+     "@supabase/supabase-js": "^2.45.4",
++    "pdfjs-dist": "^4.10.38",
+     "react": "^18.3.1",
+     "react-dom": "^18.3.1",
+     "react-router-dom": "^6.26.2",
+diff --git a/src/components/PdfViewer.tsx b/src/components/PdfViewer.tsx
+new file mode 100644
+index 0000000..bf4d605
+--- /dev/null
++++ b/src/components/PdfViewer.tsx
+@@ -0,0 +1,477 @@
++import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
++import * as pdfjs from 'pdfjs-dist'
++import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
++import type { PDFDocumentProxy } from 'pdfjs-dist'
++
++// ---------------------------------------------------------------------------
++// PdfViewer — in-portal reader for library documents.
++//
++// This module is deliberately NOT imported at the top level anywhere. Library
++// pulls it in with React.lazy, the same treatment the 3D atlas gets, so pdf.js
++// and its worker stay out of the main bundle for everyone who never opens a
++// document.
++//
++// Pages render on demand as they scroll into view rather than all at once — a
++// 900-page textbook would otherwise try to rasterise 900 canvases on open. Each
++// page keeps a placeholder of the right size so the scrollbar is honest before
++// anything has rendered, and canvases far from the viewport are released again
++// to cap memory.
++// ---------------------------------------------------------------------------
++
++pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
++
++// How many pages either side of the viewport stay rendered.
++const KEEP_RENDERED = 2
++// Device pixel ratio is capped: a 3x retina render of a full-page textbook scan
++// costs a lot of memory for very little visible gain.
++const MAX_DPR = 2
++
++const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4]
++
++interface Props {
++  url: string
++  title: string
++  fileName: string
++  /** Omitted when the viewer is opened for someone who may not download. */
++  onDownload?: () => void
++  onClose: () => void
++}
++
++interface PageDims { width: number; height: number }
++
++/** One occurrence of the search term: which page, and which occurrence on it. */
++interface Match { page: number; index: number }
++
++/**
++ * Wrap every occurrence of `needle` inside a rendered text layer in a <mark>.
++ *
++ * pdf.js gives each text run its own absolutely-positioned span, so marking the
++ * whole span would light up an entire line for a one-word hit. This splits the
++ * run and marks only the matched characters.
++ *
++ * Reading `span.textContent` returns the flattened text whether or not a
++ * previous pass already wrapped parts of it, so each pass rebuilds from clean
++ * text and marks cannot nest.
++ */
++function applyHighlight(container: HTMLElement, needle: string | null, currentIndex: number | null) {
++  let occurrence = 0
++  for (const span of Array.from(container.querySelectorAll('span'))) {
++    const text = span.textContent ?? ''
++    const hay = text.toLowerCase()
++    if (!needle || !hay.includes(needle)) {
++      if (span.firstElementChild) span.textContent = text // clear stale marks
++      continue
++    }
++    const frag = document.createDocumentFragment()
++    let pos = 0
++    for (;;) {
++      const at = hay.indexOf(needle, pos)
++      if (at === -1) break
++      if (at > pos) frag.appendChild(document.createTextNode(text.slice(pos, at)))
++      const mark = document.createElement('mark')
++      mark.className = occurrence === currentIndex ? 'pdf-hl pdf-hl-current' : 'pdf-hl'
++      mark.textContent = text.slice(at, at + needle.length)
++      frag.appendChild(mark)
++      pos = at + needle.length
++      occurrence++
++    }
++    if (pos < text.length) frag.appendChild(document.createTextNode(text.slice(pos)))
++    span.textContent = ''
++    span.appendChild(frag)
++  }
++}
++
++export default function PdfViewer({ url, title, fileName, onDownload, onClose }: Props) {
++  const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null)
++  const [numPages, setNumPages] = useState(0)
++  const [baseDims, setBaseDims] = useState<PageDims | null>(null)
++  const [error, setError] = useState<string | null>(null)
++  const [scale, setScale] = useState<number | 'fit'>('fit')
++  const [pageNum, setPageNum] = useState(1)
++
++  const scrollRef = useRef<HTMLDivElement>(null)
++  const [containerWidth, setContainerWidth] = useState(0)
++
++  // --- document load ------------------------------------------------------
++  useEffect(() => {
++    let cancelled = false
++    const task = pdfjs.getDocument({ url })
++    task.promise.then(
++      async (doc) => {
++        if (cancelled) { doc.destroy(); return }
++        const first = await doc.getPage(1)
++        const vp = first.getViewport({ scale: 1 })
++        if (cancelled) { doc.destroy(); return }
++        setBaseDims({ width: vp.width, height: vp.height })
++        setNumPages(doc.numPages)
++        setPdf(doc)
++      },
++      (e: unknown) => {
++        if (cancelled) return
++        const m = e instanceof Error ? e.message : String(e)
++        setError(
++          /password/i.test(m)
++            ? 'This PDF is password protected and cannot be opened in the portal.'
++            : `Could not open this document. ${m}`
++        )
++      }
++    )
++    return () => {
++      cancelled = true
++      task.destroy()
++    }
++  }, [url])
++
++  useEffect(() => () => { pdf?.destroy() }, [pdf])
++
++  // --- sizing -------------------------------------------------------------
++  useEffect(() => {
++    const el = scrollRef.current
++    if (!el) return
++    const ro = new ResizeObserver(([entry]) => setContainerWidth(entry.contentRect.width))
++    ro.observe(el)
++    setContainerWidth(el.clientWidth)
++    return () => ro.disconnect()
++  }, [pdf])
++
++  // Horizontal padding around the page inside the scroller.
++  const GUTTER = 32
++  const effectiveScale = useMemo(() => {
++    if (scale !== 'fit') return scale
++    if (!baseDims || !containerWidth) return 1
++    return Math.max(0.2, (containerWidth - GUTTER) / baseDims.width)
++  }, [scale, baseDims, containerWidth])
++
++  const pageDims = useMemo<PageDims | null>(
++    () => (baseDims ? { width: baseDims.width * effectiveScale, height: baseDims.height * effectiveScale } : null),
++    [baseDims, effectiveScale]
++  )
++
++  function zoom(dir: 1 | -1) {
++    const current = effectiveScale
++    const next = dir === 1
++      ? ZOOM_STEPS.find((s) => s > current + 0.001)
++      : [...ZOOM_STEPS].reverse().find((s) => s < current - 0.001)
++    if (next) setScale(next)
++  }
++
++  // --- page navigation ----------------------------------------------------
++  const goToPage = useCallback((n: number) => {
++    const el = scrollRef.current
++    if (!el) return
++    const target = el.querySelector<HTMLElement>(`[data-page="${n}"]`)
++    if (target) el.scrollTo({ top: target.offsetTop - 8, behavior: 'smooth' })
++  }, [])
++
++  // --- search -------------------------------------------------------------
++  const [query, setQuery] = useState('')
++  const [matches, setMatches] = useState<Match[]>([])
++  const [matchIdx, setMatchIdx] = useState(0)
++  const [searching, setSearching] = useState(false)
++  // Cached per page as the individual text runs, not one joined string: the
++  // count has to be taken the same way the highlighter walks spans, or the
++  // "3 of 41" counter and the marks on the page disagree.
++  const textCache = useRef<Map<number, string[]>>(new Map())
++  const searchRef = useRef<HTMLInputElement>(null)
++
++  const runSearch = useCallback(async (q: string) => {
++    if (!pdf || q.trim().length < 2) { setMatches([]); setMatchIdx(0); return }
++    const needle = q.trim().toLowerCase()
++    setSearching(true)
++    const found: Match[] = []
++    for (let n = 1; n <= pdf.numPages; n++) {
++      let runs = textCache.current.get(n)
++      if (runs === undefined) {
++        const page = await pdf.getPage(n)
++        const content = await page.getTextContent()
++        runs = content.items.map((i) => ('str' in i ? i.str : ''))
++        textCache.current.set(n, runs)
++      }
++      let onPage = 0
++      for (const run of runs) {
++        const hay = run.toLowerCase()
++        let pos = hay.indexOf(needle)
++        while (pos !== -1) {
++          found.push({ page: n, index: onPage })
++          onPage++
++          pos = hay.indexOf(needle, pos + needle.length)
++        }
++      }
++    }
++    setMatches(found)
++    setMatchIdx(0)
++    setSearching(false)
++    if (found.length) goToPage(found[0].page)
++  }, [pdf, goToPage])
++
++  function stepMatch(dir: 1 | -1) {
++    if (!matches.length) return
++    const next = (matchIdx + dir + matches.length) % matches.length
++    setMatchIdx(next)
++    goToPage(matches[next].page)
++  }
++
++  // --- keyboard -----------------------------------------------------------
++  useEffect(() => {
++    function onKey(e: KeyboardEvent) {
++      const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
++      if (e.key === 'Escape') { e.preventDefault(); onClose(); return }
++      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
++        e.preventDefault(); searchRef.current?.focus(); searchRef.current?.select(); return
++      }
++      if (typing) {
++        if (e.key === 'Enter') { e.preventDefault(); stepMatch(e.shiftKey ? -1 : 1) }
++        return
++      }
++      if (e.key === '+' || e.key === '=') { e.preventDefault(); zoom(1) }
++      if (e.key === '-') { e.preventDefault(); zoom(-1) }
++      if (e.key === 'Home') { e.preventDefault(); goToPage(1) }
++      if (e.key === 'End') { e.preventDefault(); goToPage(numPages) }
++    }
++    window.addEventListener('keydown', onKey)
++    return () => window.removeEventListener('keydown', onKey)
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [onClose, goToPage, numPages, matches, matchIdx, effectiveScale])
++
++  // The page behind the modal must not scroll along with it.
++  useEffect(() => {
++    const prev = document.body.style.overflow
++    document.body.style.overflow = 'hidden'
++    return () => { document.body.style.overflow = prev }
++  }, [])
++
++  const needle = query.trim().length >= 2 ? query.trim().toLowerCase() : null
++
++  return (
++    <div className="fixed inset-0 z-50 flex flex-col bg-black/70" role="dialog" aria-modal="true" aria-label={title}>
++      {/* Toolbar */}
++      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-surface px-4 py-2">
++        <p className="min-w-0 flex-1 truncate text-sm font-medium text-ink" title={title}>{title}</p>
++
++        <div className="flex items-center gap-1 text-sm">
++          <button onClick={() => goToPage(Math.max(1, pageNum - 1))} disabled={pageNum <= 1}
++            className="rounded border border-line px-2 py-1 text-muted hover:text-ink disabled:opacity-40" aria-label="Previous page">↑</button>
++          <span className="px-1 tabular-nums text-muted">
++            {numPages ? `${pageNum} / ${numPages}` : '—'}
++          </span>
++          <button onClick={() => goToPage(Math.min(numPages, pageNum + 1))} disabled={pageNum >= numPages}
++            className="rounded border border-line px-2 py-1 text-muted hover:text-ink disabled:opacity-40" aria-label="Next page">↓</button>
++        </div>
++
++        <div className="flex items-center gap-1 text-sm">
++          <button onClick={() => zoom(-1)} className="rounded border border-line px-2 py-1 text-muted hover:text-ink" aria-label="Zoom out">−</button>
++          <button onClick={() => setScale('fit')}
++            className={`rounded border px-2 py-1 ${scale === 'fit' ? 'border-accent text-accent' : 'border-line text-muted hover:text-ink'}`}>
++            Fit
++          </button>
++          <span className="px-1 tabular-nums text-muted">{Math.round(effectiveScale * 100)}%</span>
++          <button onClick={() => zoom(1)} className="rounded border border-line px-2 py-1 text-muted hover:text-ink" aria-label="Zoom in">+</button>
++        </div>
++
++        <div className="flex items-center gap-1 text-sm">
++          <input
++            ref={searchRef}
++            value={query}
++            onChange={(e) => setQuery(e.target.value)}
++            onKeyDown={(e) => { if (e.key === 'Enter' && !matches.length) runSearch(query) }}
++            onBlur={() => { if (query.trim().length >= 2 && !matches.length) runSearch(query) }}
++            placeholder="Search text"
++            className="w-32 rounded-md border border-line bg-paper px-2 py-1 text-sm text-ink sm:w-44"
++          />
++          {searching ? (
++            <span className="px-1 text-xs text-muted">scanning…</span>
++          ) : matches.length > 0 ? (
++            <>
++              <span className="px-1 text-xs tabular-nums text-muted">{matchIdx + 1}/{matches.length}</span>
++              <button onClick={() => stepMatch(-1)} className="rounded border border-line px-2 py-1 text-muted hover:text-ink" aria-label="Previous match">‹</button>
++              <button onClick={() => stepMatch(1)} className="rounded border border-line px-2 py-1 text-muted hover:text-ink" aria-label="Next match">›</button>
++            </>
++          ) : needle ? (
++            <button onClick={() => runSearch(query)} className="rounded border border-line px-2 py-1 text-xs text-muted hover:text-ink">Find</button>
++          ) : null}
++        </div>
++
++        <div className="flex items-center gap-3 text-sm">
++          {onDownload && (
++            <button onClick={onDownload} className="font-medium text-accent hover:underline">Download</button>
++          )}
++          <button onClick={onClose} className="rounded-md border border-line px-3 py-1 font-medium text-ink hover:bg-paper">
++            Close
++          </button>
++        </div>
++      </div>
++
++      {/* Pages */}
++      <div ref={scrollRef} className="flex-1 overflow-auto overscroll-contain bg-[#3a3f47] px-2 py-4">
++        {error ? (
++          <div className="mx-auto max-w-md rounded-md bg-surface px-5 py-4 text-sm text-ink">
++            <p>{error}</p>
++            {onDownload && (
++              <p className="mt-2">
++                <button onClick={onDownload} className="font-medium text-accent hover:underline">
++                  Download {fileName} instead
++                </button>
++              </p>
++            )}
++          </div>
++        ) : !pdf || !pageDims ? (
++          <p className="py-10 text-center text-sm text-white/80">Opening document…</p>
++        ) : (
++          <div className="mx-auto flex flex-col items-center gap-4" style={{ width: pageDims.width }}>
++            {Array.from({ length: numPages }, (_, i) => (
++              <PageSlot
++                key={i + 1}
++                pdf={pdf}
++                num={i + 1}
++                scale={effectiveScale}
++                fallback={pageDims}
++                needle={needle}
++                currentMatchIndex={
++                  matches[matchIdx]?.page === i + 1 ? matches[matchIdx].index : null
++                }
++                onVisible={setPageNum}
++              />
++            ))}
++          </div>
++        )}
++      </div>
++    </div>
++  )
++}
++
++// ---------------------------------------------------------------------------
++
++function PageSlot({
++  pdf, num, scale, fallback, needle, currentMatchIndex, onVisible,
++}: {
++  pdf: PDFDocumentProxy
++  num: number
++  scale: number
++  fallback: PageDims
++  needle: string | null
++  /** Which occurrence on THIS page is the active one, or null if none is. */
++  currentMatchIndex: number | null
++  onVisible: (n: number) => void
++}) {
++  const hostRef = useRef<HTMLDivElement>(null)
++  const canvasRef = useRef<HTMLCanvasElement>(null)
++  const textRef = useRef<HTMLDivElement>(null)
++  const [dims, setDims] = useState<PageDims | null>(null)
++  const [near, setNear] = useState(false)
++  const [rendered, setRendered] = useState(false)
++
++  // Two thresholds off one observer: a wide margin decides what to render
++  // ahead of the reader, a tight one decides which page label to show.
++  useEffect(() => {
++    const el = hostRef.current
++    if (!el) return
++    const renderObs = new IntersectionObserver(
++      ([e]) => setNear(e.isIntersecting),
++      { root: el.closest('.overflow-auto'), rootMargin: `${KEEP_RENDERED * 100}% 0px` }
++    )
++    const currentObs = new IntersectionObserver(
++      ([e]) => { if (e.isIntersecting) onVisible(num) },
++      { root: el.closest('.overflow-auto'), rootMargin: '-45% 0px -45% 0px' }
++    )
++    renderObs.observe(el)
++    currentObs.observe(el)
++    return () => { renderObs.disconnect(); currentObs.disconnect() }
++  }, [num, onVisible])
++
++  useEffect(() => {
++    if (!near) {
++      // Released so a long document does not accumulate hundreds of canvases.
++      const c = canvasRef.current
++      if (c) { c.width = 0; c.height = 0 }
++      if (textRef.current) textRef.current.innerHTML = ''
++      setRendered(false)
++      return
++    }
++
++    let cancelled = false
++    let task: ReturnType<Awaited<ReturnType<PDFDocumentProxy['getPage']>>['render']> | null = null
++
++    ;(async () => {
++      try {
++        const page = await pdf.getPage(num)
++        if (cancelled) return
++        const viewport = page.getViewport({ scale })
++        setDims({ width: viewport.width, height: viewport.height })
++
++        const canvas = canvasRef.current
++        const ctx = canvas?.getContext('2d')
++        if (!canvas || !ctx) return
++
++        const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR)
++        canvas.width = Math.floor(viewport.width * dpr)
++        canvas.height = Math.floor(viewport.height * dpr)
++        canvas.style.width = `${viewport.width}px`
++        canvas.style.height = `${viewport.height}px`
++
++        task = page.render({
++          canvasContext: ctx,
++          viewport,
++          transform: dpr === 1 ? undefined : [dpr, 0, 0, dpr, 0, 0],
++        })
++        await task.promise
++        if (cancelled) return
++
++        // Text layer: makes the page selectable and copyable, and is what the
++        // search highlight attaches to.
++        const tl = textRef.current
++        if (tl) {
++          tl.innerHTML = ''
++          tl.style.setProperty('--scale-factor', String(scale))
++          const layer = new pdfjs.TextLayer({
++            textContentSource: await page.getTextContent(),
++            container: tl,
++            viewport,
++          })
++          await layer.render()
++        }
++        if (!cancelled) setRendered(true)
++      } catch (e) {
++        // A cancelled render is the normal result of scrolling away or zooming
++        // mid-paint, not a failure worth surfacing.
++        if (!(e instanceof pdfjs.RenderingCancelledException)) {
++          // eslint-disable-next-line no-console
++          console.error(`Page ${num} failed to render`, e)
++        }
++      }
++    })()
++
++    return () => { cancelled = true; task?.cancel() }
++  }, [near, pdf, num, scale])
++
++  // Mark the search term, then bring the active occurrence into view. A phrase
++  // that straddles two text runs is not marked — pdf.js chose those boundaries,
++  // not us — and for the same reason it is not counted, so the marks on screen
++  // and the "3 of 41" counter always agree.
++  useEffect(() => {
++    const tl = textRef.current
++    if (!tl || !rendered) return
++    applyHighlight(tl, needle, currentMatchIndex)
++    if (currentMatchIndex !== null) {
++      tl.querySelector('.pdf-hl-current')?.scrollIntoView({ block: 'center', behavior: 'smooth' })
++    }
++  }, [needle, rendered, currentMatchIndex])
++
++  const shown = dims ?? fallback
++
++  return (
++    <div
++      ref={hostRef}
++      data-page={num}
++      className="relative bg-white shadow-lg"
++      style={{ width: shown.width, height: shown.height }}
++    >
++      <canvas ref={canvasRef} className="block" />
++      <div ref={textRef} className="pdf-text-layer" />
++      {!rendered && (
++        <span className="absolute inset-x-0 top-1/2 text-center text-xs text-[#8a8f98]">
++          Page {num}
++        </span>
++      )}
++    </div>
++  )
++}
+diff --git a/src/index.css b/src/index.css
+index 12aef32..a1e7a5c 100644
+--- a/src/index.css
++++ b/src/index.css
+@@ -19,3 +19,43 @@ body {
+ @media (prefers-reduced-motion: reduce) {
+   * { animation: none !important; transition: none !important; }
+ }
++
++/* ---------------------------------------------------------------------------
++   PDF text layer (library reader).
++
++   pdf.js paints the page to a canvas and then lays invisible, correctly
++   positioned text on top so the page can be selected, copied and searched.
++   These rules are the minimum that layer needs; we do not pull in the whole
++   pdf_viewer.css, which carries the toolbar and sidebar styling we replace.
++   --------------------------------------------------------------------------- */
++.pdf-text-layer {
++  position: absolute;
++  inset: 0;
++  overflow: hidden;
++  line-height: 1;
++  text-size-adjust: none;
++  forced-color-adjust: none;
++  transform-origin: 0 0;
++  z-index: 2;
++}
++.pdf-text-layer span,
++.pdf-text-layer br {
++  position: absolute;
++  white-space: pre;
++  color: transparent;
++  cursor: text;
++  transform-origin: 0% 0%;
++}
++.pdf-text-layer ::selection { background: rgba(43, 108, 176, 0.32); }
++
++/* Search hits. The text itself stays invisible — the canvas underneath is what
++   the reader sees — so a mark is a translucent wash over the matched glyphs. */
++.pdf-text-layer mark.pdf-hl {
++  color: transparent;
++  background: rgba(250, 204, 21, 0.45);
++  border-radius: 2px;
++}
++.pdf-text-layer mark.pdf-hl-current {
++  background: rgba(249, 115, 22, 0.7);
++  box-shadow: 0 0 0 1px rgba(194, 65, 12, 0.8);
++}
+diff --git a/src/pages/Library.tsx b/src/pages/Library.tsx
+index 2eb24b2..eb515e1 100644
+--- a/src/pages/Library.tsx
++++ b/src/pages/Library.tsx
+@@ -1,8 +1,12 @@
+-import { useEffect, useMemo, useState } from 'react'
++import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
+ import { supabase } from '../lib/supabase'
+ import { useAuth } from '../context/AuthContext'
+ import { Card, CardHeader } from '../components/ui/Card'
+ 
++// pdf.js is a big dependency and most visits to this page are a download, not a
++// read. Loaded only when someone actually opens a document.
++const PdfViewer = lazy(() => import('../components/PdfViewer'))
++
+ // ---------------------------------------------------------------------------
+ // Library — reference texts and documents for the fellowship.
+ //
+@@ -13,7 +17,12 @@ import { Card, CardHeader } from '../components/ui/Card'
+ // ---------------------------------------------------------------------------
+ 
+ const BUCKET = 'library'
+-const SIGNED_URL_TTL = 3600 // 1 hour
++const SIGNED_URL_TTL = 3600 // 1 hour — plenty for a download to start
++// Reading is a longer activity than downloading, and pdf.js keeps fetching byte
++// ranges as the reader scrolls: a link that expired mid-book would strand them
++// halfway through. Four hours covers a sitting without minting anything
++// long-lived.
++const VIEWER_URL_TTL = 4 * 3600
+ 
+ const CATEGORIES = [
+   'Textbook',
+@@ -56,6 +65,8 @@ export default function Library() {
+   const [showUpload, setShowUpload] = useState(false)
+   const [msg, setMsg] = useState<string | null>(null)
+   const [query, setQuery] = useState('')
++  const [reading, setReading] = useState<{ doc: LibraryDoc; url: string } | null>(null)
++  const [opening, setOpening] = useState<string | null>(null)
+ 
+   async function load() {
+     setLoading(true)
+@@ -91,6 +102,23 @@ export default function Library() {
+     return Array.from(map.entries())
+   }, [docs, query])
+ 
++  function isPdf(d: LibraryDoc) {
++    return d.mime_type === 'application/pdf' || d.file_name.toLowerCase().endsWith('.pdf')
++  }
++
++  async function read(d: LibraryDoc) {
++    setOpening(d.id)
++    const { data, error } = await supabase.storage
++      .from(BUCKET)
++      .createSignedUrl(d.storage_path, VIEWER_URL_TTL)
++    setOpening(null)
++    if (error || !data?.signedUrl) {
++      setMsg(error?.message ?? 'Could not open this document.')
++      return
++    }
++    setReading({ doc: d, url: data.signedUrl })
++  }
++
+   async function download(d: LibraryDoc) {
+     const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(d.storage_path, SIGNED_URL_TTL, {
+       download: d.file_name,
+@@ -191,6 +219,15 @@ export default function Library() {
+                         {d.description && <p className="mt-0.5 text-sm text-muted">{d.description}</p>}
+                       </div>
+                       <div className="flex shrink-0 gap-4 text-sm">
++                        {isPdf(d) && (
++                          <button
++                            className="font-medium text-accent hover:underline disabled:opacity-50"
++                            disabled={opening === d.id}
++                            onClick={() => read(d)}
++                          >
++                            {opening === d.id ? 'Opening…' : 'Read'}
++                          </button>
++                        )}
+                         <button className="font-medium text-accent hover:underline" onClick={() => download(d)}>
+                           Download
+                         </button>
+@@ -209,6 +246,24 @@ export default function Library() {
+         )}
+       </Card>
+ 
++      {reading && (
++        <Suspense
++          fallback={
++            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
++              <p className="rounded-md bg-surface px-5 py-4 text-sm text-ink">Loading reader…</p>
++            </div>
++          }
++        >
++          <PdfViewer
++            url={reading.url}
++            title={reading.doc.title}
++            fileName={reading.doc.file_name}
++            onDownload={() => download(reading.doc)}
++            onClose={() => setReading(null)}
++          />
++        </Suspense>
++      )}
++
+       {canManage && (
+         <p className="text-xs text-muted">
+           Only upload material the program is licensed to distribute — publisher-provided copies, open-access texts,
 -- 
 2.43.0
 

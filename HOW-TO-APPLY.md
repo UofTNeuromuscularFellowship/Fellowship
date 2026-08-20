@@ -19,11 +19,19 @@ Drop each file into the repo at exactly this path, replacing what is there:
 | `src/components/AppShell.tsx` | `src/components/AppShell.tsx` |
 | `src/pages/MyTeaching.tsx` | `src/pages/MyTeaching.tsx` |
 | `src/pages/RateTeaching.tsx` | `src/pages/RateTeaching.tsx` |
+| `src/lib/format.ts` | `src/lib/format.ts` |
+| `src/index.css` | `src/index.css` |
+| `package.json` | `package.json` |
 | `src/pages/Library.tsx` | **new file** |
+| `src/components/PdfViewer.tsx` | **new file** |
 | `supabase/migrations/0014_session_reports_and_library.sql` | **new file** (record only — already applied) |
 | `supabase/migrations/0015_same_day_post_session_emails.sql` | **new file** (record only — already applied) |
 
 Commit to `main`; Vercel deploys automatically.
+
+`package.json` matters here — it adds the `pdfjs-dist` dependency the reader
+needs. Without it the Vercel build fails on a missing module. There is no
+lockfile tracked in this repo, so nothing else needs updating.
 
 ## Option B — apply the patch with git
 
@@ -44,6 +52,17 @@ Waveform Rounds on Aug 20 finished before this change went in, so its emails go
 out at the **Aug 21, 9:00 AM** run instead. Everything from Aug 27 onward is
 same-day. If the front-end has not deployed by then, the emails still send but
 the "Complete session report" form will not be on the page yet.
+
+## The library reader
+
+Each PDF on the shelf has **Read** beside **Download**. Read opens it in the
+portal — page navigation, zoom, fit-to-width, selectable text, and search with
+match stepping. Non-PDF files show Download only.
+
+The reader is a separate 373 kB chunk that loads the first time someone opens a
+document; the portal's normal load is unchanged. Reading uses a 4-hour signed
+link rather than the 1-hour download link, because the reader keeps fetching
+parts of the file as you scroll and an expiring link would strand you mid-book.
 
 ## Before uploading library PDFs
 
