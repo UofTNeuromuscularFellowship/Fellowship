@@ -132,14 +132,14 @@ export default function Atlas3D() {
   const [selectedId, setSelectedId] = useState<string>('')
   const [query, setQuery] = useState('')
   const [hoverLabel, setHoverLabel] = useState<string | null>(null)
-  const [showBones, setShowBones] = useState(true)
+  const [layers, setLayers] = useState({ bones: true, nerves: true, vessels: false })
   const [isolate, setIsolate] = useState(true)
   const [sectionOn, setSectionOn] = useState(false)
   const [sectionPos, setSectionPos] = useState(0.5)
   const [sectionFlip, setSectionFlip] = useState(false)
   const [selectionCentre, setSelectionCentre] = useState<[number, number, number] | null>(null)
   const [viewCutSignal, setViewCutSignal] = useState(0)
-  const [bounds, setBounds] = useState<{ minY: number; maxY: number } | null>(null)
+  const [bounds, setBounds] = useState<{ minY: number; maxY: number; radius: number } | null>(null)
   const [attributionOpen, setAttributionOpen] = useState(false)
 
   useEffect(() => {
@@ -253,15 +253,28 @@ export default function Atlas3D() {
           />
 
           <div className="flex flex-wrap items-center gap-4 border-b border-line px-5 py-3">
-            <label className="flex items-center gap-2 text-sm text-ink">
-              <input
-                type="checkbox"
-                checked={showBones}
-                onChange={(e) => setShowBones(e.target.checked)}
-                className="h-4 w-4 rounded border-line text-accent focus:ring-accent"
-              />
-              Show bones
-            </label>
+            {(
+              [
+                ['bones', 'Bones', '#E7E3DA'],
+                ['nerves', 'Nerves', '#E8B62C'],
+                ['vessels', 'Vessels', '#C0392B'],
+              ] as const
+            ).map(([key, label, swatch]) => (
+              <label key={key} className="flex items-center gap-2 text-sm text-ink">
+                <input
+                  type="checkbox"
+                  checked={layers[key]}
+                  onChange={(e) => setLayers((l) => ({ ...l, [key]: e.target.checked }))}
+                  className="h-4 w-4 rounded border-line text-accent focus:ring-accent"
+                />
+                <span
+                  aria-hidden="true"
+                  className="inline-block h-2.5 w-2.5 rounded-sm border border-line"
+                  style={{ backgroundColor: swatch }}
+                />
+                {label}
+              </label>
+            ))}
             <label className="flex items-center gap-2 text-sm text-ink">
               <input
                 type="checkbox"
@@ -352,7 +365,7 @@ export default function Atlas3D() {
                   meshToTarget={meshToTarget}
                   onSelect={setSelectedId}
                   onHoverName={setHoverLabel}
-                  showBones={showBones}
+                  layers={layers}
                   isolate={isolate}
                   section={section}
                   onBounds={setBounds}

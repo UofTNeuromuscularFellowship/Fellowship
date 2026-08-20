@@ -19,13 +19,32 @@ import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber'
 import { OrbitControls, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
-import type { CameraPose } from '../../data/atlas3d'
+import { kindOf, type CameraPose, type StructureKind } from '../../data/atlas3d'
+import { ClipCaps, collectCapTargets, type CapTarget } from './ClipCaps'
 
-// Palette matches the app's Tailwind tokens.
+// Palette matches the app's Tailwind tokens; nerve/vessel colours follow the
+// convention every anatomy text uses, so they read without a legend.
 const C_SELECTED = '#0E7C86' // accent
 const C_HOVER = '#16B5C2' // signal
-const C_MUSCLE = '#C08A7D' // muted anatomical
+const C_MUSCLE = '#C08A7D'
 const C_BONE = '#E7E3DA'
+const C_NERVE = '#E8B62C'
+const C_ARTERY = '#C0392B'
+const C_VEIN = '#3A6EA5'
+
+const KIND_COLOR: Record<StructureKind, string> = {
+  muscle: C_MUSCLE,
+  bone: C_BONE,
+  nerve: C_NERVE,
+  artery: C_ARTERY,
+  vein: C_VEIN,
+}
+
+export interface LayerState {
+  bones: boolean
+  nerves: boolean
+  vessels: boolean
+}
 
 export interface ViewerProps {
   glbPath: string
@@ -36,13 +55,14 @@ export interface ViewerProps {
   meshToTarget: Record<string, string>
   onSelect: (targetId: string) => void
   onHoverName: (label: string | null) => void
-  showBones: boolean
+  /** Which non-muscle layers are drawn. */
+  layers: LayerState
   /** Dim everything that isn't selected, so the target reads clearly. */
   isolate: boolean
   /** Cross-section: null = off. `position` is 0..1 along the limb's long axis. */
   section: { position: number; flip: boolean } | null
   /** Reports the model's vertical extent so the page can label the slider. */
-  onBounds?: (b: { minY: number; maxY: number }) => void
+  onBounds?: (b: { minY: number; maxY: number; radius: number }) => void
   /** Reports the selected muscle's centre, for "cut at this muscle" / "view cut". */
   onSelectionCentre?: (c: [number, number, number] | null) => void
   /** Bumping this number swings the camera round to face the cut. */
@@ -66,19 +86,14 @@ function ownerName(obj: THREE.Object3D, known: Set<string>): string | null {
 }
 
 /** Bone test that also considers ancestors, for the same reason as above. */
-function isBoneChain(obj: THREE.Object3D): boolean {
+/** The nearest ancestor that the pipeline recorded a kind for. */
+function structureName(obj: THREE.Object3D): string | null {
   let cur: THREE.Object3D | null = obj
   while (cur) {
-    if (isBone(cur.name)) return true
+    if (kindOf(cur.name)) return cur.name
     cur = cur.parent
   }
-  return false
-}
-
-// Names are underscore-separated (see the pipeline), so word boundaries don't
-// help here — match on underscore-delimited tokens instead.
-function isBone(name: string) {
-  return /(^|_)(bone|humerus|radius|ulna|scapula|clavicle|phalanx|metacarpal)(_|$)/i.test(name)
+  return null
 }
 
 /**
@@ -96,7 +111,7 @@ function Model({
   meshToTarget,
   onSelect,
   onHoverName,
-  showBones,
+  layers,
   isolate,
   section,
   onBounds,
@@ -107,6 +122,7 @@ function Model({
   const invalidate = useThree((s) => s.invalidate)
   const [hovered, setHovered] = useState<string | null>(null)
   const [selectionFocus, setSelectionFocus] = useState<THREE.Vector3 | null>(null)
+  const [selectionRadius, setSelectionRadius] = useState(0)
 
   // One clone per model, so materials we recolour don't leak into the cache.
   const root = useMemo(() => scene.clone(true), [scene])
@@ -117,7 +133,10 @@ function Model({
   // Vertical extent of the whole limb — the slider maps onto this.
   const bounds = useMemo(() => {
     const box = new THREE.Box3().setFromObject(root)
-    return { minY: box.min.y, maxY: box.max.y }
+    // Horizontal half-extent drives the cut-face framing: the cut is as wide
+    // as the limb, not as long as it.
+    const radius = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) / 2
+    return { minY: box.min.y, maxY: box.max.y, radius }
   }, [root])
 
   useEffect(() => {
@@ -148,6 +167,8 @@ function Model({
       onSelectionCentre?.(null)
     } else {
       const c = box.getCenter(new THREE.Vector3())
+      const sz = box.getSize(new THREE.Vector3())
+      setSelectionRadius(Math.max(sz.x, sz.z) / 2)
       setSelectionFocus(c)
       onSelectionCentre?.([c.x, c.y, c.z])
     }
@@ -158,6 +179,7 @@ function Model({
   const plane = useMemo(() => new THREE.Plane(new THREE.Vector3(0, -1, 0), 0), [])
 
   const sectionOn = section !== null
+
   if (section) {
     const y = bounds.minY + (bounds.maxY - bounds.minY) * section.position
     plane.normal.set(0, section.flip ? 1 : -1, 0)
@@ -170,24 +192,35 @@ function Model({
       const mesh = o as THREE.Mesh
       if (!mesh.isMesh) return
       const owner = ownerName(mesh, known)
-      const bone = owner === null && isBoneChain(mesh)
+      const structure = structureName(mesh)
+      const kind: StructureKind = (structure && kindOf(structure)) || 'muscle'
       const isSel = owner !== null && selected.has(owner)
       const isHov = owner !== null && hovered === owner
       const clinical = owner !== null
 
-      mesh.visible = bone ? showBones : true
+      mesh.visible =
+        kind === 'bone' ? layers.bones
+        : kind === 'nerve' ? layers.nerves
+        : kind === 'artery' || kind === 'vein' ? layers.vessels
+        : true
+
+      // Nerves and vessels are landmarks, not targets — they stay legible
+      // rather than fading, because knowing what a needle is near is the
+      // point of showing them at all.
+      const landmark = kind === 'nerve' || kind === 'artery' || kind === 'vein'
+      const faded = isolate && !isSel && !landmark
 
       const mat = new THREE.MeshStandardMaterial({
-        color: isSel ? C_SELECTED : isHov ? C_HOVER : bone ? C_BONE : C_MUSCLE,
-        roughness: bone ? 0.85 : 0.65,
+        color: isSel ? C_SELECTED : isHov ? C_HOVER : KIND_COLOR[kind],
+        roughness: kind === 'bone' ? 0.85 : landmark ? 0.4 : 0.65,
         metalness: 0.02,
         // A cross-section is about reading solid tissue, so sectioning turns
-        // the ghosting off: everything renders opaque and double-sided, and
-        // the selected muscle additionally gets a stencil cap.
+        // the ghosting off: everything renders opaque, and each structure gets
+        // a stencil cap so the cut face is solid.
         transparent: !sectionOn,
-        side: sectionOn ? THREE.DoubleSide : THREE.FrontSide,
-        opacity: sectionOn ? 1 : isSel ? 1 : isolate ? (bone ? 0.12 : 0.16) : bone ? 0.9 : 0.95,
-        depthWrite: sectionOn || isSel || !isolate,
+        side: THREE.FrontSide,
+        opacity: sectionOn ? 1 : isSel ? 1 : faded ? (kind === 'bone' ? 0.12 : 0.16) : kind === 'bone' ? 0.9 : 0.95,
+        depthWrite: sectionOn || isSel || !faded,
       })
       if (isSel) {
         mat.emissive = new THREE.Color(C_SELECTED)
@@ -201,7 +234,14 @@ function Model({
       mesh.userData.clinical = clinical
     })
     invalidate()
-  }, [root, selected, known, hovered, showBones, isolate, sectionOn, plane, invalidate])
+  }, [root, selected, known, hovered, layers, isolate, sectionOn, plane, invalidate])
+
+  // Cap every visible structure the plane passes through, so the cut reads as
+  // solid tissue. Each gets its own stencil pass (see ClipCaps).
+  const capTargets: CapTarget[] = useMemo(
+    () => (sectionOn ? collectCapTargets(root, layers) : []),
+    [sectionOn, root, layers],
+  )
 
   // Moving the slider only changes the plane's constant, so ask for a redraw.
   useEffect(() => {
@@ -233,11 +273,13 @@ function Model({
 
   return (
     <>
+      {sectionOn && <ClipCaps targets={capTargets} plane={plane} selected={selected} />}
       <CutCamera
         signal={viewCutSignal}
         plane={sectionOn ? plane : null}
         bounds={bounds}
         focus={selectionFocus}
+        radius={selectionRadius}
       />
       <primitive
         object={root}
@@ -259,11 +301,13 @@ function CutCamera({
   plane,
   bounds,
   focus,
+  radius,
 }: {
   signal?: number
   plane: THREE.Plane | null
-  bounds: { minY: number; maxY: number }
+  bounds: { minY: number; maxY: number; radius: number }
   focus: THREE.Vector3 | null
+  radius: number
 }) {
   const camera = useThree((s) => s.camera)
   const controls = useThree((s) => s.controls) as OrbitControlsImpl | null
@@ -279,10 +323,11 @@ function CutCamera({
     const point = focus
       ? plane.projectPoint(focus, new THREE.Vector3())
       : plane.coplanarPoint(new THREE.Vector3())
-    // Far enough back to frame the whole limb at that level — the point is to
-    // read the target muscle's position among its neighbours, not to fill the
-    // screen with it.
-    const dist = Math.max(0.3, (bounds.maxY - bounds.minY) * 0.5)
+    // Frame on the selected muscle, showing roughly a hand's width of
+    // surrounding anatomy. Framing on the whole model instead puts the cut in
+    // the far distance, because the shoulder girdle and vessels make the
+    // bounding box far wider than the limb at any one level.
+    const dist = Math.min(0.22, Math.max(0.07, (radius || bounds.radius * 0.2) * 2.5))
     // Look from the kept side, back along the normal, towards the cut.
     camera.position.copy(point).addScaledVector(plane.normal, -dist)
     camera.updateProjectionMatrix()
@@ -291,7 +336,7 @@ function CutCamera({
       controls.update()
     }
     invalidate()
-  }, [signal, plane, bounds, camera, controls, invalidate])
+  }, [signal, plane, bounds, radius, focus, camera, controls, invalidate])
 
   return null
 }
@@ -349,7 +394,7 @@ export function ViewerCanvas({ glbPath, camera, ...rest }: ViewerProps) {
         target={camera.target}
         enableDamping
         dampingFactor={0.08}
-        minDistance={0.1}
+        minDistance={0.04}
         maxDistance={4}
         keyPanSpeed={12}
       />
