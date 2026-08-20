@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
-import { formatDate } from '../lib/format'
+import { formatDate, localToday, sessionHasEnded } from '../lib/format'
 
 interface Session {
   id: string
   session_date: string
+  end_time: string
   topic: string | null
   provider_name: string | null
 }
@@ -28,20 +29,21 @@ export default function RateTeaching() {
 
   async function load() {
     setLoading(true)
-    const today = new Date().toISOString().slice(0, 10)
     const [{ data: sess, error: se }, { data: fb, error: fe }] = await Promise.all([
       supabase
         .from('teaching_sessions')
-        .select('id, session_date, topic, provider_name')
+        .select('id, session_date, end_time, topic, provider_name')
         .eq('is_break', false)
-        .lte('session_date', today)
+        .lte('session_date', localToday())
         .order('session_date', { ascending: false })
         .limit(30),
       supabase.from('teaching_feedback').select('session_id, rating, comments, suggested_topics'),
     ])
     if (se) setMsg(se.message)
     if (fe) setMsg(fe.message)
-    setSessions((sess as Session[]) ?? [])
+    // Today's session is fetched but only offered for rating once it has ended,
+    // which is when the 9:00 AM feedback request goes out.
+    setSessions(((sess as Session[]) ?? []).filter((s) => sessionHasEnded(s.session_date, s.end_time)))
     const map: Record<string, MyFeedback> = {}
     for (const row of (fb as MyFeedback[]) ?? []) map[row.session_id] = row
     setMine(map)

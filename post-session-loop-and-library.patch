@@ -1,7 +1,7 @@
 From 8a095ae107e7576a804a9e396100f94d272ffa56 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Thu, 20 Aug 2026 14:53:13 +0000
-Subject: [PATCH 1/2] Close the post-session loop and add a resource library
+Subject: [PATCH 1/3] Close the post-session loop and add a resource library
 
 Three additions, all riding the existing email rails (email_queue ->
 email-dispatch every 15 min, enqueue_teaching_reminders daily at 9am ET):
@@ -1242,7 +1242,7 @@ index 0000000..f14082a
 From 4437566ff9aca6ab2d5106a20e3e0beb53397bab Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Thu, 20 Aug 2026 15:01:00 +0000
-Subject: [PATCH 2/2] Send post-session emails same day at 9:00 AM Toronto
+Subject: [PATCH 2/3] Send post-session emails same day at 9:00 AM Toronto
 
 The report and feedback requests were going out the morning after. They now
 go out the same day at 09:00 local, which is exactly when the standard
@@ -1506,6 +1506,167 @@ index 0000000..91c46f4
 +update public.teaching_sessions
 +set report_requested = true, feedback_requested = true
 +where session_date < (now() at time zone 'America/Toronto')::date;
+-- 
+2.43.0
+
+
+From d20a943170782fa4a80144cb84597894666ed254 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 20 Aug 2026 15:35:43 +0000
+Subject: [PATCH 3/3] Treat a session as past once it ends, not at midnight
+
+My Teaching split sessions on session_date >= today, so a session held this
+morning stayed under "Upcoming" until midnight and every isPast-gated
+control -- attendance, feedback, the session report, mark-delivered, the
+completion letter -- was unreachable on the day it ran.
+
+That was survivable when post-session emails went out the following
+morning. Now that they go out at 9:00 AM the same day, the email sends the
+teacher to a page with nothing on it.
+
+sessionHasEnded() mirrors the end_time guard in
+enqueue_teaching_reminders(), so the portal and the email agree on which
+sessions are finished. My Teaching ticks once a minute so a page left open
+across 09:00 flips over on its own.
+
+Also replaces toISOString().slice(0, 10) with a local-timezone date. That
+was the UTC date, which in Toronto rolls to tomorrow at 20:00 local -- a
+session would have jumped to "Past" four hours early each evening.
+
+Rate Teaching gets the same treatment: today's session is listed for rating
+only once it has actually ended.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01HV2TSLxfnBFbXmi2V2hHHf
+---
+ src/lib/format.ts          | 32 ++++++++++++++++++++++++++++++++
+ src/pages/MyTeaching.tsx   | 21 +++++++++++++++++----
+ src/pages/RateTeaching.tsx | 12 +++++++-----
+ 3 files changed, 56 insertions(+), 9 deletions(-)
+
+diff --git a/src/lib/format.ts b/src/lib/format.ts
+index ee4c3b2..5da73a7 100644
+--- a/src/lib/format.ts
++++ b/src/lib/format.ts
+@@ -11,3 +11,35 @@ export function shortDate(iso: string): string {
+ export function roleLabel(role: string): string {
+   return role.charAt(0).toUpperCase() + role.slice(1)
+ }
++
++/** Today's date in the viewer's own timezone, as YYYY-MM-DD.
++ *
++ * Not `toISOString().slice(0, 10)` — that is the UTC date, which in Toronto
++ * rolls over to tomorrow at 20:00 local. */
++export function localToday(now: Date = new Date()): string {
++  const p = (n: number) => String(n).padStart(2, '0')
++  return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`
++}
++
++/** Has a session finished?
++ *
++ * A session on today's date is only "past" once its end_time has gone by, which
++ * is what lets the attendance and session-report controls appear the same
++ * morning rather than the next day. This mirrors the end_time guard in
++ * enqueue_teaching_reminders(), so the portal and the 9:00 AM email agree on
++ * which sessions are finished.
++ *
++ * Times are zero-padded HH:MM:SS, so string comparison is safe. */
++export function sessionHasEnded(
++  sessionDate: string,
++  endTime: string | null | undefined,
++  now: Date = new Date()
++): boolean {
++  const today = localToday(now)
++  if (sessionDate < today) return true
++  if (sessionDate > today) return false
++  if (!endTime) return false
++  const p = (n: number) => String(n).padStart(2, '0')
++  const clock = `${p(now.getHours())}:${p(now.getMinutes())}:${p(now.getSeconds())}`
++  return endTime.slice(0, 8) <= clock
++}
+diff --git a/src/pages/MyTeaching.tsx b/src/pages/MyTeaching.tsx
+index 2f8ec04..069d917 100644
+--- a/src/pages/MyTeaching.tsx
++++ b/src/pages/MyTeaching.tsx
+@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
+ import { supabase } from '../lib/supabase'
+ import { useAuth } from '../context/AuthContext'
+ import { Card, CardHeader } from '../components/ui/Card'
+-import { formatDate } from '../lib/format'
++import { formatDate, sessionHasEnded } from '../lib/format'
+ import { useActingProvider, ActingForBar } from '../components/ActingFor'
+ 
+ interface Session {
+@@ -88,9 +88,22 @@ export default function MyTeaching() {
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [profile?.id, acting.effectiveId])
+ 
+-  const today = new Date().toISOString().slice(0, 10)
+-  const upcoming = useMemo(() => sessions.filter((s) => s.session_date >= today), [sessions, today])
+-  const past = useMemo(() => sessions.filter((s) => s.session_date < today).reverse(), [sessions, today])
++  // A session moves to "Past" the moment it ends, not at midnight. Post-session
++  // emails go out at 9:00 AM the same day, so attendance and the session report
++  // have to be reachable that morning. Ticking once a minute lets the 08:00–09:00
++  // session cross over on its own for anyone with the page already open.
++  const [clock, setClock] = useState(() => new Date())
++  useEffect(() => {
++    const t = setInterval(() => setClock(new Date()), 60_000)
++    return () => clearInterval(t)
++  }, [])
++
++  const ended = useMemo(
++    () => (s: Session) => sessionHasEnded(s.session_date, s.end_time, clock),
++    [clock]
++  )
++  const upcoming = useMemo(() => sessions.filter((s) => !ended(s)), [sessions, ended])
++  const past = useMemo(() => sessions.filter((s) => ended(s)).reverse(), [sessions, ended])
+   const draftCount = useMemo(() => sessions.filter((s) => s.assignment_draft).length, [sessions])
+ 
+   async function markDelivered(s: Session) {
+diff --git a/src/pages/RateTeaching.tsx b/src/pages/RateTeaching.tsx
+index a1e32a1..d283029 100644
+--- a/src/pages/RateTeaching.tsx
++++ b/src/pages/RateTeaching.tsx
+@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react'
+ import { supabase } from '../lib/supabase'
+ import { useAuth } from '../context/AuthContext'
+ import { Card, CardHeader } from '../components/ui/Card'
+-import { formatDate } from '../lib/format'
++import { formatDate, localToday, sessionHasEnded } from '../lib/format'
+ 
+ interface Session {
+   id: string
+   session_date: string
++  end_time: string
+   topic: string | null
+   provider_name: string | null
+ }
+@@ -28,20 +29,21 @@ export default function RateTeaching() {
+ 
+   async function load() {
+     setLoading(true)
+-    const today = new Date().toISOString().slice(0, 10)
+     const [{ data: sess, error: se }, { data: fb, error: fe }] = await Promise.all([
+       supabase
+         .from('teaching_sessions')
+-        .select('id, session_date, topic, provider_name')
++        .select('id, session_date, end_time, topic, provider_name')
+         .eq('is_break', false)
+-        .lte('session_date', today)
++        .lte('session_date', localToday())
+         .order('session_date', { ascending: false })
+         .limit(30),
+       supabase.from('teaching_feedback').select('session_id, rating, comments, suggested_topics'),
+     ])
+     if (se) setMsg(se.message)
+     if (fe) setMsg(fe.message)
+-    setSessions((sess as Session[]) ?? [])
++    // Today's session is fetched but only offered for rating once it has ended,
++    // which is when the 9:00 AM feedback request goes out.
++    setSessions(((sess as Session[]) ?? []).filter((s) => sessionHasEnded(s.session_date, s.end_time)))
+     const map: Record<string, MyFeedback> = {}
+     for (const row of (fb as MyFeedback[]) ?? []) map[row.session_id] = row
+     setMine(map)
 -- 
 2.43.0
 

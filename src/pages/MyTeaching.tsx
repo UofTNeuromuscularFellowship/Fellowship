@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
-import { formatDate } from '../lib/format'
+import { formatDate, sessionHasEnded } from '../lib/format'
 import { useActingProvider, ActingForBar } from '../components/ActingFor'
 
 interface Session {
@@ -88,9 +88,22 @@ export default function MyTeaching() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id, acting.effectiveId])
 
-  const today = new Date().toISOString().slice(0, 10)
-  const upcoming = useMemo(() => sessions.filter((s) => s.session_date >= today), [sessions, today])
-  const past = useMemo(() => sessions.filter((s) => s.session_date < today).reverse(), [sessions, today])
+  // A session moves to "Past" the moment it ends, not at midnight. Post-session
+  // emails go out at 9:00 AM the same day, so attendance and the session report
+  // have to be reachable that morning. Ticking once a minute lets the 08:00–09:00
+  // session cross over on its own for anyone with the page already open.
+  const [clock, setClock] = useState(() => new Date())
+  useEffect(() => {
+    const t = setInterval(() => setClock(new Date()), 60_000)
+    return () => clearInterval(t)
+  }, [])
+
+  const ended = useMemo(
+    () => (s: Session) => sessionHasEnded(s.session_date, s.end_time, clock),
+    [clock]
+  )
+  const upcoming = useMemo(() => sessions.filter((s) => !ended(s)), [sessions, ended])
+  const past = useMemo(() => sessions.filter((s) => ended(s)).reverse(), [sessions, ended])
   const draftCount = useMemo(() => sessions.filter((s) => s.assignment_draft).length, [sessions])
 
   async function markDelivered(s: Session) {
