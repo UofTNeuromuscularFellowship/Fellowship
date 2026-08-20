@@ -1,13 +1,13 @@
 // ---------------------------------------------------------------------------
-// 3D Atlas — interactive anatomy viewer for EMG needle localization and NCS.
+// 3D Atlas — interactive anatomy viewer for EMG needle localization.
 //
-// PHASE 0 SCAFFOLD. The route, the disclaimer gate, the WebGL fallback, the
-// attribution requirement and the region skeleton are all real; the anatomy is
-// not built yet. Phase 1 loads the upper-limb model into ViewerCanvas.
+// Pick a muscle from the list or click it on the model; it highlights in place
+// among its neighbours, and the same clinical text the EMG atlas shows appears
+// alongside (shared MuscleDetail component — the two views must never drift).
 //
-// Clinical content is NOT authored here. Needle-entry and electrode detail
-// live in src/data/emgAtlas.ts and src/data/nerveGuide.ts, written and
-// reviewed by faculty, and are displayed alongside the model.
+// The model carries NO needle-entry markers. Entry point, depth and activation
+// come from the reviewed technique text. The 3D view answers "where is this
+// muscle and what is next to it".
 //
 // Model licensing/attribution: see LICENSES-3D.md at the repo root.
 // ---------------------------------------------------------------------------
@@ -15,12 +15,12 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Card, CardHeader } from '../components/ui/Card'
+import { MuscleDetail } from '../components/MuscleDetail'
 import { AttributionDialog } from '../components/atlas3d/AttributionDialog'
 import { detectWebgl, type WebglSupport } from '../components/atlas3d/webgl'
-import { REGION_MODELS, ANY_REGION_READY } from '../data/atlas3d'
+import { REGION_MODELS, MESH_MAP, meshesFor } from '../data/atlas3d'
+import { EMG_MUSCLES, type EmgMuscle } from '../data/emgAtlas'
 
-// three.js and R3F live behind this boundary so they stay out of the main
-// bundle and are only fetched once a user has accepted the disclaimer.
 const ViewerCanvas = lazy(() => import('../components/atlas3d/ViewerCanvas'))
 
 const ACK_KEY = 'atlas3d:disclaimer-ack'
@@ -37,7 +37,7 @@ function writeAck() {
   try {
     sessionStorage.setItem(ACK_KEY, '1')
   } catch {
-    /* Private-mode or blocked storage: the gate simply reappears. */
+    /* Blocked storage: the gate simply reappears. */
   }
 }
 
@@ -56,13 +56,14 @@ function Disclaimer({ onAccept }: { onAccept: () => void }) {
         </p>
         <ul className="list-disc space-y-1.5 pl-5 text-sm text-ink">
           <li>
-            The 3D anatomy is a simplified, generic model. Real patients vary — landmarks must
-            be confirmed on the patient in front of you.
+            The 3D anatomy is a simplified, generic model of one limb. Real patients vary —
+            landmarks must be confirmed on the patient in front of you.
           </li>
           <li>
-            Needle-localization and electrode-placement detail comes from the written technique
-            entries in the EMG atlas and NCS guide. Confirm technique against a primary
-            anatomical source and your own laboratory&apos;s practice.
+            <span className="font-semibold">No needle-entry points are marked on the model.</span>{' '}
+            Insertion site, depth and activation come from the written technique entry shown
+            beside it. Confirm against a primary anatomical source and your laboratory&apos;s
+            practice.
           </li>
           <li>
             Nothing here supports decisions about an individual patient&apos;s care. Clinical
@@ -71,8 +72,8 @@ function Disclaimer({ onAccept }: { onAccept: () => void }) {
         </ul>
         <div className="rounded-md bg-accent-soft/40 px-4 py-3">
           <p className="text-sm text-ink">
-            Technique summaries in the linked atlas and guide are original paraphrases prepared
-            for teaching, not reproductions of any published text or figures.
+            Technique summaries are original paraphrases prepared for teaching, not
+            reproductions of any published text or figures.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3 pt-1">
@@ -98,8 +99,8 @@ function NoWebgl({ reason }: { reason: string }) {
       <div className="space-y-3 px-5 py-4">
         <p className="text-sm text-ink">{reason}</p>
         <p className="text-sm text-ink">
-          Nothing is lost clinically — every muscle and study in the 3D atlas carries the same
-          text as the standard tools, which work on any device.
+          Nothing is lost clinically — every muscle in the 3D atlas carries the same text as the
+          standard tools, which work on any device.
         </p>
         <Link
           to="/study"
@@ -112,10 +113,10 @@ function NoWebgl({ reason }: { reason: string }) {
   )
 }
 
-function CanvasFallback({ message }: { message: string }) {
+function CanvasMessage({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-full w-full items-center justify-center bg-paper">
-      <p className="text-sm text-muted">{message}</p>
+    <div className="flex h-full w-full items-center justify-center bg-paper px-6 text-center">
+      <p className="text-sm text-muted">{children}</p>
     </div>
   )
 }
@@ -125,11 +126,16 @@ function CanvasFallback({ message }: { message: string }) {
 export default function Atlas3D() {
   const [acked, setAcked] = useState<boolean>(() => readAck())
   const [webgl, setWebgl] = useState<WebglSupport | null>(null)
-  const [regionId, setRegionId] = useState<string>(REGION_MODELS[0]?.id ?? '')
+  const [regionId, setRegionId] = useState<string>(
+    () => REGION_MODELS.find((r) => r.ready)?.id ?? REGION_MODELS[0]?.id ?? '',
+  )
+  const [selectedId, setSelectedId] = useState<string>('')
+  const [query, setQuery] = useState('')
+  const [hoverLabel, setHoverLabel] = useState<string | null>(null)
+  const [showBones, setShowBones] = useState(true)
+  const [isolate, setIsolate] = useState(true)
   const [attributionOpen, setAttributionOpen] = useState(false)
 
-  // Deferred until the disclaimer is accepted: no reason to spin up a WebGL
-  // context for someone who is about to navigate away.
   useEffect(() => {
     if (acked && webgl === null) setWebgl(detectWebgl())
   }, [acked, webgl])
@@ -139,62 +145,176 @@ export default function Atlas3D() {
     [regionId],
   )
 
+  // Muscles this region covers, whether or not they have a mesh.
+  const regionMuscles = useMemo(
+    () =>
+      EMG_MUSCLES.filter((m) => region?.emgRegions.includes(m.region)).sort((a, b) =>
+        a.region === b.region ? a.name.localeCompare(b.name) : a.region.localeCompare(b.region),
+      ),
+    [region],
+  )
+
+  const meshToTarget = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const e of MESH_MAP) {
+      if (e.regionId !== region?.id || e.kind !== 'muscle') continue
+      for (const n of e.meshNames) map[n] = e.targetId
+    }
+    return map
+  }, [region])
+
+  const selectedMeshes = useMemo(() => (selectedId ? meshesFor(selectedId) : []), [selectedId])
+  const current: EmgMuscle | null = EMG_MUSCLES.find((m) => m.id === selectedId) ?? null
+  const currentHas3d = selectedMeshes.length > 0
+
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return [] as EmgMuscle[]
+    return regionMuscles
+      .filter(
+        (m) =>
+          m.name.toLowerCase().includes(q) ||
+          m.nerve.toLowerCase().includes(q) ||
+          m.roots.toLowerCase().includes(q),
+      )
+      .slice(0, 8)
+  }, [query, regionMuscles])
+
+  const mappedCount = useMemo(
+    () => regionMuscles.filter((m) => meshesFor(m.id).length > 0).length,
+    [regionMuscles],
+  )
+
   function accept() {
     writeAck()
     setAcked(true)
   }
 
+  if (!acked) {
+    return (
+      <div className="space-y-6">
+        <Header />
+        <Disclaimer onAccept={accept} />
+      </div>
+    )
+  }
+
+  if (webgl && !webgl.ok) {
+    return (
+      <div className="space-y-6">
+        <Header />
+        <NoWebgl reason={webgl.reason} />
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-2xl font-bold text-ink">3D Atlas</h1>
-        <p className="mt-1 text-sm text-muted">
-          Rotate and cross-section the anatomy behind EMG needle localization and nerve
-          conduction studies
-        </p>
-      </div>
+      <Header />
 
-      {!acked ? (
-        <Disclaimer onAccept={accept} />
-      ) : webgl && !webgl.ok ? (
-        <NoWebgl reason={webgl.reason} />
-      ) : (
-        <>
-          <div className="rounded-md border border-line bg-accent-soft/30 px-4 py-3">
-            <p className="text-sm text-ink">
-              <span className="font-semibold">Build in progress. </span>
-              The viewer, controls and licensing are in place; the anatomical models are being
-              prepared region by region. Until a region is ready, use the{' '}
-              <Link to="/study" className="font-medium text-accent hover:underline">
-                study tools
-              </Link>{' '}
-              for the full clinical content.
-            </p>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        {/* ---------------- viewer ---------------- */}
+        <Card className="overflow-hidden">
+          <CardHeader
+            title={region?.label ?? 'Viewer'}
+            sub={
+              region?.ready
+                ? `Right limb · ${mappedCount} of ${regionMuscles.length} muscles selectable · drag to rotate, scroll to zoom`
+                : 'Model not built yet'
+            }
+            action={
+              <button
+                onClick={() => setAttributionOpen(true)}
+                className="shrink-0 rounded-md border border-line px-3 py-1.5 text-xs font-semibold text-muted hover:text-ink"
+              >
+                Model sources
+              </button>
+            }
+          />
+
+          <div className="flex flex-wrap items-center gap-4 border-b border-line px-5 py-3">
+            <label className="flex items-center gap-2 text-sm text-ink">
+              <input
+                type="checkbox"
+                checked={showBones}
+                onChange={(e) => setShowBones(e.target.checked)}
+                className="h-4 w-4 rounded border-line text-accent focus:ring-accent"
+              />
+              Show bones
+            </label>
+            <label className="flex items-center gap-2 text-sm text-ink">
+              <input
+                type="checkbox"
+                checked={isolate}
+                onChange={(e) => setIsolate(e.target.checked)}
+                className="h-4 w-4 rounded border-line text-accent focus:ring-accent"
+              />
+              Fade other muscles
+            </label>
+            {selectedId && (
+              <button
+                onClick={() => setSelectedId('')}
+                className="ml-auto text-xs font-semibold text-accent hover:underline"
+              >
+                Clear selection
+              </button>
+            )}
           </div>
 
-          <Card>
-            <CardHeader
-              title={region?.label ?? 'Viewer'}
-              sub={region?.ready ? 'Drag to rotate · scroll to zoom' : 'Model not built yet — placeholder scene'}
-              action={
-                <button
-                  onClick={() => setAttributionOpen(true)}
-                  className="shrink-0 rounded-md border border-line px-3 py-1.5 text-xs font-semibold text-muted hover:text-ink"
-                >
-                  Model sources
-                </button>
-              }
-            />
+          <div className="relative h-[380px] w-full sm:h-[520px]">
+            {!region?.ready || !region.glbPath ? (
+              <CanvasMessage>
+                This region&apos;s model has not been built yet. Its clinical text is available in
+                the study tools.
+              </CanvasMessage>
+            ) : webgl === null ? (
+              <CanvasMessage>Checking 3D support…</CanvasMessage>
+            ) : (
+              <Suspense fallback={<CanvasMessage>Loading anatomy…</CanvasMessage>}>
+                <ViewerCanvas
+                  glbPath={region.glbPath}
+                  camera={region.defaultCamera}
+                  selectedMeshes={selectedMeshes}
+                  meshToTarget={meshToTarget}
+                  onSelect={setSelectedId}
+                  onHoverName={setHoverLabel}
+                  showBones={showBones}
+                  isolate={isolate}
+                />
+              </Suspense>
+            )}
 
-            <div className="border-b border-line px-5 py-3">
+            {hoverLabel && (
+              <div className="pointer-events-none absolute bottom-3 left-3 rounded-md bg-ink/85 px-3 py-1.5 text-xs font-medium text-white">
+                {hoverLabel}
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-line px-5 py-3">
+            <p className="text-xs text-muted">
+              Anatomy only — no needle-entry points are marked on the model. Educational
+              reference; confirm landmarks and technique against a primary source and your own
+              practice.
+            </p>
+          </div>
+        </Card>
+
+        {/* ---------------- picker ---------------- */}
+        <div className="space-y-4">
+          <Card>
+            <div className="space-y-3 px-5 py-4">
               <label className="block">
                 <span className="text-xs font-semibold uppercase tracking-wide text-muted">
                   Body region
                 </span>
                 <select
                   value={regionId}
-                  onChange={(e) => setRegionId(e.target.value)}
-                  className="mt-1 w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none sm:max-w-xs"
+                  onChange={(e) => {
+                    setRegionId(e.target.value)
+                    setSelectedId('')
+                  }}
+                  className="mt-1 w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
                 >
                   {REGION_MODELS.map((r) => (
                     <option key={r.id} value={r.id}>
@@ -204,30 +324,100 @@ export default function Atlas3D() {
                   ))}
                 </select>
               </label>
-            </div>
 
-            <div className="h-[420px] w-full sm:h-[520px]">
-              {webgl === null ? (
-                <CanvasFallback message="Checking 3D support…" />
-              ) : (
-                <Suspense fallback={<CanvasFallback message="Loading viewer…" />}>
-                  {region && <ViewerCanvas camera={region.defaultCamera} />}
-                </Suspense>
+              <label className="block">
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+                  Search muscle, nerve or root
+                </span>
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="e.g. deltoid, ulnar, C8"
+                  className="mt-1 w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+                />
+              </label>
+
+              {matches.length > 0 && (
+                <div className="overflow-hidden rounded-md border border-line">
+                  {matches.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => {
+                        setSelectedId(m.id)
+                        setQuery('')
+                      }}
+                      className="block w-full px-3 py-1.5 text-left text-sm text-ink hover:bg-accent-soft/40"
+                    >
+                      {m.name}
+                      <span className="ml-2 text-xs text-muted">{m.nerve}</span>
+                    </button>
+                  ))}
+                </div>
               )}
-            </div>
 
-            <div className="border-t border-line px-5 py-3">
-              <p className="text-xs text-muted">
-                Educational reference for clinicians and trainees. Not medical advice — confirm
-                landmarks and technique against a primary source and your own practice.
-                {!ANY_REGION_READY && ' No anatomical model is loaded in this build.'}
-              </p>
+              <div className="max-h-72 overflow-y-auto rounded-md border border-line">
+                {regionMuscles.map((m) => {
+                  const has3d = meshesFor(m.id).length > 0
+                  const active = m.id === selectedId
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => setSelectedId(m.id)}
+                      className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm ${
+                        active ? 'bg-accent-soft text-accent' : 'text-ink hover:bg-paper'
+                      }`}
+                    >
+                      <span className="truncate">{m.name}</span>
+                      {!has3d && (
+                        <span className="shrink-0 text-[10px] font-semibold uppercase text-muted">
+                          no 3D
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
           </Card>
-        </>
+        </div>
+      </div>
+
+      {/* ---------------- clinical detail ---------------- */}
+      {current ? (
+        <div className="space-y-4">
+          {!currentHas3d && (
+            <div className="rounded-md border border-amber-400 bg-amber-50 px-4 py-3 text-sm text-ink">
+              <span className="font-semibold">3D view not available for this muscle.</span> It is
+              not present as a separate structure in the source anatomical model, so nothing is
+              highlighted rather than showing an approximate neighbour. The technique below is
+              unaffected.
+            </div>
+          )}
+          <MuscleDetail muscle={current} />
+        </div>
+      ) : (
+        <Card>
+          <div className="px-5 py-6 text-center">
+            <p className="text-sm text-muted">
+              Select a muscle from the list, or click one on the model, to see its innervation and
+              needle-localization technique.
+            </p>
+          </div>
+        </Card>
       )}
 
       <AttributionDialog open={attributionOpen} onClose={() => setAttributionOpen(false)} />
+    </div>
+  )
+}
+
+function Header() {
+  return (
+    <div>
+      <h1 className="font-display text-2xl font-bold text-ink">3D Atlas</h1>
+      <p className="mt-1 text-sm text-muted">
+        Rotate the anatomy behind EMG needle localization — select a muscle to see it in place
+      </p>
     </div>
   )
 }

@@ -61,11 +61,13 @@ export const REGION_MODELS: RegionModel[] = [
   {
     id: 'upper-limb',
     label: 'Upper limb',
-    glbPath: '',
+    glbPath: '/models/upper-limb.glb',
     emgRegions: ['Hand', 'Forearm', 'Arm', 'Shoulder', 'Shoulder girdle'],
     ncsRegions: ['Upper limb – motor', 'Upper limb – sensory/mixed'],
-    defaultCamera: { position: [0.85, 0.6, 0.85], target: [0, 0.3, 0] },
-    ready: false,
+    // Model is recentred on the limb at export, so the target is the origin.
+    // Extent is roughly 0.34 x 0.84 x 0.25 m (x, y-up, z).
+    defaultCamera: { position: [0.52, 0.06, 0.72], target: [0, 0, 0] },
+    ready: true,
   },
   {
     id: 'lower-limb',
@@ -96,8 +98,72 @@ export const REGION_MODELS: RegionModel[] = [
   },
 ]
 
-/** Mesh mapping. Populated per region by the pipeline; empty until Phase 1. */
-export const MESH_MAP: MeshMapEntry[] = []
+/**
+ * Mesh mapping, upper limb (Phase 1). Generated against Z-Anatomy source commit
+ * 4169f1e and reviewed entry by entry; see docs in tools/atlas-pipeline/.
+ *
+ * The model ships the RIGHT limb only, so every mesh name ends in "_r".
+ * Names are the source's Terminologia Anatomica names normalised to word
+ * characters, because three.js's GLTFLoader strips "." and ":" from node names
+ * (see tools/atlas-pipeline/extract_region.py).
+ * Several muscles map to more than one mesh because the source separates their
+ * heads/parts - biceps (2), triceps (3), pectoralis major (3), deltoid (by part),
+ * pronator teres (2), FCU/ECU/FDS (2 each), adductor pollicis (2), FPB (2).
+ * That split is anatomically real, not a naming artifact.
+ *
+ * NOT MAPPED: palmaris brevis. It is absent from the source model (only
+ * palmaris longus exists there), so it is declared in regions.json ->
+ * knownUnmapped and the UI shows "3D view not available" for it. We do not
+ * point it at a neighbouring structure.
+ */
+export const MESH_MAP: MeshMapEntry[] = [
+  { targetId: "abductor-digiti-minimi", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Abductor_digiti_minimi_of_hand_r"] },
+  { targetId: "abductor-pollicis-brevis", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Abductor_pollicis_brevis_r"] },
+  { targetId: "abductor-pollicis-longus", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Abductor_pollicis_longus_r"] },
+  { targetId: "adductor-pollicis", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Oblique_head_of_adductor_pollicis_r", "Transverse_head_of_adductor_pollicis_r"] },
+  { targetId: "anconeus", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Anconeus_muscle_r"] },
+  { targetId: "biceps-brachii", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Long_head_of_biceps_brachii_r", "Short_head_of_biceps_brachii_r"] },
+  { targetId: "brachialis", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Brachialis_muscle_r"] },
+  { targetId: "brachioradialis", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Brachioradialis_muscle_r"] },
+  { targetId: "coracobrachialis", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Coracobrachialis_muscle_r"] },
+  { targetId: "deltoid-anterior", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Clavicular_part_of_deltoid_muscle_r"] },
+  { targetId: "deltoid-middle", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Acromial_part_of_deltoid_muscle_r"] },
+  { targetId: "deltoid-posterior", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Scapular_spinal_part_of_deltoid_muscle_r"] },
+  { targetId: "dorsal-interossei", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Dorsal_interossei_muscles_of_hand_r"] },
+  { targetId: "extensor-carpi-radialis", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Extensor_carpi_radialis_brevis_r", "Extensor_carpi_radialis_longus_r"] },
+  { targetId: "extensor-carpi-ulnaris", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Humeral_head_of_extensor_carpi_ulnaris_r", "Ulnar_head_of_extensor_carpi_ulnaris_r"] },
+  { targetId: "extensor-digitorum-communis", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Extensor_digiti_minimi_r", "Extensor_digitorum_r"] },
+  { targetId: "extensor-indicis-proprius", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Extensor_indicis_r"] },
+  { targetId: "extensor-pollicis-brevis", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Extensor_pollicis_brevis_r"] },
+  { targetId: "extensor-pollicis-longus", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Extensor_pollicis_longus_r"] },
+  { targetId: "flexor-carpi-radialis", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Flexor_carpi_radialis_r"] },
+  { targetId: "flexor-carpi-ulnaris", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Humeral_head_of_flexor_carpi_ulnaris_r", "Ulnar_head_of_flexor_carpi_ulnaris_r"] },
+  { targetId: "flexor-digiti-minimi", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Flexor_digiti_minimi_of_hand_r"] },
+  { targetId: "flexor-digitorum-profundus", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Flexor_digitorum_profundus_r"] },
+  { targetId: "flexor-digitorum-superficialis", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Humero_ulnar_head_of_flexor_digitorum_superficialis_r", "Radial_head_of_flexor_digitorum_superficialis_r"] },
+  { targetId: "flexor-pollicis-brevis", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Deep_head_of_flexor_pollicis_brevis_r", "Superficial_head_of_flexor_pollicis_brevis_r"] },
+  { targetId: "flexor-pollicis-longus", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Flexor_pollicis_longus_r"] },
+  { targetId: "infraspinatus", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Infraspinatus_muscle_r"] },
+  { targetId: "latissimus-dorsi", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Latissimus_dorsi_muscle_r"] },
+  { targetId: "levator-scapulae", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Levator_scapulae_r"] },
+  { targetId: "lumbricals", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Lumbrical_muscles_of_hand_r"] },
+  { targetId: "opponens-digiti-minimi", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Opponens_digiti_minimi_muscle_of_hand_r"] },
+  { targetId: "opponens-pollicis", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Opponens_pollicis_muscle_r"] },
+  { targetId: "palmaris-longus", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Palmaris_longus_muscle_r"] },
+  { targetId: "pectoralis-major", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Abdominal_part_of_pectoralis_major_muscle_r", "Clavicular_head_of_pectoralis_major_muscle_r", "Sternocostal_head_of_pectoralis_major_muscle_r"] },
+  { targetId: "pectoralis-minor", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Pectoralis_minor_muscle_r"] },
+  { targetId: "pronator-quadratus", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Pronator_quadratus_r"] },
+  { targetId: "pronator-teres", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Deep_head_of_pronator_teres_r", "Superficial_head_of_pronator_teres_r"] },
+  { targetId: "rhomboideus-major", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Rhomboid_major_muscle_r"] },
+  { targetId: "rhomboideus-minor", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Rhomboid_minor_muscle_r"] },
+  { targetId: "serratus-anterior", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Serratus_anterior_muscle_r"] },
+  { targetId: "supinator", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Supinator_r"] },
+  { targetId: "supraspinatus", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Supraspinatus_muscle_r"] },
+  { targetId: "teres-major", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Teres_major_muscle_r"] },
+  { targetId: "teres-minor", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Teres_minor_muscle_r"] },
+  { targetId: "triceps-brachii", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Lateral_head_of_triceps_brachii_r", "Long_head_of_triceps_brachii_r", "Medial_head_of_triceps_brachii_r"] },
+  { targetId: "volar-interossei", kind: 'muscle', regionId: 'upper-limb', meshNames: ["Palmar_interossei_muscles_r"] },
+]
 
 // ---------------------------------------------------------------------------
 // Lookup helpers

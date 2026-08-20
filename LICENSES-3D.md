@@ -116,9 +116,15 @@ the attribution requirement of either. Flagged in §5.
 
 No model assets are in the repository yet. Phase 1 adds the first entry.
 
-| File | Region | Derived from | Licence | Added | Pipeline commit |
+| File | Region | Derived from | Licence | Added | Source commit |
 |---|---|---|---|---|---|
-| _(none yet)_ | | | | | |
+| `public/models/upper-limb.glb` | Upper limb (right) | Z-Anatomy `Startup.blend` → BodyParts3D | CC BY-SA 4.0 | 2026-08-20 | `4169f1e` |
+
+The upper-limb file contains 91 meshes: 59 muscle bodies covering 46 of the 47
+upper-limb entries in the EMG atlas, plus 32 bones of the shoulder girdle, arm,
+forearm and hand for spatial context. It contains none of the NonCommercial or
+unknown-licence components listed in §1 — those are head, ear, kidney and brain
+structures, which cannot appear in an upper-limb extraction.
 
 ---
 
@@ -128,7 +134,7 @@ Required by the "indicate changes" term. Every pipeline run appends a row.
 
 | Date | Asset | Changes made |
 |---|---|---|
-| _(none yet)_ | | |
+| 2026-08-20 | `upper-limb.glb` | Extracted the right upper limb from `Startup.blend`: kept 59 named muscle-body meshes and 32 bone meshes, discarded everything else (including the source's own "Cross Section" helper planes and `*.g` label objects). Removed object parenting, keeping baked world transforms. Recentred the geometry on the limb so it sits at the origin. Converted Z-up to Y-up. Exported to glTF binary and compressed geometry with Draco. **No decimation** — the source polygon counts were already within budget. Mesh names were normalised to word characters only (spaces and the `.r` side suffix become underscores, e.g. `Long head of biceps brachii.r` → `Long_head_of_biceps_brachii_r`) because three.js's glTF loader deletes `.` and `:` from node names. The source's Terminologia Anatomica wording is otherwise preserved and remains recoverable; `src/data/atlas3d.ts` maps our identifiers onto these names. |
 
 Anticipated change types: isolation of a body region, deletion of unused
 structures, polygon decimation, normal/orientation repair, mesh renaming to

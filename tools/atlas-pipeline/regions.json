@@ -32,9 +32,16 @@
         "Metacarpus",
         "Phalanges of hand"
       ],
-      "decimateRatio": 0.35,
-      "knownUnmapped": [],
-      "excludeStructures": []
+      "decimateRatio": 1.0,
+      "knownUnmapped": [
+        {
+          "id": "palmaris-brevis",
+          "reason": "Absent from the Z-Anatomy source model (only palmaris longus is present). Verified across all objects and suffixes, commit 4169f1e. Shown as \"3D view not available\" rather than pointed at a neighbouring structure."
+        }
+      ],
+      "excludeStructures": [],
+      "side": "right",
+      "notes": "Right limb only. No decimation needed: raw export is 4.4 MB / 908 KB after Draco, well inside the 8 MB budget."
     },
     {
       "id": "lower-limb",
