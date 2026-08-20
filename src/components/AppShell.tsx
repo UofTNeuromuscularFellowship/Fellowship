@@ -50,6 +50,7 @@ const SECTIONS: NavSection[] = [
     heading: 'Program',
     items: [
       { to: '/handbook', label: 'Handbook' },
+      { to: '/library', label: 'Library', allow: ['fellow', 'supervisor', 'director', 'admin'] },
       { to: '/people', label: 'People', allow: ['director', 'admin'] },
       { to: '/settings', label: 'Settings' },
     ],

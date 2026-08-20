@@ -1,0 +1,1511 @@
+From 8a095ae107e7576a804a9e396100f94d272ffa56 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 20 Aug 2026 14:53:13 +0000
+Subject: [PATCH 1/2] Close the post-session loop and add a resource library
+
+Three additions, all riding the existing email rails (email_queue ->
+email-dispatch every 15 min, enqueue_teaching_reminders daily at 9am ET):
+
+1. Session report. The morning after a session the teacher gets an email
+   asking them to confirm attendance, record the topics they discussed,
+   and note learning gaps plus suggested future topics. The email links
+   into My Teaching, where the report form folds the attendance roster in
+   as step 1 so it is one save rather than two. Filing marks the session
+   delivered and emails the director a copy, so suggestions reach the
+   person who plans the curriculum.
+
+2. Fellow feedback request. The same morning, every active fellow is asked
+   to rate the session and say what they would like taught next. Sent to
+   the whole roster rather than only fellows marked present: attendance is
+   often recorded late, and a request that silently never sends is worse
+   than one an absent fellow ignores.
+
+3. Library. A private storage bucket of reference PDFs. The director and
+   program admin upload; anyone signed in downloads through signed URLs
+   valid for an hour. Nothing is reachable from the public internet.
+
+Also surfaces a Topic suggestions card on My Teaching for the director,
+collecting what teachers and fellows have asked to see covered.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01HV2TSLxfnBFbXmi2V2hHHf
+---
+ src/App.tsx                                   |   2 +
+ src/components/AppShell.tsx                   |   1 +
+ src/pages/Library.tsx                         | 322 ++++++++++++
+ src/pages/MyTeaching.tsx                      | 187 ++++++-
+ src/pages/RateTeaching.tsx                    |  20 +-
+ .../0014_session_reports_and_library.sql      | 475 ++++++++++++++++++
+ 6 files changed, 998 insertions(+), 9 deletions(-)
+ create mode 100644 src/pages/Library.tsx
+ create mode 100644 supabase/migrations/0014_session_reports_and_library.sql
+
+diff --git a/src/App.tsx b/src/App.tsx
+index d599b07..d38bbc9 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -14,6 +14,7 @@ import Calculators from './pages/Calculators'
+ import StudyTools from './pages/StudyTools'
+ import TeachingCases from './pages/TeachingCases'
+ import Handbook from './pages/Handbook'
++import Library from './pages/Library'
+ import People from './pages/People'
+ import MyTeaching from './pages/MyTeaching'
+ import RateTeaching from './pages/RateTeaching'
+@@ -71,6 +72,7 @@ export default function App() {
+         }
+       />
+       <Route path="/handbook" element={<Shell><Handbook /></Shell>} />
++      <Route path="/library" element={<Shell allow={['fellow', 'supervisor', 'director', 'admin']}><Library /></Shell>} />
+       <Route path="/people" element={<Shell allow={['director', 'admin']}><People /></Shell>} />
+       <Route path="/my-teaching" element={<Shell allow={['fellow', 'supervisor', 'director', 'assistant']}><MyTeaching /></Shell>} />
+       <Route path="/rate-teaching" element={<Shell allow={['fellow']}><RateTeaching /></Shell>} />
+diff --git a/src/components/AppShell.tsx b/src/components/AppShell.tsx
+index d784709..637e87a 100644
+--- a/src/components/AppShell.tsx
++++ b/src/components/AppShell.tsx
+@@ -50,6 +50,7 @@ const SECTIONS: NavSection[] = [
+     heading: 'Program',
+     items: [
+       { to: '/handbook', label: 'Handbook' },
++      { to: '/library', label: 'Library', allow: ['fellow', 'supervisor', 'director', 'admin'] },
+       { to: '/people', label: 'People', allow: ['director', 'admin'] },
+       { to: '/settings', label: 'Settings' },
+     ],
+diff --git a/src/pages/Library.tsx b/src/pages/Library.tsx
+new file mode 100644
+index 0000000..2eb24b2
+--- /dev/null
++++ b/src/pages/Library.tsx
+@@ -0,0 +1,322 @@
++import { useEffect, useMemo, useState } from 'react'
++import { supabase } from '../lib/supabase'
++import { useAuth } from '../context/AuthContext'
++import { Card, CardHeader } from '../components/ui/Card'
++
++// ---------------------------------------------------------------------------
++// Library — reference texts and documents for the fellowship.
++//
++// The bucket is PRIVATE. Nothing here has a public URL: every download is a
++// signed link minted for the signed-in user and valid for an hour. The
++// director and program admin upload and remove; fellows, supervisors and the
++// director can all read.
++// ---------------------------------------------------------------------------
++
++const BUCKET = 'library'
++const SIGNED_URL_TTL = 3600 // 1 hour
++
++const CATEGORIES = [
++  'Textbook',
++  'Atlas & reference',
++  'Guidelines',
++  'Review articles',
++  'Program documents',
++  'Other',
++]
++
++interface LibraryDoc {
++  id: string
++  title: string
++  authors: string | null
++  category: string | null
++  edition: string | null
++  description: string | null
++  file_name: string
++  storage_path: string
++  mime_type: string | null
++  size_bytes: number | null
++  created_at: string
++}
++
++const SELECT =
++  'id, title, authors, category, edition, description, file_name, storage_path, mime_type, size_bytes, created_at'
++
++function humanSize(n: number | null): string {
++  if (!n) return ''
++  if (n < 1024) return `${n} B`
++  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`
++  return `${(n / (1024 * 1024)).toFixed(1)} MB`
++}
++
++export default function Library() {
++  const { profile } = useAuth()
++  const canManage = profile?.role === 'director' || profile?.role === 'admin'
++  const [docs, setDocs] = useState<LibraryDoc[]>([])
++  const [loading, setLoading] = useState(true)
++  const [showUpload, setShowUpload] = useState(false)
++  const [msg, setMsg] = useState<string | null>(null)
++  const [query, setQuery] = useState('')
++
++  async function load() {
++    setLoading(true)
++    const { data, error } = await supabase
++      .from('library_documents')
++      .select(SELECT)
++      .order('category', { ascending: true })
++      .order('title', { ascending: true })
++    if (error) setMsg(error.message)
++    setDocs((data as LibraryDoc[]) ?? [])
++    setLoading(false)
++  }
++
++  useEffect(() => {
++    if (profile) load()
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [profile?.id])
++
++  const grouped = useMemo(() => {
++    const q = query.trim().toLowerCase()
++    const filtered = q
++      ? docs.filter((d) =>
++          [d.title, d.authors, d.category, d.description, d.file_name]
++            .filter(Boolean)
++            .some((v) => (v as string).toLowerCase().includes(q))
++        )
++      : docs
++    const map = new Map<string, LibraryDoc[]>()
++    for (const d of filtered) {
++      const key = d.category?.trim() || 'Other'
++      map.set(key, [...(map.get(key) ?? []), d])
++    }
++    return Array.from(map.entries())
++  }, [docs, query])
++
++  async function download(d: LibraryDoc) {
++    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(d.storage_path, SIGNED_URL_TTL, {
++      download: d.file_name,
++    })
++    if (error || !data?.signedUrl) {
++      setMsg(error?.message ?? 'Could not generate a download link.')
++      return
++    }
++    window.open(data.signedUrl, '_blank', 'noopener')
++  }
++
++  async function remove(d: LibraryDoc) {
++    if (!window.confirm(`Remove "${d.title}" from the library? The file is permanently deleted.`)) return
++    const { error: sErr } = await supabase.storage.from(BUCKET).remove([d.storage_path])
++    if (sErr) { setMsg(sErr.message); return }
++    const { error } = await supabase.from('library_documents').delete().eq('id', d.id)
++    if (error) setMsg(error.message)
++    load()
++  }
++
++  if (!profile) return null
++
++  return (
++    <div className="space-y-6">
++      <div>
++        <h1 className="font-display text-2xl font-bold text-ink">Library</h1>
++        <p className="mt-1 text-sm text-muted">
++          Reference texts and documents for the fellowship. Files are private to the portal — downloads use temporary
++          links and nothing here is reachable from the public internet.
++        </p>
++      </div>
++
++      {msg && (
++        <div className="rounded-md border border-line bg-surface px-4 py-3 text-sm text-ink">
++          {msg} <button className="ml-2 font-medium text-accent" onClick={() => setMsg(null)}>dismiss</button>
++        </div>
++      )}
++
++      <Card>
++        <CardHeader
++          title="Shelf"
++          sub={`${docs.length} item${docs.length === 1 ? '' : 's'}`}
++          action={canManage ? (
++            <button
++              onClick={() => setShowUpload(!showUpload)}
++              className="rounded-md bg-accent px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90"
++            >
++              {showUpload ? 'Close' : 'Add document'}
++            </button>
++          ) : undefined}
++        />
++
++        {showUpload && canManage && (
++          <div className="border-b border-line px-5 py-4">
++            <UploadPanel
++              userId={profile.id}
++              onDone={() => { setShowUpload(false); load() }}
++              onError={setMsg}
++            />
++          </div>
++        )}
++
++        <div className="border-b border-line px-5 py-3">
++          <input
++            value={query}
++            onChange={(e) => setQuery(e.target.value)}
++            placeholder="Search by title, author, or category"
++            className="w-full max-w-md rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink"
++          />
++        </div>
++
++        {loading ? (
++          <p className="px-5 py-4 text-sm text-muted">Loading…</p>
++        ) : grouped.length === 0 ? (
++          <p className="px-5 py-4 text-sm text-muted">
++            {docs.length === 0
++              ? canManage
++                ? 'Nothing on the shelf yet. Use “Add document” to upload the first PDF.'
++                : 'Nothing on the shelf yet.'
++              : 'No documents match that search.'}
++          </p>
++        ) : (
++          <div className="divide-y divide-line">
++            {grouped.map(([category, items]) => (
++              <div key={category} className="px-5 py-4">
++                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">{category}</p>
++                <ul className="divide-y divide-line">
++                  {items.map((d) => (
++                    <li key={d.id} className="flex flex-wrap items-baseline justify-between gap-2 py-3 first:pt-0 last:pb-0">
++                      <div className="min-w-0">
++                        <p className="text-sm font-medium text-ink">{d.title}</p>
++                        <p className="text-sm text-muted">
++                          {[d.authors, d.edition].filter(Boolean).join(' · ')}
++                          {(d.authors || d.edition) && ' · '}
++                          {d.file_name}
++                          {d.size_bytes ? ` · ${humanSize(d.size_bytes)}` : ''}
++                        </p>
++                        {d.description && <p className="mt-0.5 text-sm text-muted">{d.description}</p>}
++                      </div>
++                      <div className="flex shrink-0 gap-4 text-sm">
++                        <button className="font-medium text-accent hover:underline" onClick={() => download(d)}>
++                          Download
++                        </button>
++                        {canManage && (
++                          <button className="font-medium text-red-600 hover:underline" onClick={() => remove(d)}>
++                            Remove
++                          </button>
++                        )}
++                      </div>
++                    </li>
++                  ))}
++                </ul>
++              </div>
++            ))}
++          </div>
++        )}
++      </Card>
++
++      {canManage && (
++        <p className="text-xs text-muted">
++          Only upload material the program is licensed to distribute — publisher-provided copies, open-access texts,
++          institutional subscriptions that permit it, or documents the fellowship owns. If you are unsure about a
++          particular title, the University of Toronto libraries can confirm what the licence allows.
++        </p>
++      )}
++    </div>
++  )
++}
++
++function UploadPanel({ userId, onDone, onError }: {
++  userId: string; onDone: () => void; onError: (m: string) => void
++}) {
++  const [file, setFile] = useState<File | null>(null)
++  const [title, setTitle] = useState('')
++  const [authors, setAuthors] = useState('')
++  const [category, setCategory] = useState(CATEGORIES[0])
++  const [edition, setEdition] = useState('')
++  const [description, setDescription] = useState('')
++  const [busy, setBusy] = useState(false)
++
++  async function save() {
++    if (!file) { onError('Choose a file to upload.'); return }
++    if (!title.trim()) { onError('Give the document a title.'); return }
++    setBusy(true)
++    const safe = file.name.replace(/[^\w.\-]+/g, '_')
++    const path = `${crypto.randomUUID()}-${safe}`
++    const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, {
++      contentType: file.type || undefined,
++      upsert: false,
++    })
++    if (upErr) { setBusy(false); onError(upErr.message); return }
++
++    const { error: rowErr } = await supabase.from('library_documents').insert({
++      title: title.trim(),
++      authors: authors.trim() || null,
++      category: category.trim() || null,
++      edition: edition.trim() || null,
++      description: description.trim() || null,
++      file_name: file.name,
++      storage_path: path,
++      mime_type: file.type || null,
++      size_bytes: file.size,
++      uploaded_by: userId,
++    })
++    setBusy(false)
++    if (rowErr) {
++      // Do not leave an orphan blob behind if the row insert is rejected.
++      await supabase.storage.from(BUCKET).remove([path])
++      onError(rowErr.message)
++      return
++    }
++    onDone()
++  }
++
++  return (
++    <div className="space-y-3">
++      <div>
++        <label className="mb-1 block text-xs font-medium text-muted">File (PDF, up to 200 MB)</label>
++        <input
++          type="file"
++          accept=".pdf,.epub,.doc,.docx,application/pdf"
++          onChange={(e) => {
++            const f = e.target.files?.[0] ?? null
++            setFile(f)
++            if (f && !title.trim()) setTitle(f.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' '))
++          }}
++          className="block w-full max-w-md text-sm text-ink"
++        />
++      </div>
++      <div className="flex flex-wrap gap-3">
++        <div className="min-w-[16rem] flex-1">
++          <label className="mb-1 block text-xs font-medium text-muted">Title</label>
++          <input value={title} onChange={(e) => setTitle(e.target.value)}
++            placeholder="e.g. Electromyography and Neuromuscular Disorders"
++            className="w-full rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink" />
++        </div>
++        <div className="min-w-[12rem] flex-1">
++          <label className="mb-1 block text-xs font-medium text-muted">Author(s)</label>
++          <input value={authors} onChange={(e) => setAuthors(e.target.value)} placeholder="e.g. Preston & Shapiro"
++            className="w-full rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink" />
++        </div>
++      </div>
++      <div className="flex flex-wrap gap-3">
++        <div className="min-w-[12rem]">
++          <label className="mb-1 block text-xs font-medium text-muted">Category</label>
++          <select value={category} onChange={(e) => setCategory(e.target.value)}
++            className="w-full rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink">
++            {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
++          </select>
++        </div>
++        <div className="min-w-[10rem]">
++          <label className="mb-1 block text-xs font-medium text-muted">Edition / year</label>
++          <input value={edition} onChange={(e) => setEdition(e.target.value)} placeholder="e.g. 4th ed., 2020"
++            className="w-full rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink" />
++        </div>
++      </div>
++      <div>
++        <label className="mb-1 block text-xs font-medium text-muted">Note (optional)</label>
++        <input value={description} onChange={(e) => setDescription(e.target.value)}
++          placeholder="e.g. Core text for the EMG rotation"
++          className="w-full rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink" />
++      </div>
++      <button onClick={save} disabled={busy}
++        className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
++        {busy ? 'Uploading…' : 'Add to library'}
++      </button>
++    </div>
++  )
++}
+diff --git a/src/pages/MyTeaching.tsx b/src/pages/MyTeaching.tsx
+index 210f986..2f8ec04 100644
+--- a/src/pages/MyTeaching.tsx
++++ b/src/pages/MyTeaching.tsx
+@@ -21,9 +21,13 @@ interface Session {
+   conflict_flagged: boolean
+   conflict_reason: string | null
+   status: 'confirmed' | 'pending_confirmation' | 'rescheduled' | 'cancelled'
++  topics_covered: string | null
++  learning_gaps: string | null
++  suggested_topics: string | null
++  report_submitted_at: string | null
+ }
+ 
+-interface FeedbackRow { rating: number; comments: string | null; created_at: string }
++interface FeedbackRow { rating: number; comments: string | null; suggested_topics: string | null; created_at: string }
+ interface NamedFeedbackRow extends FeedbackRow { fellow_name: string }
+ interface Person { id: string; full_name: string; role?: string }
+ 
+@@ -55,7 +59,7 @@ export default function MyTeaching() {
+   const isAssistant = acting.isAssistant
+   const [sessions, setSessions] = useState<Session[]>([])
+   const [loading, setLoading] = useState(true)
+-  const [openPanel, setOpenPanel] = useState<{ id: string; kind: 'feedback' | 'attendance' | 'zoom' | 'edit' | 'conflict' | 'cancel' } | null>(null)
++  const [openPanel, setOpenPanel] = useState<{ id: string; kind: 'feedback' | 'attendance' | 'zoom' | 'edit' | 'conflict' | 'cancel' | 'report' } | null>(null)
+   const [showAdd, setShowAdd] = useState(false)
+   const [providers, setProviders] = useState<Person[]>([])
+   const [msg, setMsg] = useState<string | null>(null)
+@@ -64,7 +68,7 @@ export default function MyTeaching() {
+     setLoading(true)
+     let q = supabase
+       .from('teaching_sessions')
+-      .select('id, session_date, start_time, end_time, topic, provider_name, provider_id, zoom_link, delivered_at, is_break, assignment_draft, provider_confirmed, conflict_flagged, conflict_reason, status')
++      .select('id, session_date, start_time, end_time, topic, provider_name, provider_id, zoom_link, delivered_at, is_break, assignment_draft, provider_confirmed, conflict_flagged, conflict_reason, status, topics_covered, learning_gaps, suggested_topics, report_submitted_at')
+       .eq('is_break', false)
+       .order('session_date')
+     if (!isDirector && acting.effectiveId) q = q.eq('provider_id', acting.effectiveId).eq('assignment_draft', false)
+@@ -97,7 +101,7 @@ export default function MyTeaching() {
+ 
+   if (!profile) return null
+ 
+-  function togglePanel(id: string, kind: 'feedback' | 'attendance' | 'zoom' | 'edit' | 'conflict' | 'cancel') {
++  function togglePanel(id: string, kind: 'feedback' | 'attendance' | 'zoom' | 'edit' | 'conflict' | 'cancel' | 'report') {
+     setOpenPanel(openPanel?.id === id && openPanel.kind === kind ? null : { id, kind })
+   }
+ 
+@@ -122,6 +126,11 @@ export default function MyTeaching() {
+               {cancelled && (
+                 <span className="ml-2 rounded-full border border-red-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-600 no-underline">Cancelled</span>
+               )}
++              {isPast && !cancelled && (s.report_submitted_at ? (
++                <span className="ml-2 rounded-full border border-line px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted">Report filed</span>
++              ) : (
++                <span className="ml-2 rounded-full border border-accent px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">Report due</span>
++              ))}
+               {!isPast && !cancelled && s.conflict_flagged && (
+                 <span className="ml-2 rounded-full border border-red-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-600">Conflict flagged</span>
+               )}
+@@ -175,6 +184,11 @@ export default function MyTeaching() {
+           {isPast && isAssistant && s.delivered_at && (
+             <span className="text-muted">Delivered {new Date(s.delivered_at).toLocaleDateString('en-CA')}</span>
+           )}
++          {isPast && !cancelled && !isAssistant && (
++            <button className="font-medium text-accent hover:underline" onClick={() => togglePanel(s.id, 'report')}>
++              {s.report_submitted_at ? 'Edit session report' : 'Complete session report'}
++            </button>
++          )}
+           {isPast && !isAssistant && (
+             <button className="font-medium text-accent hover:underline" onClick={() => togglePanel(s.id, 'attendance')}>Attendance</button>
+           )}
+@@ -194,6 +208,9 @@ export default function MyTeaching() {
+         {openPanel?.id === s.id && openPanel.kind === 'attendance' && (
+           <AttendancePanel session={s} recorderId={profile!.id} onError={setMsg} />
+         )}
++        {openPanel?.id === s.id && openPanel.kind === 'report' && (
++          <SessionReportPanel session={s} recorderId={profile!.id} onDone={load} onError={setMsg} />
++        )}
+         {openPanel?.id === s.id && openPanel.kind === 'feedback' && (
+           <FeedbackPanel session={s} isDirector={isDirector} onError={setMsg} />
+         )}
+@@ -270,10 +287,87 @@ export default function MyTeaching() {
+           <ul className="divide-y divide-line">{past.map((s) => renderSession(s, true))}</ul>
+         )}
+       </Card>
++
++      {isDirector && <TopicSuggestions sessions={past} onError={setMsg} />}
+     </div>
+   )
+ }
+ 
++// Everything anyone has asked to be taught, in one place: what the teachers
++// suggested on their session reports, and what the fellows asked for when
++// rating. This is the raw material for next year's schedule.
++function TopicSuggestions({ sessions, onError }: { sessions: Session[]; onError: (m: string) => void }) {
++  interface Request {
++    session_date: string
++    topic: string | null
++    fellow_name: string | null
++    suggested_topics: string
++    created_at: string
++  }
++  const [requests, setRequests] = useState<Request[]>([])
++  const [loaded, setLoaded] = useState(false)
++
++  useEffect(() => {
++    ;(async () => {
++      const { data, error } = await supabase.rpc('topic_requests', { p_limit: 100 })
++      if (error) onError(error.message)
++      setRequests((data as Request[]) ?? [])
++      setLoaded(true)
++    })()
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [])
++
++  const fromTeachers = sessions.filter((s) => s.suggested_topics || s.learning_gaps)
++
++  return (
++    <Card>
++      <CardHeader
++        title="Topic suggestions"
++        sub="What teachers and fellows have asked to see covered"
++      />
++      <div className="divide-y divide-line">
++        <div className="px-5 py-4">
++          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">From teachers</p>
++          {fromTeachers.length === 0 ? (
++            <p className="text-sm text-muted">No session reports filed yet.</p>
++          ) : (
++            <ul className="space-y-3">
++              {fromTeachers.map((s) => (
++                <li key={s.id} className="text-sm">
++                  <p className="font-medium text-ink">
++                    {s.topic ?? 'Session'} <span className="font-normal text-muted">· {formatDate(s.session_date)}{s.provider_name ? ` · ${s.provider_name}` : ''}</span>
++                  </p>
++                  {s.learning_gaps && <p className="text-muted">Gaps: {s.learning_gaps}</p>}
++                  {s.suggested_topics && <p className="text-muted">Suggested: {s.suggested_topics}</p>}
++                </li>
++              ))}
++            </ul>
++          )}
++        </div>
++        <div className="px-5 py-4">
++          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">From fellows</p>
++          {!loaded ? (
++            <p className="text-sm text-muted">Loading…</p>
++          ) : requests.length === 0 ? (
++            <p className="text-sm text-muted">No requests submitted yet.</p>
++          ) : (
++            <ul className="space-y-2">
++              {requests.map((r, i) => (
++                <li key={i} className="text-sm text-ink">
++                  {r.suggested_topics}
++                  <span className="text-muted">
++                    {' '}— {r.fellow_name ?? 'Fellow'}, after {r.topic ?? 'a session'} on {formatDate(r.session_date)}
++                  </span>
++                </li>
++              ))}
++            </ul>
++          )}
++        </div>
++      </div>
++    </Card>
++  )
++}
++
+ function AutoAssignToolbar({ draftCount, onChanged, onError }: { draftCount: number; onChanged: () => void; onError: (m: string) => void }) {
+   const today = new Date().toISOString().slice(0, 10)
+   const [from, setFrom] = useState(today)
+@@ -682,6 +776,83 @@ function AttendancePanel({ session, recorderId, onError }: { session: Session; r
+   )
+ }
+ 
++// The morning-after report the teacher is emailed about. Attendance is folded
++// in as step 1 rather than sitting behind its own button, because the email
++// asks for both and two separate saves is one more than anyone will do.
++function SessionReportPanel({ session, recorderId, onDone, onError }: {
++  session: Session; recorderId: string; onDone: () => void; onError: (m: string) => void
++}) {
++  const [topics, setTopics] = useState(session.topics_covered ?? '')
++  const [gaps, setGaps] = useState(session.learning_gaps ?? '')
++  const [suggested, setSuggested] = useState(session.suggested_topics ?? '')
++  const [busy, setBusy] = useState(false)
++  const [saved, setSaved] = useState(false)
++
++  async function save() {
++    if (!topics.trim() && !gaps.trim() && !suggested.trim()) {
++      onError('Add at least one note before filing the report.')
++      return
++    }
++    setBusy(true)
++    const { error } = await supabase.rpc('submit_session_report', {
++      p_session: session.id,
++      p_topics: topics,
++      p_gaps: gaps,
++      p_suggested: suggested,
++    })
++    setBusy(false)
++    if (error) { onError(error.message); return }
++    setSaved(true)
++    setTimeout(() => setSaved(false), 2500)
++    onDone()
++  }
++
++  return (
++    <div className="mt-3 space-y-4 rounded-md border border-line p-4">
++      <div>
++        <p className="text-sm font-medium text-ink">Session report</p>
++        <p className="mt-1 text-xs text-muted">
++          {session.report_submitted_at
++            ? `Filed ${new Date(session.report_submitted_at).toLocaleDateString('en-CA')}. Edits are saved but do not re-notify the director.`
++            : 'Filing this marks the session as delivered and emails a copy to the fellowship director.'}
++        </p>
++      </div>
++
++      <div>
++        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">1 · Attendance</p>
++        <AttendancePanel session={session} recorderId={recorderId} onError={onError} />
++      </div>
++
++      <div className="space-y-3">
++        <p className="text-xs font-semibold uppercase tracking-wider text-muted">2 · Notes</p>
++        <div>
++          <label className="mb-1 block text-xs font-medium text-muted">Topics discussed</label>
++          <textarea value={topics} onChange={(e) => setTopics(e.target.value)} rows={3}
++            placeholder="What you actually covered — one per line is fine"
++            className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink" />
++        </div>
++        <div>
++          <label className="mb-1 block text-xs font-medium text-muted">Learning gaps identified</label>
++          <textarea value={gaps} onChange={(e) => setGaps(e.target.value)} rows={3}
++            placeholder="e.g. Comfortable with the localization, shaky on the differential for a pure motor axonal pattern"
++            className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink" />
++        </div>
++        <div>
++          <label className="mb-1 block text-xs font-medium text-muted">Suggested topics for future sessions</label>
++          <textarea value={suggested} onChange={(e) => setSuggested(e.target.value)} rows={3}
++            placeholder="Topics that would close the gaps above"
++            className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink" />
++        </div>
++      </div>
++
++      <button onClick={save} disabled={busy}
++        className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
++        {busy ? 'Saving…' : saved ? 'Saved ✓' : session.report_submitted_at ? 'Save changes' : 'File report'}
++      </button>
++    </div>
++  )
++}
++
+ function FeedbackPanel({ session, isDirector, onError }: { session: Session; isDirector: boolean; onError: (m: string) => void }) {
+   const [rows, setRows] = useState<FeedbackRow[]>([])
+   const [named, setNamed] = useState<NamedFeedbackRow[] | null>(null)
+@@ -696,7 +867,7 @@ function FeedbackPanel({ session, isDirector, onError }: { session: Session; isD
+         try {
+           const { data: raw } = await supabase
+             .from('teaching_feedback')
+-            .select('rating, comments, created_at, fellow_id')
++            .select('rating, comments, suggested_topics, created_at, fellow_id')
+             .eq('session_id', session.id)
+           const list = (raw as (FeedbackRow & { fellow_id: string })[]) ?? []
+           if (list.length > 0) {
+@@ -704,7 +875,7 @@ function FeedbackPanel({ session, isDirector, onError }: { session: Session; isD
+             const { data: names } = await supabase.rpc('profile_names', { ids })
+             const nameMap: Record<string, string> = {}
+             for (const n of (names as { id: string; full_name: string }[]) ?? []) nameMap[n.id] = n.full_name
+-            setNamed(list.map((r) => ({ rating: r.rating, comments: r.comments, created_at: r.created_at, fellow_name: nameMap[r.fellow_id] ?? 'Fellow' })))
++            setNamed(list.map((r) => ({ rating: r.rating, comments: r.comments, suggested_topics: r.suggested_topics, created_at: r.created_at, fellow_name: nameMap[r.fellow_id] ?? 'Fellow' })))
+           } else setNamed([])
+         } catch { /* fall back to anonymized view */ }
+       }
+@@ -734,6 +905,9 @@ function FeedbackPanel({ session, isDirector, onError }: { session: Session; isD
+                 <span className="font-medium">{r.rating}/5</span>
+                 {'fellow_name' in r && <span className="text-muted"> · {(r as NamedFeedbackRow).fellow_name}</span>}
+                 {r.comments && <span className="text-muted"> — {r.comments}</span>}
++                {r.suggested_topics && (
++                  <span className="mt-0.5 block text-muted">Would like taught: {r.suggested_topics}</span>
++                )}
+               </li>
+             ))}
+           </ul>
+@@ -779,6 +953,7 @@ async function openCompletionLetter(s: Session) {
+ <p><strong>Topic:</strong> ${s.topic ?? ''}<br/>
+ <strong>Date:</strong> ${new Date(s.session_date + 'T00:00:00').toLocaleDateString('en-CA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}<br/>
+ <strong>Time:</strong> ${s.start_time.slice(0, 5)}–${s.end_time.slice(0, 5)}</p>
++${s.topics_covered ? `<p><strong>Topics covered:</strong><br/>${s.topics_covered.replace(/\n/g, '<br/>')}</p>` : ''}
+ ${attendanceLine}
+ ${feedbackLine}
+ <p>This letter documents the teaching activity described above for the recipient's continuing professional development records.</p>
+diff --git a/src/pages/RateTeaching.tsx b/src/pages/RateTeaching.tsx
+index 469a904..a1e32a1 100644
+--- a/src/pages/RateTeaching.tsx
++++ b/src/pages/RateTeaching.tsx
+@@ -15,6 +15,7 @@ interface MyFeedback {
+   session_id: string
+   rating: number
+   comments: string | null
++  suggested_topics: string | null
+ }
+ 
+ export default function RateTeaching() {
+@@ -36,7 +37,7 @@ export default function RateTeaching() {
+         .lte('session_date', today)
+         .order('session_date', { ascending: false })
+         .limit(30),
+-      supabase.from('teaching_feedback').select('session_id, rating, comments'),
++      supabase.from('teaching_feedback').select('session_id, rating, comments, suggested_topics'),
+     ])
+     if (se) setMsg(se.message)
+     if (fe) setMsg(fe.message)
+@@ -59,8 +60,9 @@ export default function RateTeaching() {
+       <div>
+         <h1 className="font-display text-2xl font-bold text-ink">Rate Teaching</h1>
+         <p className="mt-1 text-sm text-muted">
+-          Your feedback helps teachers improve and supports their CME documentation. Teachers see ratings and comments
+-          without names; the fellowship director can see who submitted what.
++          Your feedback helps teachers improve and supports their CME documentation, and the topics you ask for feed
++          into what gets scheduled next. Teachers see ratings and comments without names; the fellowship director can
++          see who submitted what.
+         </p>
+       </div>
+ 
+@@ -135,6 +137,7 @@ function FeedbackForm({
+ }) {
+   const [rating, setRating] = useState<number>(existing?.rating ?? 0)
+   const [comments, setComments] = useState(existing?.comments ?? '')
++  const [suggested, setSuggested] = useState(existing?.suggested_topics ?? '')
+   const [busy, setBusy] = useState(false)
+ 
+   async function save() {
+@@ -146,6 +149,7 @@ function FeedbackForm({
+         fellow_id: fellowId,
+         rating,
+         comments: comments.trim() || null,
++        suggested_topics: suggested.trim() || null,
+         updated_at: new Date().toISOString(),
+       },
+       { onConflict: 'session_id,fellow_id' }
+@@ -173,6 +177,16 @@ function FeedbackForm({
+         rows={3}
+         className="mt-3 w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink"
+       />
++      <label className="mt-3 block text-xs font-medium text-muted">
++        Topics you would like to learn about
++      </label>
++      <textarea
++        value={suggested}
++        onChange={(e) => setSuggested(e.target.value)}
++        placeholder="Anything you want covered in a future session (optional)"
++        rows={2}
++        className="mt-1 w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink"
++      />
+       <div className="mt-2">
+         <button onClick={save} disabled={busy}
+           className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-accent hover:underline disabled:opacity-50">
+diff --git a/supabase/migrations/0014_session_reports_and_library.sql b/supabase/migrations/0014_session_reports_and_library.sql
+new file mode 100644
+index 0000000..f14082a
+--- /dev/null
++++ b/supabase/migrations/0014_session_reports_and_library.sql
+@@ -0,0 +1,475 @@
++-- Post-session loop + the resource library.
++--
++-- Three things land here:
++--
++--   1. A session report the teacher fills in after teaching: which fellows
++--      were there, what was actually covered, what gaps showed up, and what
++--      should be taught next. Requested by email the morning after.
++--
++--   2. A feedback request to every active fellow the morning after a session,
++--      pointing at Rate Teaching, which now also asks what they want taught.
++--      Deliberately NOT limited to fellows marked present: attendance is often
++--      recorded late or not at all, and a request that silently never sends is
++--      worse than one an absent fellow ignores.
++--
++--   3. library_documents — a shelf of reference PDFs the director uploads and
++--      everyone signed in can download through short-lived signed URLs.
++--
++-- Both emails ride the existing rails: enqueue_teaching_reminders() runs at
++-- 13:00 UTC daily (cron job "teaching-reminders-daily"), enqueue_email is
++-- idempotent on ref_key, and email-dispatch drains the queue every 15 min.
++
++-- ---------------------------------------------------------------------------
++-- 1. Session report columns
++-- ---------------------------------------------------------------------------
++
++alter table public.teaching_sessions
++  add column if not exists topics_covered      text,
++  add column if not exists learning_gaps       text,
++  add column if not exists suggested_topics    text,
++  add column if not exists report_submitted_at timestamptz,
++  add column if not exists report_requested    boolean not null default false,
++  add column if not exists feedback_requested  boolean not null default false;
++
++comment on column public.teaching_sessions.topics_covered is
++  'What the teacher actually covered, entered by them after the session.';
++comment on column public.teaching_sessions.learning_gaps is
++  'Learning gaps the teacher noticed in the fellows during the session.';
++comment on column public.teaching_sessions.suggested_topics is
++  'Topics the teacher suggests for future sessions, usually flowing from the gaps above.';
++comment on column public.teaching_sessions.report_requested is
++  'The morning-after report request has been queued for the teacher. Mirrors reminded_week/reminded_day.';
++comment on column public.teaching_sessions.feedback_requested is
++  'The morning-after feedback request has been queued for the fellows.';
++
++-- ---------------------------------------------------------------------------
++-- 2. submit_session_report — the teacher's side of the loop
++-- ---------------------------------------------------------------------------
++-- Authorized through acts_for(), so an administrative assistant linked to the
++-- teacher can file it on their behalf, exactly like confirm_teaching. Filing a
++-- report also marks the session delivered: you cannot report on a session that
++-- did not happen, and this saves the teacher a second click.
++--
++-- Submitting emails the fellowship director a copy, so suggested topics and
++-- observed gaps reach the person who builds next year's curriculum instead of
++-- sitting in a column nobody reads.
++
++create or replace function public.submit_session_report(
++  p_session   uuid,
++  p_topics    text,
++  p_gaps      text,
++  p_suggested text
++)
++returns void
++language plpgsql
++security definer
++set search_path to 'public'
++as $function$
++declare
++  s record;
++  d record;
++  portal text;
++  tname text;
++  first_submission boolean;
++begin
++  select * into s from public.teaching_sessions where id = p_session;
++  if s.id is null then raise exception 'session not found'; end if;
++
++  if not (public.acts_for(s.provider_id) or public.is_director_or_admin()) then
++    raise exception 'not authorized to file a report for this session';
++  end if;
++
++  first_submission := s.report_submitted_at is null;
++
++  update public.teaching_sessions
++  set topics_covered      = nullif(btrim(coalesce(p_topics, '')), ''),
++      learning_gaps       = nullif(btrim(coalesce(p_gaps, '')), ''),
++      suggested_topics    = nullif(btrim(coalesce(p_suggested, '')), ''),
++      report_submitted_at = coalesce(report_submitted_at, now()),
++      delivered_at        = coalesce(delivered_at, now()),
++      delivered_by        = coalesce(delivered_by, auth.uid()),
++      updated_at          = now()
++  where id = p_session;
++
++  -- Only the first submission notifies; later edits are silent so the director
++  -- is not pinged every time a teacher fixes a typo.
++  if not first_submission then return; end if;
++
++  select value #>> '{}' into portal from public.app_settings where key = 'portal_url';
++  select coalesce(u.full_name, s.provider_name) into tname
++  from public.users u where u.id = s.provider_id;
++
++  for d in
++    select id, email, full_name from public.users
++    where role = 'director' and status = 'active' and email is not null
++  loop
++    perform public.enqueue_email(
++      'sessrepdir-' || p_session || '-' || d.id,
++      d.email,
++      'Session report: ' || coalesce(s.topic, 'teaching session') || ' — ' || to_char(s.session_date, 'FMMon DD, YYYY'),
++      '<p>Hi ' || coalesce(d.full_name, 'there') || ',</p>' ||
++      '<p><strong>' || coalesce(tname, s.provider_name, 'The teacher') || '</strong> has filed a report for <strong>' ||
++        coalesce(s.topic, 'a session') || '</strong> on ' || to_char(s.session_date, 'FMDay, Mon DD, YYYY') || '.</p>' ||
++      '<p><strong>Topics discussed</strong><br>' ||
++        coalesce(replace(nullif(btrim(coalesce(p_topics, '')), ''), E'\n', '<br>'), '<em>Not provided</em>') || '</p>' ||
++      '<p><strong>Learning gaps identified</strong><br>' ||
++        coalesce(replace(nullif(btrim(coalesce(p_gaps, '')), ''), E'\n', '<br>'), '<em>Not provided</em>') || '</p>' ||
++      '<p><strong>Suggested topics for future sessions</strong><br>' ||
++        coalesce(replace(nullif(btrim(coalesce(p_suggested, '')), ''), E'\n', '<br>'), '<em>Not provided</em>') || '</p>' ||
++      '<p><a href="' || coalesce(portal, '') || '/my-teaching">Open the session in the portal</a></p>'
++    );
++  end loop;
++end;
++$function$;
++
++revoke all on function public.submit_session_report(uuid, text, text, text) from public, anon;
++grant execute on function public.submit_session_report(uuid, text, text, text) to authenticated;
++
++-- ---------------------------------------------------------------------------
++-- 3. Fellows' suggested topics on the feedback form
++-- ---------------------------------------------------------------------------
++
++alter table public.teaching_feedback
++  add column if not exists suggested_topics text;
++
++comment on column public.teaching_feedback.suggested_topics is
++  'Topics this fellow would like taught in future sessions. Shown to the teacher without a name, and to the director with one.';
++
++-- provider_session_feedback gains a column, so it has to be dropped and
++-- recreated rather than replaced. Same authorization as before: the session's
++-- own teacher, or the director.
++drop function if exists public.provider_session_feedback(uuid);
++
++create function public.provider_session_feedback(p_session uuid)
++returns table(rating smallint, comments text, suggested_topics text, created_at timestamptz)
++language plpgsql
++security definer
++set search_path to 'public'
++as $function$
++begin
++  if not coalesce(
++    (select ts.provider_id = auth.uid()
++       or exists (select 1 from public.users u
++                  where u.id = auth.uid() and u.role = 'director')
++     from public.teaching_sessions ts
++     where ts.id = p_session),
++    false
++  ) then
++    raise exception 'not authorized for this session''s feedback';
++  end if;
++
++  return query
++    select tf.rating, tf.comments, tf.suggested_topics, tf.created_at
++    from public.teaching_feedback tf
++    where tf.session_id = p_session
++    order by tf.created_at;
++end;
++$function$;
++
++revoke all on function public.provider_session_feedback(uuid) from public, anon;
++grant execute on function public.provider_session_feedback(uuid) to authenticated;
++
++-- Everything the fellows have asked to be taught, newest first, for the
++-- director's curriculum planning. Director/admin only — these carry names.
++create or replace function public.topic_requests(p_limit int default 100)
++returns table(
++  session_id uuid,
++  session_date date,
++  topic text,
++  fellow_name text,
++  suggested_topics text,
++  created_at timestamptz
++)
++language plpgsql
++security definer
++set search_path to 'public'
++as $function$
++begin
++  if not public.is_director_or_admin() then
++    raise exception 'not authorized to view topic requests';
++  end if;
++
++  return query
++    select tf.session_id, ts.session_date, ts.topic, u.full_name,
++           tf.suggested_topics, tf.created_at
++    from public.teaching_feedback tf
++    join public.teaching_sessions ts on ts.id = tf.session_id
++    left join public.users u on u.id = tf.fellow_id
++    where tf.suggested_topics is not null and btrim(tf.suggested_topics) <> ''
++    order by tf.created_at desc
++    limit greatest(coalesce(p_limit, 100), 1);
++end;
++$function$;
++
++revoke all on function public.topic_requests(int) from public, anon;
++grant execute on function public.topic_requests(int) to authenticated;
++
++-- ---------------------------------------------------------------------------
++-- 4. The two morning-after emails
++-- ---------------------------------------------------------------------------
++-- Appended as sections 3 and 4 of the existing daily job. Sections 1 and 2
++-- (presenter reminder, Journal Club announcement) are carried over verbatim.
++
++create or replace function public.enqueue_teaching_reminders()
++returns integer
++language plpgsql
++security definer
++set search_path to 'public'
++as $function$
++declare
++  s record; r record; c record;
++  portal text; zlink text; zpass text; zid text;
++  n int := 0; pname text; cadence text;
++  jc_subject text; jc_body text;
++  fb_subject text; fb_body text;
++begin
++  select value #>> '{}' into portal from public.app_settings where key = 'portal_url';
++  select value #>> '{}' into zlink from public.app_settings where key = 'zoom_link';
++  select value #>> '{}' into zpass from public.app_settings where key = 'zoom_passcode';
++  select value #>> '{}' into zid   from public.app_settings where key = 'zoom_meeting_id';
++
++  -- 1) Presenter reminder (unchanged): the assigned teacher confirms / flags.
++  for s in
++    select ts.*, (ts.session_date - current_date) as days_out
++    from public.teaching_sessions ts
++    where ts.is_break = false and ts.assignment_draft = false
++      and ts.status <> 'cancelled'
++      and ts.provider_id is not null
++      and ts.session_date in (current_date + 7, current_date + 1)
++      and ((ts.session_date = current_date + 7 and ts.reminded_week = false)
++        or (ts.session_date = current_date + 1 and ts.reminded_day = false))
++  loop
++    select full_name into pname from public.users where id = s.provider_id;
++    perform public.enqueue_email(
++      'teachrem-' || s.id || '-' || (case when s.days_out = 7 then 'w' else 'd' end),
++      (select email from public.users where id = s.provider_id),
++      'Teaching reminder: ' || coalesce(s.topic, 'session') || ' on ' || to_char(s.session_date, 'FMDay, Mon DD'),
++      '<p>Hi ' || coalesce(pname, 'there') || ',</p>' ||
++      '<p>This is a reminder that <strong>' || coalesce(pname, 'the provider') || '</strong> is scheduled to teach <strong>' || coalesce(s.topic, 'a session') || '</strong>.</p>' ||
++      '<p><strong>Date:</strong> ' || to_char(s.session_date, 'FMDay, Mon DD, YYYY') || '<br>' ||
++      '<strong>Time:</strong> ' || to_char(s.start_time, 'HH24:MI') || '–' || to_char(s.end_time, 'HH24:MI') || '<br>' ||
++      '<strong>Zoom:</strong> <a href="' || coalesce(zlink, '') || '">Join here</a><br>' ||
++      '<strong>Meeting ID:</strong> ' || coalesce(zid, '') || '<br>' ||
++      '<strong>Passcode:</strong> ' || coalesce(zpass, '') || '</p>' ||
++      '<p>Please <a href="' || coalesce(portal, '') || '/my-teaching">confirm this session in the portal</a>, or flag a conflict there if it needs to be covered or rescheduled.</p>'
++    );
++    if s.days_out = 7 then update public.teaching_sessions set reminded_week = true where id = s.id;
++    else update public.teaching_sessions set reminded_day = true where id = s.id; end if;
++    n := n + 1;
++  end loop;
++
++  -- 2) Journal Club: notify every active fellow / supervisor / director, plus the
++  --    teaching CC mailing list, one week and one day before. Matched by topic,
++  --    so no special record type is needed.
++  for s in
++    select ts.*, (ts.session_date - current_date) as days_out
++    from public.teaching_sessions ts
++    where ts.is_break = false and ts.assignment_draft = false
++      and ts.status <> 'cancelled'
++      and ts.topic ilike '%journal club%'
++      and ts.session_date in (current_date + 7, current_date + 1)
++  loop
++    cadence := case when s.days_out = 7 then 'w' else 'd' end;
++    select full_name into pname from public.users where id = s.provider_id;
++
++    jc_subject := 'Journal Club — ' || to_char(s.session_date, 'FMDay, Mon DD')
++      || (case when s.days_out = 1 then ' (tomorrow)' else '' end);
++
++    jc_body :=
++      '<p>This is a reminder that <strong>Journal Club</strong> is coming up'
++        || (case when s.days_out = 1 then ' <strong>tomorrow</strong>' else ' in one week' end) || '.</p>' ||
++      (case when pname is not null then '<p><strong>Presenter:</strong> ' || pname || '</p>' else '' end) ||
++      '<p><strong>Date:</strong> ' || to_char(s.session_date, 'FMDay, Mon DD, YYYY') || '<br>' ||
++      '<strong>Time:</strong> ' || to_char(s.start_time, 'HH24:MI') || '–' || to_char(s.end_time, 'HH24:MI') || '<br>' ||
++      '<strong>Zoom:</strong> <a href="' || coalesce(zlink, '') || '">Join here</a><br>' ||
++      '<strong>Meeting ID:</strong> ' || coalesce(zid, '') || '<br>' ||
++      '<strong>Passcode:</strong> ' || coalesce(zpass, '') || '</p>' ||
++      '<p>See the <a href="' || coalesce(portal, '') || '/teaching">teaching schedule</a> for details.</p>';
++
++    -- 2a) Portal users by role.
++    for r in
++      select id, email, full_name from public.users
++      where role in ('fellow', 'supervisor', 'director') and status = 'active' and email is not null
++    loop
++      perform public.enqueue_email(
++        'jcann-' || s.id || '-' || cadence || '-' || r.id,
++        r.email,
++        jc_subject,
++        '<p>Hi ' || coalesce(r.full_name, 'there') || ',</p>' || jc_body
++      );
++      n := n + 1;
++    end loop;
++
++    -- 2b) Teaching CC mailing list, skipping anyone already emailed above.
++    for c in
++      select distinct lower(trim(addr)) as email
++      from public.app_settings st,
++           lateral jsonb_array_elements_text(st.value) as addr
++      where st.key = 'teaching_cc_emails'
++        and jsonb_typeof(st.value) = 'array'
++        and trim(addr) <> ''
++        and lower(trim(addr)) not in (
++          select lower(u.email) from public.users u
++          where u.role in ('fellow', 'supervisor', 'director')
++            and u.status = 'active' and u.email is not null
++        )
++    loop
++      perform public.enqueue_email(
++        'jccc-' || s.id || '-' || cadence || '-' || md5(c.email),
++        c.email,
++        jc_subject,
++        '<p>Hi there,</p>' || jc_body
++      );
++      n := n + 1;
++    end loop;
++  end loop;
++
++  -- 3) Morning after: ask the teacher for the session report. Only sessions
++  --    with a portal account behind them — a name-only guest teacher has no
++  --    inbox we know and no page to land on.
++  for s in
++    select ts.*
++    from public.teaching_sessions ts
++    where ts.is_break = false and ts.assignment_draft = false
++      and ts.status <> 'cancelled'
++      and ts.provider_id is not null
++      and ts.session_date = current_date - 1
++      and ts.report_requested = false
++      and ts.report_submitted_at is null
++  loop
++    select full_name into pname from public.users where id = s.provider_id;
++    perform public.enqueue_email(
++      'sessrep-' || s.id,
++      (select email from public.users where id = s.provider_id),
++      'Session report: ' || coalesce(s.topic, 'teaching session') || ' — ' || to_char(s.session_date, 'FMMon DD'),
++      '<p>Hi ' || coalesce(pname, 'there') || ',</p>' ||
++      '<p>Thank you for teaching <strong>' || coalesce(s.topic, 'yesterday''s session') || '</strong> on ' ||
++        to_char(s.session_date, 'FMDay, Mon DD, YYYY') || '.</p>' ||
++      '<p>When you have a moment, please open the session in the portal and complete the short report:</p>' ||
++      '<ul>' ||
++      '<li>Confirm which fellows attended</li>' ||
++      '<li>Record the topics you discussed</li>' ||
++      '<li>Note any learning gaps you identified, and suggest topics for future sessions</li>' ||
++      '</ul>' ||
++      '<p><a href="' || coalesce(portal, '') || '/my-teaching">Complete the session report</a></p>' ||
++      '<p>This takes about a minute and feeds directly into curriculum planning. Once filed, you can also ' ||
++      'download a teaching completion letter for your CPD records from the same page.</p>'
++    );
++    update public.teaching_sessions set report_requested = true where id = s.id;
++    n := n + 1;
++  end loop;
++
++  -- 4) Morning after: ask every active fellow to rate the session and say what
++  --    they want taught next. Sent to the whole roster on purpose — attendance
++  --    is frequently marked late, and gating on it would drop the request.
++  for s in
++    select ts.*
++    from public.teaching_sessions ts
++    where ts.is_break = false and ts.assignment_draft = false
++      and ts.status <> 'cancelled'
++      and ts.session_date = current_date - 1
++      and ts.feedback_requested = false
++      and (ts.provider_id is not null or ts.provider_name is not null)
++  loop
++    select coalesce(u.full_name, s.provider_name) into pname
++    from public.users u where u.id = s.provider_id;
++    pname := coalesce(pname, s.provider_name);
++
++    fb_subject := 'Your feedback: ' || coalesce(s.topic, 'teaching session') || ' — ' || to_char(s.session_date, 'FMMon DD');
++
++    fb_body :=
++      '<p>Yesterday''s teaching session was <strong>' || coalesce(s.topic, 'a didactic session') || '</strong>' ||
++        (case when pname is not null then ', taught by <strong>' || pname || '</strong>' else '' end) || '.</p>' ||
++      '<p>Please take a minute to rate it and tell us what you would like covered in future sessions.</p>' ||
++      '<p><a href="' || coalesce(portal, '') || '/rate-teaching">Give feedback</a></p>' ||
++      '<p>Ratings and comments are shown to the teacher <strong>without your name</strong>; only the fellowship ' ||
++      'director can see who submitted what. If you were not at this session, you can ignore this email.</p>';
++
++    for r in
++      select id, email, full_name from public.users
++      where role = 'fellow' and status = 'active' and email is not null
++    loop
++      perform public.enqueue_email(
++        'sesfb-' || s.id || '-' || r.id,
++        r.email,
++        fb_subject,
++        '<p>Hi ' || coalesce(r.full_name, 'there') || ',</p>' || fb_body
++      );
++      n := n + 1;
++    end loop;
++
++    update public.teaching_sessions set feedback_requested = true where id = s.id;
++  end loop;
++
++  return n;
++end;
++$function$;
++
++-- ---------------------------------------------------------------------------
++-- 5. Resource library
++-- ---------------------------------------------------------------------------
++-- Reference PDFs the director uploads. The bucket is PRIVATE: nothing is
++-- reachable without a signed URL minted for a signed-in user, and there is no
++-- public path to any file. Uploading is director/admin only; downloading is
++-- open to any active portal account (fellows, supervisors, the director).
++
++create table if not exists public.library_documents (
++  id           uuid primary key default gen_random_uuid(),
++  title        text not null,
++  authors      text,
++  category     text,
++  edition      text,
++  description  text,
++  file_name    text not null,
++  storage_path text not null unique,
++  mime_type    text,
++  size_bytes   bigint,
++  uploaded_by  uuid references public.users(id) on delete set null,
++  created_at   timestamptz not null default now()
++);
++
++comment on table public.library_documents is
++  'Reference texts and documents on the fellowship shelf. Files live in the private "library" storage bucket.';
++
++create index if not exists library_documents_category_idx on public.library_documents (category, title);
++
++alter table public.library_documents enable row level security;
++
++drop policy if exists library_read on public.library_documents;
++create policy library_read on public.library_documents
++  for select to authenticated
++  using (auth.uid() is not null);
++
++drop policy if exists library_manage on public.library_documents;
++create policy library_manage on public.library_documents
++  for all to authenticated
++  using (public.is_director_or_admin())
++  with check (public.is_director_or_admin());
++
++grant select on public.library_documents to authenticated;
++grant insert, update, delete on public.library_documents to authenticated;
++
++-- Private bucket, 200 MB per file to match teaching-cases.
++insert into storage.buckets (id, name, public, file_size_limit)
++values ('library', 'library', false, 209715200)
++on conflict (id) do update set public = false, file_size_limit = 209715200;
++
++drop policy if exists library_files_select on storage.objects;
++create policy library_files_select on storage.objects
++  for select to authenticated
++  using (bucket_id = 'library' and auth.uid() is not null);
++
++drop policy if exists library_files_insert on storage.objects;
++create policy library_files_insert on storage.objects
++  for insert to authenticated
++  with check (bucket_id = 'library' and public.is_director_or_admin());
++
++drop policy if exists library_files_update on storage.objects;
++create policy library_files_update on storage.objects
++  for update to authenticated
++  using (bucket_id = 'library' and public.is_director_or_admin());
++
++drop policy if exists library_files_delete on storage.objects;
++create policy library_files_delete on storage.objects
++  for delete to authenticated
++  using (bucket_id = 'library' and public.is_director_or_admin());
+-- 
+2.43.0
+
+
+From 4437566ff9aca6ab2d5106a20e3e0beb53397bab Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 20 Aug 2026 15:01:00 +0000
+Subject: [PATCH 2/2] Send post-session emails same day at 9:00 AM Toronto
+
+The report and feedback requests were going out the morning after. They now
+go out the same day at 09:00 local, which is exactly when the standard
+08:00-09:00 session ends.
+
+A fixed UTC cron cannot hold 9:00 AM local across daylight saving, so the
+job becomes hourly and the function checks the Toronto clock itself,
+returning immediately on the other 23 runs. That also fixes the pre-existing
+drift where the 7-day and 1-day advance reminders arrived an hour early
+every winter.
+
+Sections 3 and 4 gain an end_time guard so a session scheduled later than
+09:00 is never asked about before it has happened; it is picked up by the
+next morning's run instead, bounded by a 7-day lookback. Existing sessions
+before today are marked as already requested so that lookback cannot flood
+inboxes on the first run.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01HV2TSLxfnBFbXmi2V2hHHf
+---
+ .../0015_same_day_post_session_emails.sql     | 233 ++++++++++++++++++
+ 1 file changed, 233 insertions(+)
+ create mode 100644 supabase/migrations/0015_same_day_post_session_emails.sql
+
+diff --git a/supabase/migrations/0015_same_day_post_session_emails.sql b/supabase/migrations/0015_same_day_post_session_emails.sql
+new file mode 100644
+index 0000000..91c46f4
+--- /dev/null
++++ b/supabase/migrations/0015_same_day_post_session_emails.sql
+@@ -0,0 +1,233 @@
++-- Post-session emails move from "the morning after" to "the same day at
++-- 9:00 AM Toronto time" — the minute the standard 08:00–09:00 session ends.
++--
++-- A fixed UTC cron cannot hold 9:00 AM local across daylight saving (13:00 UTC
++-- is 9:00 EDT but 8:00 EST), so the job becomes hourly and the function itself
++-- checks the Toronto clock and returns immediately on the other 23 runs. That
++-- also fixes the pre-existing drift in the 7-day and 1-day advance reminders,
++-- which have been arriving an hour early every winter.
++--
++-- Sections 3 and 4 gain an end_time guard. At the 09:00 run a session that
++-- finished at 09:00 qualifies; one scheduled for the afternoon does not, and is
++-- instead picked up by the next morning's run through the session_date <
++-- local_date branch. A 7-day lookback bounds that catch-up so a session that
++-- was cancelled, rescheduled or simply missed cannot resurface weeks later.
++--
++-- Companion cron change, applied separately (pg_cron lives outside the
++-- migration stream):
++--
++--   select cron.schedule('teaching-emails-hourly', '0 * * * *',
++--                        'select public.enqueue_teaching_reminders();');
++--   select cron.unschedule('teaching-reminders-daily');
++
++drop function if exists public.enqueue_teaching_reminders();
++
++create or replace function public.enqueue_teaching_reminders(p_force boolean default false)
++returns integer
++language plpgsql
++security definer
++set search_path to 'public'
++as $function$
++declare
++  s record; r record; c record;
++  portal text; zlink text; zpass text; zid text;
++  n int := 0; pname text; cadence text;
++  jc_subject text; jc_body text;
++  fb_subject text; fb_body text;
++  local_ts timestamp; local_date date; local_time time;
++begin
++  -- Everything in this function is a 9:00 AM Toronto activity. The job that
++  -- calls it runs hourly; 23 of those runs stop right here. p_force exists so
++  -- the behaviour can be exercised from a psql session without waiting for 9am.
++  local_ts   := now() at time zone 'America/Toronto';
++  local_date := local_ts::date;
++  local_time := local_ts::time;
++
++  if not p_force and extract(hour from local_ts) <> 9 then
++    return 0;
++  end if;
++
++  select value #>> '{}' into portal from public.app_settings where key = 'portal_url';
++  select value #>> '{}' into zlink from public.app_settings where key = 'zoom_link';
++  select value #>> '{}' into zpass from public.app_settings where key = 'zoom_passcode';
++  select value #>> '{}' into zid   from public.app_settings where key = 'zoom_meeting_id';
++
++  -- 1) Presenter reminder: the assigned teacher confirms / flags.
++  for s in
++    select ts.*, (ts.session_date - local_date) as days_out
++    from public.teaching_sessions ts
++    where ts.is_break = false and ts.assignment_draft = false
++      and ts.status <> 'cancelled'
++      and ts.provider_id is not null
++      and ts.session_date in (local_date + 7, local_date + 1)
++      and ((ts.session_date = local_date + 7 and ts.reminded_week = false)
++        or (ts.session_date = local_date + 1 and ts.reminded_day = false))
++  loop
++    select full_name into pname from public.users where id = s.provider_id;
++    perform public.enqueue_email(
++      'teachrem-' || s.id || '-' || (case when s.days_out = 7 then 'w' else 'd' end),
++      (select email from public.users where id = s.provider_id),
++      'Teaching reminder: ' || coalesce(s.topic, 'session') || ' on ' || to_char(s.session_date, 'FMDay, Mon DD'),
++      '<p>Hi ' || coalesce(pname, 'there') || ',</p>' ||
++      '<p>This is a reminder that <strong>' || coalesce(pname, 'the provider') || '</strong> is scheduled to teach <strong>' || coalesce(s.topic, 'a session') || '</strong>.</p>' ||
++      '<p><strong>Date:</strong> ' || to_char(s.session_date, 'FMDay, Mon DD, YYYY') || '<br>' ||
++      '<strong>Time:</strong> ' || to_char(s.start_time, 'HH24:MI') || '–' || to_char(s.end_time, 'HH24:MI') || '<br>' ||
++      '<strong>Zoom:</strong> <a href="' || coalesce(zlink, '') || '">Join here</a><br>' ||
++      '<strong>Meeting ID:</strong> ' || coalesce(zid, '') || '<br>' ||
++      '<strong>Passcode:</strong> ' || coalesce(zpass, '') || '</p>' ||
++      '<p>Please <a href="' || coalesce(portal, '') || '/my-teaching">confirm this session in the portal</a>, or flag a conflict there if it needs to be covered or rescheduled.</p>'
++    );
++    if s.days_out = 7 then update public.teaching_sessions set reminded_week = true where id = s.id;
++    else update public.teaching_sessions set reminded_day = true where id = s.id; end if;
++    n := n + 1;
++  end loop;
++
++  -- 2) Journal Club announcements.
++  for s in
++    select ts.*, (ts.session_date - local_date) as days_out
++    from public.teaching_sessions ts
++    where ts.is_break = false and ts.assignment_draft = false
++      and ts.status <> 'cancelled'
++      and ts.topic ilike '%journal club%'
++      and ts.session_date in (local_date + 7, local_date + 1)
++  loop
++    cadence := case when s.days_out = 7 then 'w' else 'd' end;
++    select full_name into pname from public.users where id = s.provider_id;
++
++    jc_subject := 'Journal Club — ' || to_char(s.session_date, 'FMDay, Mon DD')
++      || (case when s.days_out = 1 then ' (tomorrow)' else '' end);
++
++    jc_body :=
++      '<p>This is a reminder that <strong>Journal Club</strong> is coming up'
++        || (case when s.days_out = 1 then ' <strong>tomorrow</strong>' else ' in one week' end) || '.</p>' ||
++      (case when pname is not null then '<p><strong>Presenter:</strong> ' || pname || '</p>' else '' end) ||
++      '<p><strong>Date:</strong> ' || to_char(s.session_date, 'FMDay, Mon DD, YYYY') || '<br>' ||
++      '<strong>Time:</strong> ' || to_char(s.start_time, 'HH24:MI') || '–' || to_char(s.end_time, 'HH24:MI') || '<br>' ||
++      '<strong>Zoom:</strong> <a href="' || coalesce(zlink, '') || '">Join here</a><br>' ||
++      '<strong>Meeting ID:</strong> ' || coalesce(zid, '') || '<br>' ||
++      '<strong>Passcode:</strong> ' || coalesce(zpass, '') || '</p>' ||
++      '<p>See the <a href="' || coalesce(portal, '') || '/teaching">teaching schedule</a> for details.</p>';
++
++    for r in
++      select id, email, full_name from public.users
++      where role in ('fellow', 'supervisor', 'director') and status = 'active' and email is not null
++    loop
++      perform public.enqueue_email(
++        'jcann-' || s.id || '-' || cadence || '-' || r.id,
++        r.email,
++        jc_subject,
++        '<p>Hi ' || coalesce(r.full_name, 'there') || ',</p>' || jc_body
++      );
++      n := n + 1;
++    end loop;
++
++    for c in
++      select distinct lower(trim(addr)) as email
++      from public.app_settings st,
++           lateral jsonb_array_elements_text(st.value) as addr
++      where st.key = 'teaching_cc_emails'
++        and jsonb_typeof(st.value) = 'array'
++        and trim(addr) <> ''
++        and lower(trim(addr)) not in (
++          select lower(u.email) from public.users u
++          where u.role in ('fellow', 'supervisor', 'director')
++            and u.status = 'active' and u.email is not null
++        )
++    loop
++      perform public.enqueue_email(
++        'jccc-' || s.id || '-' || cadence || '-' || md5(c.email),
++        c.email,
++        jc_subject,
++        '<p>Hi there,</p>' || jc_body
++      );
++      n := n + 1;
++    end loop;
++  end loop;
++
++  -- 3) Same day: ask the teacher for the session report, once it has finished.
++  for s in
++    select ts.*
++    from public.teaching_sessions ts
++    where ts.is_break = false and ts.assignment_draft = false
++      and ts.status <> 'cancelled'
++      and ts.provider_id is not null
++      and ts.session_date between local_date - 7 and local_date
++      and (ts.session_date < local_date or ts.end_time <= local_time)
++      and ts.report_requested = false
++      and ts.report_submitted_at is null
++  loop
++    select full_name into pname from public.users where id = s.provider_id;
++    perform public.enqueue_email(
++      'sessrep-' || s.id,
++      (select email from public.users where id = s.provider_id),
++      'Session report: ' || coalesce(s.topic, 'teaching session') || ' — ' || to_char(s.session_date, 'FMMon DD'),
++      '<p>Hi ' || coalesce(pname, 'there') || ',</p>' ||
++      '<p>Thank you for teaching <strong>' || coalesce(s.topic, 'today''s session') || '</strong> on ' ||
++        to_char(s.session_date, 'FMDay, Mon DD, YYYY') || '.</p>' ||
++      '<p>While it is fresh, please open the session in the portal and complete the short report:</p>' ||
++      '<ul>' ||
++      '<li>Confirm which fellows attended</li>' ||
++      '<li>Record the topics you discussed</li>' ||
++      '<li>Note any learning gaps you identified, and suggest topics for future sessions</li>' ||
++      '</ul>' ||
++      '<p><a href="' || coalesce(portal, '') || '/my-teaching">Complete the session report</a></p>' ||
++      '<p>This takes about a minute and feeds directly into curriculum planning. Once filed, you can also ' ||
++      'download a teaching completion letter for your CPD records from the same page.</p>'
++    );
++    update public.teaching_sessions set report_requested = true where id = s.id;
++    n := n + 1;
++  end loop;
++
++  -- 4) Same day: ask every active fellow for feedback and topic requests.
++  for s in
++    select ts.*
++    from public.teaching_sessions ts
++    where ts.is_break = false and ts.assignment_draft = false
++      and ts.status <> 'cancelled'
++      and ts.session_date between local_date - 7 and local_date
++      and (ts.session_date < local_date or ts.end_time <= local_time)
++      and ts.feedback_requested = false
++      and (ts.provider_id is not null or ts.provider_name is not null)
++  loop
++    select coalesce(u.full_name, s.provider_name) into pname
++    from public.users u where u.id = s.provider_id;
++    pname := coalesce(pname, s.provider_name);
++
++    fb_subject := 'Your feedback: ' || coalesce(s.topic, 'teaching session') || ' — ' || to_char(s.session_date, 'FMMon DD');
++
++    fb_body :=
++      '<p>The teaching session on ' || to_char(s.session_date, 'FMDay, Mon DD') || ' was <strong>' ||
++        coalesce(s.topic, 'a didactic session') || '</strong>' ||
++        (case when pname is not null then ', taught by <strong>' || pname || '</strong>' else '' end) || '.</p>' ||
++      '<p>Please take a minute to rate it and tell us what you would like covered in future sessions.</p>' ||
++      '<p><a href="' || coalesce(portal, '') || '/rate-teaching">Give feedback</a></p>' ||
++      '<p>Ratings and comments are shown to the teacher <strong>without your name</strong>; only the fellowship ' ||
++      'director can see who submitted what. If you were not at this session, you can ignore this email.</p>';
++
++    for r in
++      select id, email, full_name from public.users
++      where role = 'fellow' and status = 'active' and email is not null
++    loop
++      perform public.enqueue_email(
++        'sesfb-' || s.id || '-' || r.id,
++        r.email,
++        fb_subject,
++        '<p>Hi ' || coalesce(r.full_name, 'there') || ',</p>' || fb_body
++      );
++      n := n + 1;
++    end loop;
++
++    update public.teaching_sessions set feedback_requested = true where id = s.id;
++  end loop;
++
++  return n;
++end;
++$function$;
++
++revoke all on function public.enqueue_teaching_reminders(boolean) from public, anon;
++
++-- Historical sessions are not retroactively chased. Anything before today is
++-- marked as already requested so the new 7-day lookback cannot flood inboxes.
++update public.teaching_sessions
++set report_requested = true, feedback_requested = true
++where session_date < (now() at time zone 'America/Toronto')::date;
+-- 
+2.43.0
+

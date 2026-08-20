@@ -14,6 +14,7 @@ import Calculators from './pages/Calculators'
 import StudyTools from './pages/StudyTools'
 import TeachingCases from './pages/TeachingCases'
 import Handbook from './pages/Handbook'
+import Library from './pages/Library'
 import People from './pages/People'
 import MyTeaching from './pages/MyTeaching'
 import RateTeaching from './pages/RateTeaching'
@@ -71,6 +72,7 @@ export default function App() {
         }
       />
       <Route path="/handbook" element={<Shell><Handbook /></Shell>} />
+      <Route path="/library" element={<Shell allow={['fellow', 'supervisor', 'director', 'admin']}><Library /></Shell>} />
       <Route path="/people" element={<Shell allow={['director', 'admin']}><People /></Shell>} />
       <Route path="/my-teaching" element={<Shell allow={['fellow', 'supervisor', 'director', 'assistant']}><MyTeaching /></Shell>} />
       <Route path="/rate-teaching" element={<Shell allow={['fellow']}><RateTeaching /></Shell>} />

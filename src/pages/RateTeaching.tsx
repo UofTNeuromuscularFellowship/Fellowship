@@ -15,6 +15,7 @@ interface MyFeedback {
   session_id: string
   rating: number
   comments: string | null
+  suggested_topics: string | null
 }
 
 export default function RateTeaching() {
@@ -36,7 +37,7 @@ export default function RateTeaching() {
         .lte('session_date', today)
         .order('session_date', { ascending: false })
         .limit(30),
-      supabase.from('teaching_feedback').select('session_id, rating, comments'),
+      supabase.from('teaching_feedback').select('session_id, rating, comments, suggested_topics'),
     ])
     if (se) setMsg(se.message)
     if (fe) setMsg(fe.message)
@@ -59,8 +60,9 @@ export default function RateTeaching() {
       <div>
         <h1 className="font-display text-2xl font-bold text-ink">Rate Teaching</h1>
         <p className="mt-1 text-sm text-muted">
-          Your feedback helps teachers improve and supports their CME documentation. Teachers see ratings and comments
-          without names; the fellowship director can see who submitted what.
+          Your feedback helps teachers improve and supports their CME documentation, and the topics you ask for feed
+          into what gets scheduled next. Teachers see ratings and comments without names; the fellowship director can
+          see who submitted what.
         </p>
       </div>
 
@@ -135,6 +137,7 @@ function FeedbackForm({
 }) {
   const [rating, setRating] = useState<number>(existing?.rating ?? 0)
   const [comments, setComments] = useState(existing?.comments ?? '')
+  const [suggested, setSuggested] = useState(existing?.suggested_topics ?? '')
   const [busy, setBusy] = useState(false)
 
   async function save() {
@@ -146,6 +149,7 @@ function FeedbackForm({
         fellow_id: fellowId,
         rating,
         comments: comments.trim() || null,
+        suggested_topics: suggested.trim() || null,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'session_id,fellow_id' }
@@ -172,6 +176,16 @@ function FeedbackForm({
         placeholder="Comments on teaching effectiveness (optional)"
         rows={3}
         className="mt-3 w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink"
+      />
+      <label className="mt-3 block text-xs font-medium text-muted">
+        Topics you would like to learn about
+      </label>
+      <textarea
+        value={suggested}
+        onChange={(e) => setSuggested(e.target.value)}
+        placeholder="Anything you want covered in a future session (optional)"
+        rows={2}
+        className="mt-1 w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink"
       />
       <div className="mt-2">
         <button onClick={save} disabled={busy}

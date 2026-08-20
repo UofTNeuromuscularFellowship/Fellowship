@@ -21,9 +21,13 @@ interface Session {
   conflict_flagged: boolean
   conflict_reason: string | null
   status: 'confirmed' | 'pending_confirmation' | 'rescheduled' | 'cancelled'
+  topics_covered: string | null
+  learning_gaps: string | null
+  suggested_topics: string | null
+  report_submitted_at: string | null
 }
 
-interface FeedbackRow { rating: number; comments: string | null; created_at: string }
+interface FeedbackRow { rating: number; comments: string | null; suggested_topics: string | null; created_at: string }
 interface NamedFeedbackRow extends FeedbackRow { fellow_name: string }
 interface Person { id: string; full_name: string; role?: string }
 
@@ -55,7 +59,7 @@ export default function MyTeaching() {
   const isAssistant = acting.isAssistant
   const [sessions, setSessions] = useState<Session[]>([])
   const [loading, setLoading] = useState(true)
-  const [openPanel, setOpenPanel] = useState<{ id: string; kind: 'feedback' | 'attendance' | 'zoom' | 'edit' | 'conflict' | 'cancel' } | null>(null)
+  const [openPanel, setOpenPanel] = useState<{ id: string; kind: 'feedback' | 'attendance' | 'zoom' | 'edit' | 'conflict' | 'cancel' | 'report' } | null>(null)
   const [showAdd, setShowAdd] = useState(false)
   const [providers, setProviders] = useState<Person[]>([])
   const [msg, setMsg] = useState<string | null>(null)
@@ -64,7 +68,7 @@ export default function MyTeaching() {
     setLoading(true)
     let q = supabase
       .from('teaching_sessions')
-      .select('id, session_date, start_time, end_time, topic, provider_name, provider_id, zoom_link, delivered_at, is_break, assignment_draft, provider_confirmed, conflict_flagged, conflict_reason, status')
+      .select('id, session_date, start_time, end_time, topic, provider_name, provider_id, zoom_link, delivered_at, is_break, assignment_draft, provider_confirmed, conflict_flagged, conflict_reason, status, topics_covered, learning_gaps, suggested_topics, report_submitted_at')
       .eq('is_break', false)
       .order('session_date')
     if (!isDirector && acting.effectiveId) q = q.eq('provider_id', acting.effectiveId).eq('assignment_draft', false)
@@ -97,7 +101,7 @@ export default function MyTeaching() {
 
   if (!profile) return null
 
-  function togglePanel(id: string, kind: 'feedback' | 'attendance' | 'zoom' | 'edit' | 'conflict' | 'cancel') {
+  function togglePanel(id: string, kind: 'feedback' | 'attendance' | 'zoom' | 'edit' | 'conflict' | 'cancel' | 'report') {
     setOpenPanel(openPanel?.id === id && openPanel.kind === kind ? null : { id, kind })
   }
 
@@ -122,6 +126,11 @@ export default function MyTeaching() {
               {cancelled && (
                 <span className="ml-2 rounded-full border border-red-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-600 no-underline">Cancelled</span>
               )}
+              {isPast && !cancelled && (s.report_submitted_at ? (
+                <span className="ml-2 rounded-full border border-line px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted">Report filed</span>
+              ) : (
+                <span className="ml-2 rounded-full border border-accent px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">Report due</span>
+              ))}
               {!isPast && !cancelled && s.conflict_flagged && (
                 <span className="ml-2 rounded-full border border-red-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-600">Conflict flagged</span>
               )}
@@ -175,6 +184,11 @@ export default function MyTeaching() {
           {isPast && isAssistant && s.delivered_at && (
             <span className="text-muted">Delivered {new Date(s.delivered_at).toLocaleDateString('en-CA')}</span>
           )}
+          {isPast && !cancelled && !isAssistant && (
+            <button className="font-medium text-accent hover:underline" onClick={() => togglePanel(s.id, 'report')}>
+              {s.report_submitted_at ? 'Edit session report' : 'Complete session report'}
+            </button>
+          )}
           {isPast && !isAssistant && (
             <button className="font-medium text-accent hover:underline" onClick={() => togglePanel(s.id, 'attendance')}>Attendance</button>
           )}
@@ -193,6 +207,9 @@ export default function MyTeaching() {
         )}
         {openPanel?.id === s.id && openPanel.kind === 'attendance' && (
           <AttendancePanel session={s} recorderId={profile!.id} onError={setMsg} />
+        )}
+        {openPanel?.id === s.id && openPanel.kind === 'report' && (
+          <SessionReportPanel session={s} recorderId={profile!.id} onDone={load} onError={setMsg} />
         )}
         {openPanel?.id === s.id && openPanel.kind === 'feedback' && (
           <FeedbackPanel session={s} isDirector={isDirector} onError={setMsg} />
@@ -270,7 +287,84 @@ export default function MyTeaching() {
           <ul className="divide-y divide-line">{past.map((s) => renderSession(s, true))}</ul>
         )}
       </Card>
+
+      {isDirector && <TopicSuggestions sessions={past} onError={setMsg} />}
     </div>
+  )
+}
+
+// Everything anyone has asked to be taught, in one place: what the teachers
+// suggested on their session reports, and what the fellows asked for when
+// rating. This is the raw material for next year's schedule.
+function TopicSuggestions({ sessions, onError }: { sessions: Session[]; onError: (m: string) => void }) {
+  interface Request {
+    session_date: string
+    topic: string | null
+    fellow_name: string | null
+    suggested_topics: string
+    created_at: string
+  }
+  const [requests, setRequests] = useState<Request[]>([])
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    ;(async () => {
+      const { data, error } = await supabase.rpc('topic_requests', { p_limit: 100 })
+      if (error) onError(error.message)
+      setRequests((data as Request[]) ?? [])
+      setLoaded(true)
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const fromTeachers = sessions.filter((s) => s.suggested_topics || s.learning_gaps)
+
+  return (
+    <Card>
+      <CardHeader
+        title="Topic suggestions"
+        sub="What teachers and fellows have asked to see covered"
+      />
+      <div className="divide-y divide-line">
+        <div className="px-5 py-4">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">From teachers</p>
+          {fromTeachers.length === 0 ? (
+            <p className="text-sm text-muted">No session reports filed yet.</p>
+          ) : (
+            <ul className="space-y-3">
+              {fromTeachers.map((s) => (
+                <li key={s.id} className="text-sm">
+                  <p className="font-medium text-ink">
+                    {s.topic ?? 'Session'} <span className="font-normal text-muted">· {formatDate(s.session_date)}{s.provider_name ? ` · ${s.provider_name}` : ''}</span>
+                  </p>
+                  {s.learning_gaps && <p className="text-muted">Gaps: {s.learning_gaps}</p>}
+                  {s.suggested_topics && <p className="text-muted">Suggested: {s.suggested_topics}</p>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="px-5 py-4">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">From fellows</p>
+          {!loaded ? (
+            <p className="text-sm text-muted">Loading…</p>
+          ) : requests.length === 0 ? (
+            <p className="text-sm text-muted">No requests submitted yet.</p>
+          ) : (
+            <ul className="space-y-2">
+              {requests.map((r, i) => (
+                <li key={i} className="text-sm text-ink">
+                  {r.suggested_topics}
+                  <span className="text-muted">
+                    {' '}— {r.fellow_name ?? 'Fellow'}, after {r.topic ?? 'a session'} on {formatDate(r.session_date)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </Card>
   )
 }
 
@@ -682,6 +776,83 @@ function AttendancePanel({ session, recorderId, onError }: { session: Session; r
   )
 }
 
+// The morning-after report the teacher is emailed about. Attendance is folded
+// in as step 1 rather than sitting behind its own button, because the email
+// asks for both and two separate saves is one more than anyone will do.
+function SessionReportPanel({ session, recorderId, onDone, onError }: {
+  session: Session; recorderId: string; onDone: () => void; onError: (m: string) => void
+}) {
+  const [topics, setTopics] = useState(session.topics_covered ?? '')
+  const [gaps, setGaps] = useState(session.learning_gaps ?? '')
+  const [suggested, setSuggested] = useState(session.suggested_topics ?? '')
+  const [busy, setBusy] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  async function save() {
+    if (!topics.trim() && !gaps.trim() && !suggested.trim()) {
+      onError('Add at least one note before filing the report.')
+      return
+    }
+    setBusy(true)
+    const { error } = await supabase.rpc('submit_session_report', {
+      p_session: session.id,
+      p_topics: topics,
+      p_gaps: gaps,
+      p_suggested: suggested,
+    })
+    setBusy(false)
+    if (error) { onError(error.message); return }
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2500)
+    onDone()
+  }
+
+  return (
+    <div className="mt-3 space-y-4 rounded-md border border-line p-4">
+      <div>
+        <p className="text-sm font-medium text-ink">Session report</p>
+        <p className="mt-1 text-xs text-muted">
+          {session.report_submitted_at
+            ? `Filed ${new Date(session.report_submitted_at).toLocaleDateString('en-CA')}. Edits are saved but do not re-notify the director.`
+            : 'Filing this marks the session as delivered and emails a copy to the fellowship director.'}
+        </p>
+      </div>
+
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">1 · Attendance</p>
+        <AttendancePanel session={session} recorderId={recorderId} onError={onError} />
+      </div>
+
+      <div className="space-y-3">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted">2 · Notes</p>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-muted">Topics discussed</label>
+          <textarea value={topics} onChange={(e) => setTopics(e.target.value)} rows={3}
+            placeholder="What you actually covered — one per line is fine"
+            className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink" />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-muted">Learning gaps identified</label>
+          <textarea value={gaps} onChange={(e) => setGaps(e.target.value)} rows={3}
+            placeholder="e.g. Comfortable with the localization, shaky on the differential for a pure motor axonal pattern"
+            className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink" />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-muted">Suggested topics for future sessions</label>
+          <textarea value={suggested} onChange={(e) => setSuggested(e.target.value)} rows={3}
+            placeholder="Topics that would close the gaps above"
+            className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink" />
+        </div>
+      </div>
+
+      <button onClick={save} disabled={busy}
+        className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+        {busy ? 'Saving…' : saved ? 'Saved ✓' : session.report_submitted_at ? 'Save changes' : 'File report'}
+      </button>
+    </div>
+  )
+}
+
 function FeedbackPanel({ session, isDirector, onError }: { session: Session; isDirector: boolean; onError: (m: string) => void }) {
   const [rows, setRows] = useState<FeedbackRow[]>([])
   const [named, setNamed] = useState<NamedFeedbackRow[] | null>(null)
@@ -696,7 +867,7 @@ function FeedbackPanel({ session, isDirector, onError }: { session: Session; isD
         try {
           const { data: raw } = await supabase
             .from('teaching_feedback')
-            .select('rating, comments, created_at, fellow_id')
+            .select('rating, comments, suggested_topics, created_at, fellow_id')
             .eq('session_id', session.id)
           const list = (raw as (FeedbackRow & { fellow_id: string })[]) ?? []
           if (list.length > 0) {
@@ -704,7 +875,7 @@ function FeedbackPanel({ session, isDirector, onError }: { session: Session; isD
             const { data: names } = await supabase.rpc('profile_names', { ids })
             const nameMap: Record<string, string> = {}
             for (const n of (names as { id: string; full_name: string }[]) ?? []) nameMap[n.id] = n.full_name
-            setNamed(list.map((r) => ({ rating: r.rating, comments: r.comments, created_at: r.created_at, fellow_name: nameMap[r.fellow_id] ?? 'Fellow' })))
+            setNamed(list.map((r) => ({ rating: r.rating, comments: r.comments, suggested_topics: r.suggested_topics, created_at: r.created_at, fellow_name: nameMap[r.fellow_id] ?? 'Fellow' })))
           } else setNamed([])
         } catch { /* fall back to anonymized view */ }
       }
@@ -734,6 +905,9 @@ function FeedbackPanel({ session, isDirector, onError }: { session: Session; isD
                 <span className="font-medium">{r.rating}/5</span>
                 {'fellow_name' in r && <span className="text-muted"> · {(r as NamedFeedbackRow).fellow_name}</span>}
                 {r.comments && <span className="text-muted"> — {r.comments}</span>}
+                {r.suggested_topics && (
+                  <span className="mt-0.5 block text-muted">Would like taught: {r.suggested_topics}</span>
+                )}
               </li>
             ))}
           </ul>
@@ -779,6 +953,7 @@ async function openCompletionLetter(s: Session) {
 <p><strong>Topic:</strong> ${s.topic ?? ''}<br/>
 <strong>Date:</strong> ${new Date(s.session_date + 'T00:00:00').toLocaleDateString('en-CA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}<br/>
 <strong>Time:</strong> ${s.start_time.slice(0, 5)}–${s.end_time.slice(0, 5)}</p>
+${s.topics_covered ? `<p><strong>Topics covered:</strong><br/>${s.topics_covered.replace(/\n/g, '<br/>')}</p>` : ''}
 ${attendanceLine}
 ${feedbackLine}
 <p>This letter documents the teaching activity described above for the recipient's continuing professional development records.</p>
