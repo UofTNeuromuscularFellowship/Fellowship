@@ -11,18 +11,23 @@
 // ---------------------------------------------------------------------------
 
 import { supabase } from './supabase'
+import type { ElectrodeKind } from '../components/atlas3d/MarkerShapes'
 
 export type MarkerStatus = 'draft' | 'in_review' | 'approved'
 
 export interface NeedleMarker {
   id: string
-  muscleId: string
+  /** EMG markers target a muscle; NCS markers target a study. Never both. */
+  muscleId: string | null
+  studyId: string | null
+  kind: ElectrodeKind
   regionId: string
   meshName: string
   local: [number, number, number]
   /** Unit vector pointing INTO the tissue, in the mesh's local space. */
   direction: [number, number, number]
-  depthMm: number
+  /** Insertion depth for a needle; null for a surface electrode. */
+  depthMm: number | null
   label: string | null
   note: string | null
   status: MarkerStatus
@@ -31,19 +36,23 @@ export interface NeedleMarker {
 }
 
 export interface NewNeedleMarker {
-  muscleId: string
+  muscleId?: string | null
+  studyId?: string | null
+  kind: ElectrodeKind
   regionId: string
   meshName: string
   local: [number, number, number]
   direction: [number, number, number]
-  depthMm: number
+  depthMm?: number | null
   label?: string | null
   note?: string | null
 }
 
 interface Row {
   id: string
-  muscle_id: string
+  muscle_id: string | null
+  study_id: string | null
+  marker_kind: ElectrodeKind
   region_id: string
   mesh_name: string
   local_x: number
@@ -52,7 +61,7 @@ interface Row {
   dir_x: number
   dir_y: number
   dir_z: number
-  depth_mm: number | string
+  depth_mm: number | string | null
   label: string | null
   note: string | null
   status: MarkerStatus
@@ -64,11 +73,13 @@ function toMarker(r: Row): NeedleMarker {
   return {
     id: r.id,
     muscleId: r.muscle_id,
+    studyId: r.study_id,
+    kind: r.marker_kind,
     regionId: r.region_id,
     meshName: r.mesh_name,
     local: [r.local_x, r.local_y, r.local_z],
     direction: [r.dir_x, r.dir_y, r.dir_z],
-    depthMm: Number(r.depth_mm),
+    depthMm: r.depth_mm === null ? null : Number(r.depth_mm),
     label: r.label,
     note: r.note,
     status: r.status,
@@ -78,7 +89,7 @@ function toMarker(r: Row): NeedleMarker {
 }
 
 const COLUMNS =
-  'id, muscle_id, region_id, mesh_name, local_x, local_y, local_z, dir_x, dir_y, dir_z, depth_mm, label, note, status, authored_by, reviewed_by'
+  'id, muscle_id, study_id, marker_kind, region_id, mesh_name, local_x, local_y, local_z, dir_x, dir_y, dir_z, depth_mm, label, note, status, authored_by, reviewed_by'
 
 /**
  * Markers for one region. RLS decides what comes back: a fellow receives only
@@ -98,7 +109,9 @@ export async function createMarker(m: NewNeedleMarker, authorId: string): Promis
   const { data, error } = await supabase
     .from('atlas3d_markers')
     .insert({
-      muscle_id: m.muscleId,
+      muscle_id: m.muscleId ?? null,
+      study_id: m.studyId ?? null,
+      marker_kind: m.kind,
       region_id: m.regionId,
       mesh_name: m.meshName,
       local_x: m.local[0],
@@ -107,7 +120,7 @@ export async function createMarker(m: NewNeedleMarker, authorId: string): Promis
       dir_x: m.direction[0],
       dir_y: m.direction[1],
       dir_z: m.direction[2],
-      depth_mm: m.depthMm,
+      depth_mm: m.depthMm ?? null,
       label: m.label ?? null,
       note: m.note ?? null,
       status: 'draft',

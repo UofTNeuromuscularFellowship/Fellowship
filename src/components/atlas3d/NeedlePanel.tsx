@@ -15,13 +15,16 @@
 
 import { useState } from 'react'
 import { Card, CardHeader } from '../ui/Card'
-import {
-  canApproveMarkers,
-  type NeedleMarker,
-} from '../../lib/atlas3dMarkers'
+import { canApproveMarkers, type NeedleMarker } from '../../lib/atlas3dMarkers'
+import { MARKER_COLORS, MARKER_LABELS, type ElectrodeKind } from './MarkerShapes'
+
+const ELECTRODES: ElectrodeKind[] = ['stim', 'g1', 'g2', 'ground']
 
 export function NeedlePanel({
-  muscleName,
+  mode,
+  targetName,
+  electrodeKind,
+  onElectrodeKind,
   role,
   markers,
   placing,
@@ -35,7 +38,11 @@ export function NeedlePanel({
   busy,
   error,
 }: {
-  muscleName: string
+  mode: 'emg' | 'ncs'
+  targetName: string
+  /** Which electrode the next NCS placement creates. Unused in EMG mode. */
+  electrodeKind: ElectrodeKind
+  onElectrodeKind: (k: ElectrodeKind) => void
   role?: string | null
   markers: NeedleMarker[]
   /** null, 'new', or the id of the marker being repositioned. */
@@ -58,8 +65,8 @@ export function NeedlePanel({
   return (
     <Card>
       <CardHeader
-        title="Needle markers"
-        sub={`${muscleName} — faculty only`}
+        title={mode === 'emg' ? 'Needle marker' : 'Electrode placement'}
+        sub={`${targetName} — faculty only`}
         action={
           <button
             onClick={onPlaceNew}
@@ -70,21 +77,51 @@ export function NeedlePanel({
                 : 'border border-line text-muted hover:text-ink'
             }`}
           >
-            {placing === 'new' ? 'Click the model…' : 'Place a needle'}
+            {placing === 'new'
+              ? 'Click the model…'
+              : mode === 'emg'
+                ? 'Place a needle'
+                : `Place ${MARKER_LABELS[electrodeKind]}`}
           </button>
         }
       />
 
       <div className="space-y-3 px-5 py-4">
+        {mode === 'ncs' && (
+          <div className="flex flex-wrap gap-2">
+            {ELECTRODES.map((k) => (
+              <button
+                key={k}
+                onClick={() => onElectrodeKind(k)}
+                className={`flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-semibold ${
+                  electrodeKind === k
+                    ? 'border-accent bg-accent-soft/50 text-accent'
+                    : 'border-line text-muted hover:text-ink'
+                }`}
+              >
+                <span
+                  aria-hidden="true"
+                  className="inline-block h-2.5 w-2.5 rounded-full border border-line"
+                  style={{ backgroundColor: MARKER_COLORS[k] }}
+                />
+                {MARKER_LABELS[k]}
+              </button>
+            ))}
+          </div>
+        )}
+
         {placing !== null && (
           <div className="rounded-md bg-accent-soft/50 px-4 py-3">
             <p className="text-sm text-ink">
-              {placing === 'new'
-                ? 'Click the point on the muscle where the needle enters.'
-                : 'Click the new entry point for this needle.'}{' '}
-              The insertion angle is taken from the surface at that point, so click from the
-              direction you would actually approach. Only the target muscle is clickable, so
-              you can rotate freely without losing the point.
+              {mode === 'emg'
+                ? placing === 'new'
+                  ? 'Click the point on the muscle where the needle enters. Only the target muscle is clickable, so you can rotate freely without losing the point.'
+                  : 'Click the new entry point for this needle.'
+                : placing === 'new'
+                  ? `Click where ${MARKER_LABELS[electrodeKind]} sits on the surface.`
+                  : 'Click the new position for this electrode.'}{' '}
+              The angle is taken from the surface at that point, so click from the direction
+              you would actually approach.
             </p>
           </div>
         )}
@@ -95,8 +132,10 @@ export function NeedlePanel({
 
         {markers.length === 0 && !placing && (
           <p className="text-sm text-muted">
-            No marker for this muscle yet. The written technique in the panel above remains
-            the authority either way.
+            {mode === 'emg'
+              ? 'No needle marker for this muscle yet.'
+              : 'No electrodes placed for this study yet.'}{' '}
+            The written technique in the panel above remains the authority either way.
           </p>
         )}
 
@@ -120,10 +159,19 @@ export function NeedlePanel({
                 >
                   {approved ? 'Approved' : 'Draft — not visible to fellows'}
                 </span>
+                <span className="flex items-center gap-1.5 text-xs font-semibold text-ink">
+                  <span
+                    aria-hidden="true"
+                    className="inline-block h-2.5 w-2.5 rounded-full border border-line"
+                    style={{ backgroundColor: MARKER_COLORS[m.kind] }}
+                  />
+                  {MARKER_LABELS[m.kind]}
+                </span>
                 <span className="text-xs text-muted">{m.meshName.replace(/_/g, ' ')}</span>
               </div>
 
               <div className="mt-3 flex flex-wrap items-end gap-3">
+                {m.kind === 'needle' && (
                 <label className="block">
                   <span className="text-xs font-semibold uppercase tracking-wide text-muted">
                     Depth (mm)
@@ -140,7 +188,9 @@ export function NeedlePanel({
                     className="mt-1 w-24 rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:outline-none"
                   />
                 </label>
+                )}
 
+                {m.kind === 'needle' && (
                 <button
                   onClick={() => {
                     const v = Number(depthValue)
@@ -151,6 +201,7 @@ export function NeedlePanel({
                 >
                   Save depth
                 </button>
+                )}
 
                 {canApprove && (
                   <button

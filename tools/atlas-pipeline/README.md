@@ -52,34 +52,19 @@ npx gltf-transform optimize \
     public/models/upper-limb.glb \
     --compress draco --texture-compress webp
 
-# 3. Skin envelope (optional layer) — the source has NO skin mesh, so this
-#    derives one from the outer surface of the anatomy itself
-blender --background --factory-startup --python tools/atlas-pipeline/skin_envelope.py
-npx gltf-transform merge work/upper-limb.glb work/skin-envelope.glb work/with-skin.glb
-
-# 4. Flatten to ONE scene. `merge` keeps each input as its own glTF scene and
-#    three.js only mounts the default one, so without this the envelope loads
-#    and is then silently never drawn.
-python3 tools/atlas-pipeline/flatten_scenes.py work/with-skin.glb work/flat.glb
-
-# 5. Compress. --join false is REQUIRED: the default join pass merges every
+# 3. Compress. --join false is REQUIRED: the default join pass merges every
 #    mesh into a handful of unnamed nodes and breaks every mesh-map lookup.
-npx gltf-transform optimize work/flat.glb public/models/upper-limb.glb \
+npx gltf-transform optimize work/upper-limb.glb public/models/upper-limb.glb \
     --compress draco --texture-compress webp --join false --simplify false
 
-# 6. Validate against the mesh map and the clinical data
+# 4. Validate against the mesh map and the clinical data
 node tools/atlas-pipeline/validate.mjs
 ```
 
-### About the skin envelope
-
-Z-Anatomy has no skin, dermis or integument mesh — every object in the source
-was checked. The envelope is built by joining a copy of the muscles and bones,
-voxel-remeshing the union into one closed outer surface, smoothing it and
-pulling it back slightly. It is a stand-in for the body surface so a needle can
-be seen relative to it. It is **not** a skin dataset, carries no subcutaneous
-fat, and its distance from any muscle is an artefact of the voxel size. The
-viewer labels it as approximate and says not to read depth off it.
+`flatten_scenes.py` is kept for the case where several .glb files are combined
+with `gltf-transform merge`: merge keeps each input as its own glTF scene and
+three.js only ever mounts the default one, so the extra scenes load into memory
+and are silently never drawn.
 
 Then update, in the same commit:
 

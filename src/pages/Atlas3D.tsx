@@ -17,6 +17,8 @@ import { Link } from 'react-router-dom'
 import { Card, CardHeader } from '../components/ui/Card'
 import { MuscleDetail } from '../components/MuscleDetail'
 import { NeedlePanel } from '../components/atlas3d/NeedlePanel'
+import type { ElectrodeKind } from '../components/atlas3d/MarkerShapes'
+import { NERVE_STUDIES } from '../data/nerveGuide'
 import { useAuth } from '../context/AuthContext'
 import {
   canAuthorMarkers,
@@ -140,9 +142,12 @@ export default function Atlas3D() {
     () => REGION_MODELS.find((r) => r.ready)?.id ?? REGION_MODELS[0]?.id ?? '',
   )
   const [selectedId, setSelectedId] = useState<string>('')
+  const [mode, setMode] = useState<'emg' | 'ncs'>('emg')
+  const [studyId, setStudyId] = useState('')
+  const [electrodeKind, setElectrodeKind] = useState<ElectrodeKind>('g1')
   const [query, setQuery] = useState('')
   const [hoverLabel, setHoverLabel] = useState<string | null>(null)
-  const [layers, setLayers] = useState({ bones: true, nerves: true, vessels: false, skin: false })
+  const [layers, setLayers] = useState({ bones: true, nerves: true, vessels: false })
   const [isolate, setIsolate] = useState(true)
   const [sectionOn, setSectionOn] = useState(false)
   const [sectionPos, setSectionPos] = useState(0.5)
@@ -245,8 +250,21 @@ export default function Atlas3D() {
   }, [acked, region?.id, region?.ready])
 
   const visibleMarkers = useMemo(
-    () => markers.filter((m) => m.muscleId === selectedId),
-    [markers, selectedId],
+    () =>
+      mode === 'emg'
+        ? markers.filter((m) => m.muscleId === selectedId)
+        : markers.filter((m) => m.studyId === studyId),
+    [markers, mode, selectedId, studyId],
+  )
+
+  const regionStudies = useMemo(
+    () => (region ? NERVE_STUDIES.filter((st) => region.ncsRegions.includes(st.region)) : []),
+    [region],
+  )
+
+  const currentStudy = useMemo(
+    () => regionStudies.find((st) => st.id === studyId) ?? null,
+    [regionStudies, studyId],
   )
 
   const approvedMarker = useMemo(
@@ -259,7 +277,8 @@ export default function Atlas3D() {
     local: [number, number, number]
     direction: [number, number, number]
   }) {
-    if (!region || !selectedId || !profile) return
+    const target = mode === 'emg' ? selectedId : studyId
+    if (!region || !target || !profile) return
     setMarkerBusy(true)
     setMarkerError(null)
     try {
@@ -273,12 +292,14 @@ export default function Atlas3D() {
       }
       const created = await createMarker(
         {
-          muscleId: selectedId,
+          muscleId: mode === 'emg' ? selectedId : null,
+          studyId: mode === 'ncs' ? studyId : null,
+          kind: mode === 'emg' ? 'needle' : electrodeKind,
           regionId: region.id,
           meshName: p.meshName,
           local: p.local,
           direction: p.direction,
-          depthMm: 15,
+          depthMm: mode === 'emg' ? 15 : null,
         },
         profile.id,
       )
@@ -374,7 +395,6 @@ export default function Atlas3D() {
                 ['bones', 'Bones', '#E7E3DA'],
                 ['nerves', 'Nerves', '#E8B62C'],
                 ['vessels', 'Vessels', '#C0392B'],
-                ['skin', 'Skin (approx.)', '#E4C4AE'],
               ] as const
             ).map(([key, label, swatch]) => (
               <label key={key} className="flex items-center gap-2 text-sm text-ink">
@@ -419,18 +439,6 @@ export default function Atlas3D() {
               </button>
             )}
           </div>
-
-          {layers.skin && (
-            <div className="border-b border-line bg-amber-50/70 px-5 py-2.5">
-              <p className="text-xs text-ink">
-                <span className="font-semibold">The skin surface is approximate. </span>
-                The source anatomical model has no skin, so this envelope is derived from the
-                outer surface of the modelled muscles and bones. It shows roughly where the
-                body surface lies; it carries no subcutaneous fat and its distance from any
-                muscle is not a measurement. Do not read insertion depth off it.
-              </p>
-            </div>
-          )}
 
           {sectionOn && (
             <div className="space-y-2 border-b border-line bg-paper/60 px-5 py-3">
@@ -503,6 +511,7 @@ export default function Atlas3D() {
                   markers={visibleMarkers}
                   activeMarkerId={activeMarkerId}
                   placingNeedle={placing !== null}
+                  anyStructure={mode === 'ncs'}
                   onPlaceNeedle={handlePlaceNeedle}
                   onPlaceRejected={(what) =>
                     setMarkerError(
@@ -534,6 +543,32 @@ export default function Atlas3D() {
         {/* ---------------- picker ---------------- */}
         <div className="space-y-4">
           <Card>
+            <div className="flex gap-1 border-b border-line px-3 pt-3" role="tablist" aria-label="Atlas mode">
+              {(
+                [
+                  ['emg', 'Needle EMG'],
+                  ['ncs', 'Nerve conduction'],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  role="tab"
+                  aria-selected={mode === key}
+                  onClick={() => {
+                    setMode(key)
+                    setPlacing(null)
+                    setQuery('')
+                  }}
+                  className={`-mb-px border-b-2 px-3 py-2 font-display text-sm font-semibold transition-colors ${
+                    mode === key
+                      ? 'border-accent text-accent'
+                      : 'border-transparent text-muted hover:text-ink'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <div className="space-y-3 px-5 py-4">
               <label className="block">
                 <span className="text-xs font-semibold uppercase tracking-wide text-muted">
@@ -556,6 +591,33 @@ export default function Atlas3D() {
                 </select>
               </label>
 
+              {mode === 'ncs' && (
+                <label className="block">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+                    Study
+                  </span>
+                  <select
+                    value={studyId}
+                    onChange={(e) => {
+                      setStudyId(e.target.value)
+                      setPlacing(null)
+                    }}
+                    className="mt-1 w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+                  >
+                    <option value="">— Choose a study —</option>
+                    {regionStudies.map((st) => (
+                      <option key={st.id} value={st.id}>
+                        {st.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="mt-1 block text-xs text-muted">
+                    {regionStudies.length} studies in this region
+                  </span>
+                </label>
+              )}
+
+              {mode === 'emg' && (
               <label className="block">
                 <span className="text-xs font-semibold uppercase tracking-wide text-muted">
                   Search muscle, nerve or root
@@ -580,8 +642,9 @@ export default function Atlas3D() {
                   )}
                 </div>
               </label>
+              )}
 
-              {searching && (
+              {mode === 'emg' && searching && (
                 <div className="overflow-hidden rounded-md border border-line">
                   {matches.length === 0 && (
                     <p className="px-3 py-2 text-sm text-muted">
@@ -608,7 +671,7 @@ export default function Atlas3D() {
                   reads as one long list where the matches have simply been
                   pushed to the top, which is the opposite of what a search
                   should communicate. */}
-              {!searching && (
+              {mode === 'emg' && !searching && (
               <div className="max-h-72 overflow-y-auto rounded-md border border-line">
                 {regionMuscles.map((m) => {
                   const has3d = meshesFor(m.id).length > 0
@@ -637,8 +700,94 @@ export default function Atlas3D() {
         </div>
       </div>
 
+      {/* ---------------- NCS detail ---------------- */}
+      {mode === 'ncs' && currentStudy && (
+        <div className="space-y-4">
+          <Card>
+            <CardHeader title={currentStudy.name} sub={`${currentStudy.type} · ${currentStudy.region}`} />
+            <div className="space-y-3 px-5 py-4">
+              {currentStudy.recording && (
+                <p className="text-sm text-ink">
+                  <span className="font-semibold">Recording: </span>{currentStudy.recording}
+                </p>
+              )}
+              {currentStudy.active && (
+                <p className="text-sm text-ink">
+                  <span className="font-semibold">G1 (active): </span>{currentStudy.active}
+                </p>
+              )}
+              {currentStudy.reference && (
+                <p className="text-sm text-ink">
+                  <span className="font-semibold">G2 (reference): </span>{currentStudy.reference}
+                </p>
+              )}
+              {currentStudy.ground && (
+                <p className="text-sm text-ink">
+                  <span className="font-semibold">Ground: </span>{currentStudy.ground}
+                </p>
+              )}
+              {currentStudy.stim && currentStudy.stim.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">
+                    Stimulation
+                  </h3>
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-ink">
+                    {currentStudy.stim.map((sTxt, i) => (
+                      <li key={i}>{sTxt}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <p className="text-xs text-muted">
+                Full technique, settings and reference values are in the NCS guide under study
+                tools. This view shows where the electrodes sit.
+              </p>
+            </div>
+          </Card>
+
+          {approvedMarker && approvedMarker.note && (
+            <Card>
+              <CardHeader title="Electrode landmarks" sub={approvedMarker.label || 'Reviewed and approved'} />
+              <div className="px-5 py-4">
+                <p className="whitespace-pre-line text-sm text-ink">{approvedMarker.note}</p>
+              </div>
+            </Card>
+          )}
+
+          {mayAuthor && (
+            <NeedlePanel
+              mode="ncs"
+              targetName={currentStudy.name}
+              electrodeKind={electrodeKind}
+              onElectrodeKind={setElectrodeKind}
+              role={profile?.role}
+              markers={visibleMarkers}
+              placing={placing}
+              onPlaceNew={() => setPlacing((p) => (p === 'new' ? null : 'new'))}
+              onMove={(id) => setPlacing((p) => (p === id ? null : id))}
+              activeId={activeMarkerId}
+              onSetActive={setActiveMarkerId}
+              onSave={(id, patch) => void patchMarker(id, patch)}
+              onApprove={(id, approved) =>
+                void patchMarker(id, { status: approved ? 'approved' : 'draft' })
+              }
+              onDelete={(id) => void removeMarker(id)}
+              busy={markerBusy}
+              error={markerError}
+            />
+          )}
+        </div>
+      )}
+
+      {mode === 'ncs' && !currentStudy && (
+        <p className="text-sm text-muted">
+          {regionStudies.length} nerve conduction studies cover this region. Choose one to place
+          or review its electrodes.
+        </p>
+      )}
+
       {/* ---------------- clinical detail ---------------- */}
-      {current ? (
+      {mode === 'emg' && current ? (
         <div className="space-y-4">
           {!currentHas3d && (
             <div className="rounded-md border border-amber-400 bg-amber-50 px-4 py-3 text-sm text-ink">
@@ -683,7 +832,10 @@ export default function Atlas3D() {
 
           {mayAuthor && (
             <NeedlePanel
-              muscleName={current.name}
+              mode="emg"
+              targetName={current.name}
+              electrodeKind={electrodeKind}
+              onElectrodeKind={setElectrodeKind}
               role={profile?.role}
               markers={visibleMarkers}
               placing={placing}
@@ -722,7 +874,7 @@ function Header() {
     <div>
       <h1 className="font-display text-2xl font-bold text-ink">3D Atlas</h1>
       <p className="mt-1 text-sm text-muted">
-        Rotate the anatomy behind EMG needle localization — select a muscle to see it in place
+        Rotate the anatomy behind EMG needle localization and nerve conduction technique
       </p>
     </div>
   )
