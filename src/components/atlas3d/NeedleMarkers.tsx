@@ -10,7 +10,7 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo } from 'react'
-import { useThree } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import type { NeedleMarker } from '../../lib/atlas3dMarkers'
 import { buildElectrode, buildNeedle, MARKER_COLORS } from './MarkerShapes'
@@ -42,7 +42,11 @@ function markerGroup(m: NeedleMarker, active: boolean): THREE.Group {
   }
 
   // The shapes are built along +Y; rotate the whole group onto the direction
-  // that points into the tissue.
+  // that points into the tissue. The surface normal fixes which way the marker
+  // faces but not how it is turned on that surface, so `spinDeg` rotates it
+  // about its own axis — that is what aims the stimulator's cathode.
+  inner.rotation.y = THREE.MathUtils.degToRad(m.spinDeg ?? 0)
+
   const g = new THREE.Group()
   g.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir)
   g.add(inner)
@@ -63,24 +67,49 @@ export function NeedleMarkers({
   root,
   markers,
   activeId,
+  onScreenPositions,
 }: {
   root: THREE.Object3D
   markers: NeedleMarker[]
   activeId?: string | null
+  /** Marker id -> position in canvas pixels, for the side callouts. */
+  onScreenPositions?: (p: Record<string, { x: number; y: number; visible: boolean }>) => void
 }) {
   const invalidate = useThree((s) => s.invalidate)
+  const camera = useThree((s) => s.camera)
+  const size = useThree((s) => s.size)
 
   const attached = useMemo(() => {
-    const made: Array<{ group: THREE.Group; parent: THREE.Object3D }> = []
+    const made: Array<{ group: THREE.Group; parent: THREE.Object3D; id: string }> = []
     for (const m of markers) {
       const parent = root.getObjectByName(m.meshName)
       if (!parent) continue // mesh renamed or region rebuilt — skip, never guess
       const g = markerGroup(m, m.id === activeId)
       parent.add(g)
-      made.push({ group: g, parent })
+      made.push({ group: g, parent, id: m.id })
     }
     return made
   }, [root, markers, activeId])
+
+  // Project every marker to screen space so the page can draw its label off to
+  // the side, on the white background, with a leader line back to the marker.
+  // Text drawn in the scene itself is unreadable against the anatomy.
+  useFrame(() => {
+    if (!onScreenPositions) return
+    const out: Record<string, { x: number; y: number; visible: boolean }> = {}
+    const v = new THREE.Vector3()
+    for (const { group, id } of attached) {
+      group.getWorldPosition(v)
+      const behind = v.clone().sub(camera.position).dot(camera.getWorldDirection(new THREE.Vector3())) < 0
+      v.project(camera)
+      out[id] = {
+        x: ((v.x + 1) / 2) * size.width,
+        y: ((1 - v.y) / 2) * size.height,
+        visible: !behind,
+      }
+    }
+    onScreenPositions(out)
+  })
 
   useEffect(() => {
     invalidate()

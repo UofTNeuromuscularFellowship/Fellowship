@@ -18,6 +18,8 @@ import { Card, CardHeader } from '../components/ui/Card'
 import { MuscleDetail } from '../components/MuscleDetail'
 import { NeedlePanel } from '../components/atlas3d/NeedlePanel'
 import type { ElectrodeKind } from '../components/atlas3d/MarkerShapes'
+import { MarkerCallouts, type ScreenPos } from '../components/atlas3d/MarkerCallouts'
+import { MuscleSummaryBar } from '../components/atlas3d/MuscleSummaryBar'
 import { NERVE_STUDIES } from '../data/nerveGuide'
 import { useAuth } from '../context/AuthContext'
 import {
@@ -145,6 +147,9 @@ export default function Atlas3D() {
   const [mode, setMode] = useState<'emg' | 'ncs'>('emg')
   const [studyId, setStudyId] = useState('')
   const [electrodeKind, setElectrodeKind] = useState<ElectrodeKind>('g1')
+  const [approach, setApproach] = useState('Standard')
+  const [screenPos, setScreenPos] = useState<Record<string, ScreenPos>>({})
+  const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 })
   const [query, setQuery] = useState('')
   const [hoverLabel, setHoverLabel] = useState<string | null>(null)
   const [layers, setLayers] = useState({ bones: true, nerves: true, vessels: false })
@@ -162,6 +167,8 @@ export default function Atlas3D() {
   // null = not placing. 'new' = next click creates a marker. Otherwise the id
   // of the marker whose position the next click replaces.
   const [placing, setPlacing] = useState<null | 'new' | string>(null)
+  /** When true the next placement drops a named landmark rather than hardware. */
+  const [landmarkMode, setLandmarkMode] = useState(false)
   const [markerBusy, setMarkerBusy] = useState(false)
   const [markerError, setMarkerError] = useState<string | null>(null)
   const [bounds, setBounds] = useState<{ minY: number; maxY: number; radius: number } | null>(null)
@@ -249,12 +256,27 @@ export default function Atlas3D() {
     }
   }, [acked, region?.id, region?.ready])
 
-  const visibleMarkers = useMemo(
+  const targetMarkers = useMemo(
     () =>
       mode === 'emg'
         ? markers.filter((m) => m.muscleId === selectedId)
         : markers.filter((m) => m.studyId === studyId),
     [markers, mode, selectedId, studyId],
+  )
+
+  /** Every named approach this target has markers for, plus the current one. */
+  const approaches = useMemo(() => {
+    const names = new Set<string>(['Standard'])
+    for (const m of targetMarkers) if (m.kind !== 'landmark') names.add(m.approach)
+    names.add(approach)
+    return [...names].sort()
+  }, [targetMarkers, approach])
+
+  // Landmarks are shown with every approach — a bony point does not belong to
+  // one technique. Everything else is filtered to the selected approach.
+  const visibleMarkers = useMemo(
+    () => targetMarkers.filter((m) => m.kind === 'landmark' || m.approach === approach),
+    [targetMarkers, approach],
   )
 
   const regionStudies = useMemo(
@@ -279,6 +301,8 @@ export default function Atlas3D() {
   }) {
     const target = mode === 'emg' ? selectedId : studyId
     if (!region || !target || !profile) return
+    const placingKind: ElectrodeKind =
+      landmarkMode ? 'landmark' : mode === 'emg' ? 'needle' : electrodeKind
     setMarkerBusy(true)
     setMarkerError(null)
     try {
@@ -294,12 +318,13 @@ export default function Atlas3D() {
         {
           muscleId: mode === 'emg' ? selectedId : null,
           studyId: mode === 'ncs' ? studyId : null,
-          kind: mode === 'emg' ? 'needle' : electrodeKind,
+          kind: placingKind,
+          approach: placingKind === 'landmark' ? 'Standard' : approach,
           regionId: region.id,
           meshName: p.meshName,
           local: p.local,
           direction: p.direction,
-          depthMm: mode === 'emg' ? 15 : null,
+          depthMm: placingKind === 'needle' ? 15 : null,
         },
         profile.id,
       )
@@ -440,6 +465,11 @@ export default function Atlas3D() {
             )}
           </div>
 
+          {/* Identity strip: the facts worth having in view while looking at
+              the model. Because it is here, MuscleDetail's identity card is
+              switched off below and the localization card moves to the top. */}
+          {mode === 'emg' && current && <MuscleSummaryBar muscle={current} />}
+
           {sectionOn && (
             <div className="space-y-2 border-b border-line bg-paper/60 px-5 py-3">
               <div className="flex flex-wrap items-center gap-3">
@@ -485,7 +515,14 @@ export default function Atlas3D() {
             </div>
           )}
 
-          <div className="relative h-[380px] w-full sm:h-[520px]">
+          <div
+            ref={(el) => {
+              if (el && (el.clientWidth !== canvasSize.w || el.clientHeight !== canvasSize.h)) {
+                setCanvasSize({ w: el.clientWidth, h: el.clientHeight })
+              }
+            }}
+            className="relative h-[380px] w-full sm:h-[520px]"
+          >
             {!region?.ready || !region.glbPath ? (
               <CanvasMessage>
                 This region&apos;s model has not been built yet. Its clinical text is available in
@@ -510,18 +547,33 @@ export default function Atlas3D() {
                   viewCutSignal={viewCutSignal}
                   markers={visibleMarkers}
                   activeMarkerId={activeMarkerId}
+                  onMarkerScreenPositions={setScreenPos}
                   placingNeedle={placing !== null}
-                  anyStructure={mode === 'ncs'}
+                  anyStructure={mode === 'ncs' || landmarkMode}
                   onPlaceNeedle={handlePlaceNeedle}
                   onPlaceRejected={(what) =>
                     setMarkerError(
                       `That click landed on ${what}. Rotate until the target muscle is ` +
-                        'in front, then click on it — a marker has to be anchored to the ' +
+                        'in front, then click on it — a needle has to be anchored to the ' +
                         'muscle it describes.',
                     )
                   }
                 />
               </Suspense>
+            )}
+
+            {/* Labels live out here, over the white margin, not in the scene:
+                text drawn on the anatomy competes with it and turns with the
+                camera. */}
+            {canvasSize.w > 0 && (
+              <MarkerCallouts
+                markers={visibleMarkers}
+                positions={screenPos}
+                width={canvasSize.w}
+                height={canvasSize.h}
+                activeId={activeMarkerId}
+                onHover={setActiveMarkerId}
+              />
             )}
 
             {hoverLabel && (
@@ -760,6 +812,11 @@ export default function Atlas3D() {
               targetName={currentStudy.name}
               electrodeKind={electrodeKind}
               onElectrodeKind={setElectrodeKind}
+              approach={approach}
+              approaches={approaches}
+              onApproach={setApproach}
+              landmarkMode={landmarkMode}
+              onLandmarkMode={setLandmarkMode}
               role={profile?.role}
               markers={visibleMarkers}
               placing={placing}
@@ -797,7 +854,7 @@ export default function Atlas3D() {
               unaffected.
             </div>
           )}
-          <MuscleDetail muscle={current} showDiagram={false} />
+          <MuscleDetail muscle={current} showDiagram={false} showIdentity={false} />
 
           {/* Approved markers are read-only clinical content, so everyone sees
               them — the authoring panel below is faculty-only. */}
@@ -836,6 +893,11 @@ export default function Atlas3D() {
               targetName={current.name}
               electrodeKind={electrodeKind}
               onElectrodeKind={setElectrodeKind}
+              approach={approach}
+              approaches={approaches}
+              onApproach={setApproach}
+              landmarkMode={landmarkMode}
+              onLandmarkMode={setLandmarkMode}
               role={profile?.role}
               markers={visibleMarkers}
               placing={placing}

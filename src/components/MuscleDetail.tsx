@@ -27,6 +27,7 @@ function chainParts(m: EmgMuscle): string {
 export function MuscleDetail({
   muscle,
   showDiagram = true,
+  showIdentity = true,
 }: {
   muscle: EmgMuscle
   /**
@@ -35,10 +36,17 @@ export function MuscleDetail({
    * The text atlas keeps it.
    */
   showDiagram?: boolean
+  /**
+   * The 3D Atlas turns this off too: name, roots, plexus, nerve and action are
+   * already in the summary bar above the model there, so repeating them in a
+   * card underneath just pushes the needle-localization detail down the page.
+   */
+  showIdentity?: boolean
 }) {
   const chain = chainParts(muscle)
   return (
     <div className="space-y-4">
+      {showIdentity && (
       <Card>
         <CardHeader title={muscle.name} sub={muscle.region} />
         <div className="space-y-4 px-5 py-4">
@@ -63,6 +71,7 @@ export function MuscleDetail({
           )}
         </div>
       </Card>
+      )}
 
       {(muscle.position || muscle.localization || muscle.maneuver) && (
         <Card>

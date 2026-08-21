@@ -28,6 +28,10 @@ export interface NeedleMarker {
   direction: [number, number, number]
   /** Insertion depth for a needle; null for a surface electrode. */
   depthMm: number | null
+  /** Rotation about the surface normal, degrees. Aims the stimulator cathode. */
+  spinDeg: number
+  /** Named approach this marker belongs to. Landmarks are always 'Standard'. */
+  approach: string
   label: string | null
   note: string | null
   status: MarkerStatus
@@ -44,6 +48,8 @@ export interface NewNeedleMarker {
   local: [number, number, number]
   direction: [number, number, number]
   depthMm?: number | null
+  spinDeg?: number
+  approach?: string
   label?: string | null
   note?: string | null
 }
@@ -62,6 +68,8 @@ interface Row {
   dir_y: number
   dir_z: number
   depth_mm: number | string | null
+  spin_deg: number | string
+  approach: string
   label: string | null
   note: string | null
   status: MarkerStatus
@@ -80,6 +88,8 @@ function toMarker(r: Row): NeedleMarker {
     local: [r.local_x, r.local_y, r.local_z],
     direction: [r.dir_x, r.dir_y, r.dir_z],
     depthMm: r.depth_mm === null ? null : Number(r.depth_mm),
+    spinDeg: Number(r.spin_deg ?? 0),
+    approach: r.approach ?? 'Standard',
     label: r.label,
     note: r.note,
     status: r.status,
@@ -89,7 +99,7 @@ function toMarker(r: Row): NeedleMarker {
 }
 
 const COLUMNS =
-  'id, muscle_id, study_id, marker_kind, region_id, mesh_name, local_x, local_y, local_z, dir_x, dir_y, dir_z, depth_mm, label, note, status, authored_by, reviewed_by'
+  'id, muscle_id, study_id, marker_kind, region_id, mesh_name, local_x, local_y, local_z, dir_x, dir_y, dir_z, depth_mm, spin_deg, approach, label, note, status, authored_by, reviewed_by'
 
 /**
  * Markers for one region. RLS decides what comes back: a fellow receives only
@@ -121,6 +131,8 @@ export async function createMarker(m: NewNeedleMarker, authorId: string): Promis
       dir_y: m.direction[1],
       dir_z: m.direction[2],
       depth_mm: m.depthMm ?? null,
+      spin_deg: m.spinDeg ?? 0,
+      approach: m.approach ?? 'Standard',
       label: m.label ?? null,
       note: m.note ?? null,
       status: 'draft',
@@ -140,12 +152,13 @@ export interface MarkerGeometryPatch {
 
 export async function updateMarker(
   id: string,
-  patch: Partial<Pick<NeedleMarker, 'depthMm' | 'label' | 'note' | 'status'>> & {
+  patch: Partial<Pick<NeedleMarker, 'depthMm' | 'spinDeg' | 'label' | 'note' | 'status'>> & {
     geometry?: MarkerGeometryPatch
   },
 ): Promise<NeedleMarker> {
   const row: Record<string, unknown> = {}
   if (patch.depthMm !== undefined) row.depth_mm = patch.depthMm
+  if (patch.spinDeg !== undefined) row.spin_deg = patch.spinDeg
   if (patch.label !== undefined) row.label = patch.label
   if (patch.note !== undefined) row.note = patch.note
   if (patch.status !== undefined) row.status = patch.status

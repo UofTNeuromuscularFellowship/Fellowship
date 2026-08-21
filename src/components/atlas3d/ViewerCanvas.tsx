@@ -74,6 +74,9 @@ export interface ViewerProps {
   /** Approved (and, for reviewers, draft) needle markers to draw. */
   markers?: NeedleMarker[]
   activeMarkerId?: string | null
+  onMarkerScreenPositions?: (
+    p: Record<string, { x: number; y: number; visible: boolean }>,
+  ) => void
   /**
    * When true, a click places a needle instead of selecting a muscle. The
    * captured point and direction are in the LOCAL space of the mesh that was
@@ -144,6 +147,7 @@ function Model({
   viewCutSignal,
   markers,
   activeMarkerId,
+  onMarkerScreenPositions,
   placingNeedle,
   onPlaceNeedle,
   onPlaceRejected,
@@ -378,7 +382,12 @@ function Model({
     <>
       {sectionOn && <ClipCaps targets={capTargets} plane={plane} selected={selected} />}
       {markers && markers.length > 0 && (
-        <NeedleMarkers root={root} markers={markers} activeId={activeMarkerId} />
+        <NeedleMarkers
+          root={root}
+          markers={markers}
+          activeId={activeMarkerId}
+          onScreenPositions={onMarkerScreenPositions}
+        />
       )}
       <CutCamera
         signal={viewCutSignal}

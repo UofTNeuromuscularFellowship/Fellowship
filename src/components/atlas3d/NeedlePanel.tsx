@@ -25,6 +25,11 @@ export function NeedlePanel({
   targetName,
   electrodeKind,
   onElectrodeKind,
+  approach,
+  approaches,
+  onApproach,
+  landmarkMode,
+  onLandmarkMode,
   role,
   markers,
   placing,
@@ -43,6 +48,13 @@ export function NeedlePanel({
   /** Which electrode the next NCS placement creates. Unused in EMG mode. */
   electrodeKind: ElectrodeKind
   onElectrodeKind: (k: ElectrodeKind) => void
+  /** Named approach currently being viewed/edited. */
+  approach: string
+  approaches: string[]
+  onApproach: (name: string) => void
+  /** When on, the next placement drops a named landmark instead of hardware. */
+  landmarkMode: boolean
+  onLandmarkMode: (on: boolean) => void
   role?: string | null
   markers: NeedleMarker[]
   /** null, 'new', or the id of the marker being repositioned. */
@@ -51,7 +63,10 @@ export function NeedlePanel({
   onMove: (id: string) => void
   activeId: string | null
   onSetActive: (id: string | null) => void
-  onSave: (id: string, patch: { depthMm?: number; label?: string; note?: string }) => void
+  onSave: (
+    id: string,
+    patch: { depthMm?: number; spinDeg?: number; label?: string; note?: string },
+  ) => void
   onApprove: (id: string, approved: boolean) => void
   onDelete: (id: string) => void
   busy: boolean
@@ -61,6 +76,8 @@ export function NeedlePanel({
   const [depthDraft, setDepthDraft] = useState<Record<string, string>>({})
   const [noteDraft, setNoteDraft] = useState<Record<string, string>>({})
   const [labelDraft, setLabelDraft] = useState<Record<string, string>>({})
+  const [newApproach, setNewApproach] = useState('')
+  const [addingApproach, setAddingApproach] = useState(false)
 
   return (
     <Card>
@@ -79,15 +96,93 @@ export function NeedlePanel({
           >
             {placing === 'new'
               ? 'Click the model…'
-              : mode === 'emg'
-                ? 'Place a needle'
-                : `Place ${MARKER_LABELS[electrodeKind]}`}
+              : landmarkMode
+                ? 'Place a landmark'
+                : mode === 'emg'
+                  ? 'Place a needle'
+                  : `Place ${MARKER_LABELS[electrodeKind]}`}
           </button>
         }
       />
 
       <div className="space-y-3 px-5 py-4">
-        {mode === 'ncs' && (
+        {/* A muscle can have more than one accepted approach, and a study more
+            than one montage. Markers belong to whichever is selected here;
+            landmarks are shared across all of them. */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-line pb-3">
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+            Approach
+          </span>
+          <select
+            value={approach}
+            onChange={(e) => onApproach(e.target.value)}
+            className="rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink focus:border-accent focus:outline-none"
+          >
+            {approaches.map((a) => (
+              <option key={a} value={a}>
+                {a}
+              </option>
+            ))}
+          </select>
+          {addingApproach ? (
+            <>
+              <input
+                value={newApproach}
+                onChange={(e) => setNewApproach(e.target.value)}
+                placeholder="e.g. Lateral approach"
+                className="w-44 rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink focus:border-accent focus:outline-none"
+              />
+              <button
+                onClick={() => {
+                  const name = newApproach.trim()
+                  if (!name) return
+                  onApproach(name)
+                  setNewApproach('')
+                  setAddingApproach(false)
+                }}
+                className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold text-accent"
+              >
+                Add
+              </button>
+              <button
+                onClick={() => {
+                  setAddingApproach(false)
+                  setNewApproach('')
+                }}
+                className="text-xs font-semibold text-muted hover:text-ink"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setAddingApproach(true)}
+              className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold text-muted hover:text-ink"
+            >
+              New approach
+            </button>
+          )}
+
+          <label className="ml-auto flex items-center gap-2 text-sm text-ink">
+            <input
+              type="checkbox"
+              checked={landmarkMode}
+              onChange={(e) => onLandmarkMode(e.target.checked)}
+              className="h-4 w-4 rounded border-line text-accent focus:ring-accent"
+            />
+            Landmark mode
+          </label>
+        </div>
+
+        {landmarkMode && (
+          <p className="rounded-md bg-accent-soft/40 px-4 py-2 text-xs text-ink">
+            Landmark mode places a named reference point — medial epicondyle, biceps tendon —
+            anywhere on the model, so your notes can point at something visible. Landmarks are
+            shared across every approach. Name it in the label field after placing.
+          </p>
+        )}
+
+        {mode === 'ncs' && !landmarkMode && (
           <div className="flex flex-wrap gap-2">
             {ELECTRODES.map((k) => (
               <button
@@ -188,6 +283,30 @@ export function NeedlePanel({
                     className="mt-1 w-24 rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:outline-none"
                   />
                 </label>
+                )}
+
+                {m.kind === 'stim' && (
+                  <label className="block">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+                      Cathode direction
+                    </span>
+                    <div className="mt-1 flex items-center gap-2">
+                      <input
+                        type="range"
+                        min={0}
+                        max={355}
+                        step={5}
+                        value={m.spinDeg}
+                        onChange={(e) => onSave(m.id, { spinDeg: Number(e.target.value) })}
+                        aria-label="Rotate the stimulator so the cathode faces the recording site"
+                        className="h-2 w-40 cursor-pointer accent-accent"
+                      />
+                      <span className="w-10 text-xs tabular-nums text-muted">{m.spinDeg}°</span>
+                    </div>
+                    <span className="mt-1 block text-xs text-muted">
+                      Turn the probe so the black cathode faces the recording electrode.
+                    </span>
+                  </label>
                 )}
 
                 {m.kind === 'needle' && (

@@ -23,7 +23,7 @@ import * as THREE from 'three'
 export const MM = 0.001
 const ORDER = 9990
 
-export type ElectrodeKind = 'needle' | 'stim' | 'g1' | 'g2' | 'ground'
+export type ElectrodeKind = 'needle' | 'stim' | 'g1' | 'g2' | 'ground' | 'landmark'
 
 /** Colours follow the conventions used on a real bench. */
 export const MARKER_COLORS: Record<ElectrodeKind, string> = {
@@ -32,6 +32,7 @@ export const MARKER_COLORS: Record<ElectrodeKind, string> = {
   g1: '#111827', // active — black
   g2: '#C0392B', // reference — red
   ground: '#1E874B', // ground — green
+  landmark: '#6B4E8F', // reference point, not hardware
 }
 
 export const MARKER_LABELS: Record<ElectrodeKind, string> = {
@@ -40,6 +41,7 @@ export const MARKER_LABELS: Record<ElectrodeKind, string> = {
   g1: 'G1 — active',
   g2: 'G2 — reference',
   ground: 'Ground',
+  landmark: 'Landmark',
 }
 
 function markerMaterial(color: string, opts: { metal?: boolean; glow?: number } = {}) {
@@ -121,27 +123,57 @@ export function buildElectrode(kind: Exclude<ElectrodeKind, 'needle'>): THREE.Gr
   const color = MARKER_COLORS[kind]
   const mat = markerMaterial(color, { glow: 0.3 })
 
+  if (kind === 'landmark') {
+    // A reference point, not hardware: a pin whose head sits clear of the
+    // surface so the callout line has something to point at.
+    const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.6 * MM, 0.6 * MM, 7 * MM, 8), mat)
+    pin.position.y = -3.5 * MM
+    add(g, pin, 1)
+    const head = new THREE.Mesh(new THREE.SphereGeometry(2.4 * MM, 16, 12), mat)
+    head.position.y = -7 * MM
+    add(g, head, 2)
+    return g
+  }
+
   if (kind === 'stim') {
     const steel = markerMaterial('#AEB6C2', { metal: true, glow: 0.05 })
     const body = new THREE.Mesh(new THREE.CylinderGeometry(3 * MM, 3.6 * MM, 12 * MM, 14), mat)
     body.position.y = -10 * MM
     add(g, body, 2)
-    // Two prongs, 25 mm apart, the usual cathode/anode spacing on a bar
-    // stimulator. The cathode (the one that matters) is marked darker.
-    for (const [dx, prongColor] of [
-      [-6 * MM, '#3B4453'],
-      [6 * MM, '#AEB6C2'],
+
+    // Two prongs about 25 mm apart, the usual cathode/anode spacing on a bar
+    // stimulator. WHICH WAY ROUND THIS SITS MATTERS: the cathode is the pole
+    // that depolarises the nerve, so it must face the recording electrode.
+    // The cathode is drawn black with a black collar; the anode is bare steel.
+    // Rotate the marker (spin) to aim the cathode.
+    const CATHODE_X = -6 * MM
+    const ANODE_X = 6 * MM
+    const black = markerMaterial('#111827', { metal: true, glow: 0.05 })
+
+    for (const [dx, prongMat] of [
+      [CATHODE_X, black],
+      [ANODE_X, steel],
     ] as const) {
       const prong = new THREE.Mesh(
-        new THREE.CylinderGeometry(1.1 * MM, 1.1 * MM, 5 * MM, 10),
-        prongColor === '#AEB6C2' ? steel : markerMaterial(prongColor, { metal: true }),
+        new THREE.CylinderGeometry(1.2 * MM, 1.2 * MM, 5 * MM, 10),
+        prongMat,
       )
       prong.position.set(dx, -2 * MM, 0)
       add(g, prong, 1)
-      const tipDisc = new THREE.Mesh(new THREE.CylinderGeometry(1.6 * MM, 1.6 * MM, 0.8 * MM, 12), mat)
+      const tipDisc = new THREE.Mesh(
+        new THREE.CylinderGeometry(1.8 * MM, 1.8 * MM, 0.9 * MM, 12),
+        prongMat,
+      )
       tipDisc.position.set(dx, 0, 0)
       add(g, tipDisc, 1)
     }
+
+    // A short fin on the cathode side, so which way the probe is turned is
+    // readable even when the two prongs overlap on screen.
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(5 * MM, 1 * MM, 1.4 * MM), black)
+    fin.position.set(CATHODE_X - 3 * MM, -5 * MM, 0)
+    add(g, fin, 2)
+
     return g
   }
 
