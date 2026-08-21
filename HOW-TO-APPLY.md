@@ -24,6 +24,7 @@ Drop each file into the repo at exactly this path, replacing what is there:
 | `package.json` | `package.json` |
 | `src/pages/Library.tsx` | **new file** |
 | `src/components/PdfViewer.tsx` | **new file** |
+| `gitignore.txt` | **new file**, renamed to `.gitignore` (optional) |
 | `supabase/migrations/0014_session_reports_and_library.sql` | **new file** (record only — already applied) |
 | `supabase/migrations/0015_same_day_post_session_emails.sql` | **new file** (record only — already applied) |
 

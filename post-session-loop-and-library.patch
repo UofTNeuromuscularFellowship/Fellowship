@@ -1,7 +1,7 @@
 From 8a095ae107e7576a804a9e396100f94d272ffa56 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Thu, 20 Aug 2026 14:53:13 +0000
-Subject: [PATCH 1/4] Close the post-session loop and add a resource library
+Subject: [PATCH 1/5] Close the post-session loop and add a resource library
 
 Three additions, all riding the existing email rails (email_queue ->
 email-dispatch every 15 min, enqueue_teaching_reminders daily at 9am ET):
@@ -1242,7 +1242,7 @@ index 0000000..f14082a
 From 4437566ff9aca6ab2d5106a20e3e0beb53397bab Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Thu, 20 Aug 2026 15:01:00 +0000
-Subject: [PATCH 2/4] Send post-session emails same day at 9:00 AM Toronto
+Subject: [PATCH 2/5] Send post-session emails same day at 9:00 AM Toronto
 
 The report and feedback requests were going out the morning after. They now
 go out the same day at 09:00 local, which is exactly when the standard
@@ -1513,7 +1513,7 @@ index 0000000..91c46f4
 From d20a943170782fa4a80144cb84597894666ed254 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Thu, 20 Aug 2026 15:35:43 +0000
-Subject: [PATCH 3/4] Treat a session as past once it ends, not at midnight
+Subject: [PATCH 3/5] Treat a session as past once it ends, not at midnight
 
 My Teaching split sessions on session_date >= today, so a session held this
 morning stayed under "Upcoming" until midnight and every isPast-gated
@@ -1674,7 +1674,7 @@ index a1e32a1..d283029 100644
 From a493164e10b80ea07b5bb5013ff67aef86b35210 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Thu, 20 Aug 2026 20:47:55 +0000
-Subject: [PATCH 4/4] Add an in-portal PDF reader to the Library
+Subject: [PATCH 4/5] Add an in-portal PDF reader to the Library
 
 Library items gain a "Read" button beside "Download", opening the document
 in a pdf.js reader with page navigation, zoom, fit-to-width, selectable
@@ -2365,6 +2365,64 @@ index 2eb24b2..eb515e1 100644
        {canManage && (
          <p className="text-xs text-muted">
            Only upload material the program is licensed to distribute — publisher-provided copies, open-access texts,
+-- 
+2.43.0
+
+
+From 837acb86386efc44b33d7b484f342a47725d4dcc Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 21 Aug 2026 01:19:58 +0000
+Subject: [PATCH 5/5] Add a .gitignore
+
+The repo had none, so node_modules/, dist/ and the tsc build cache all showed
+as untracked and were one stray `git add .` away from being committed.
+
+package-lock.json is ignored rather than tracked, matching how the project
+already works: every dependency is a caret range resolved at build time.
+Tracking a lockfile would be the safer choice and is worth doing deliberately,
+but it changes the convention for the whole project and does not belong in a
+feature branch.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01HV2TSLxfnBFbXmi2V2hHHf
+---
+ .gitignore | 27 +++++++++++++++++++++++++++
+ 1 file changed, 27 insertions(+)
+ create mode 100644 .gitignore
+
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..8bc34a5
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,27 @@
++# Dependencies — restored by `npm install`, never committed.
++node_modules/
++
++# Build output — Vercel builds this from source on every deploy.
++dist/
++
++# TypeScript incremental build cache.
++*.tsbuildinfo
++
++# Lockfile. This repo has never tracked one: every dependency is declared with
++# a caret range in package.json and resolved fresh at build time. Committing a
++# lockfile would be the safer, more reproducible choice — it pins the whole
++# transitive tree — but it is a change of convention for the whole project, not
++# something to slip in alongside a feature.
++package-lock.json
++
++# Local environment overrides — the portal reads its Supabase keys from Vercel
++# environment variables, so nothing secret belongs in the repo.
++.env
++.env.local
++.env.*.local
++
++# Editor and OS noise.
++.DS_Store
++*.swp
++.idea/
++.vscode/
 -- 
 2.43.0
 

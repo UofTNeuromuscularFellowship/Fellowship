@@ -1,0 +1,27 @@
+# Dependencies — restored by `npm install`, never committed.
+node_modules/
+
+# Build output — Vercel builds this from source on every deploy.
+dist/
+
+# TypeScript incremental build cache.
+*.tsbuildinfo
+
+# Lockfile. This repo has never tracked one: every dependency is declared with
+# a caret range in package.json and resolved fresh at build time. Committing a
+# lockfile would be the safer, more reproducible choice — it pins the whole
+# transitive tree — but it is a change of convention for the whole project, not
+# something to slip in alongside a feature.
+package-lock.json
+
+# Local environment overrides — the portal reads its Supabase keys from Vercel
+# environment variables, so nothing secret belongs in the repo.
+.env
+.env.local
+.env.*.local
+
+# Editor and OS noise.
+.DS_Store
+*.swp
+.idea/
+.vscode/
