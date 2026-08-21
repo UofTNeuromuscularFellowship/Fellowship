@@ -33,7 +33,7 @@ const SECTIONS: NavSection[] = [
     heading: 'EMG Toolkit',
     items: [
       { to: '/calculators', label: 'EMG/NCS calculators', allow: ['fellow', 'supervisor', 'director'] },
-      { to: '/study', label: 'Study tools', allow: ['fellow', 'supervisor', 'director'] },
+      { to: '/study', label: 'Test your anatomy knowledge', allow: ['fellow', 'supervisor', 'director'] },
       { to: '/atlas-3d', label: '3D atlas', allow: ['fellow', 'supervisor', 'director'] },
     ],
   },
@@ -43,7 +43,6 @@ const SECTIONS: NavSection[] = [
       { to: '/my-teaching', label: 'Teaching Assignments', allow: ['fellow', 'supervisor', 'director', 'assistant'] },
       { to: '/teaching-cases', label: 'Teaching cases', allow: ['supervisor', 'director'] },
       { to: '/rate-teaching', label: 'Rate Teaching', allow: ['fellow'] },
-      { to: '/feedback-review', label: 'Feedback review', allow: ['director', 'admin'] },
       { to: '/evaluations', label: 'Evaluations', allow: ['fellow', 'supervisor', 'director'] },
     ],
   },
@@ -51,7 +50,6 @@ const SECTIONS: NavSection[] = [
     heading: 'Program',
     items: [
       { to: '/handbook', label: 'Handbook' },
-      { to: '/library', label: 'Library', allow: ['fellow', 'supervisor', 'director', 'admin'] },
       { to: '/people', label: 'People', allow: ['director', 'admin'] },
       { to: '/settings', label: 'Settings' },
     ],

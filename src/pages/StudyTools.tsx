@@ -1,58 +1,32 @@
-import { useState } from 'react'
-import EmgAtlas from './EmgAtlas'
-import NerveGuide from './NerveGuide'
 import TestMode from './TestMode'
 
 // ---------------------------------------------------------------------------
-// Combined "study tools" page: a tab switcher between the EMG atlas, the
-// nerve conduction (NCS) guide, and Test mode. Each tab renders the existing
-// tool component. `initialTab` lets the legacy deep-link routes open directly
-// on the matching tab.
+// Self-test page.
+//
+// This used to be a tab switcher over the EMG atlas, the NCS guide and Test
+// mode. The atlas and the guide now live in the 3D Atlas, which shows the same
+// clinical text alongside the anatomy — including the settings, distances,
+// normal limits and side-to-side values that used to be here, via the shared
+// MuscleDetail and StudyDetail components. Nothing clinical was dropped when
+// the tabs went; it moved.
+//
+// The legacy /emg-atlas and /nerve-guide deep links redirect to the 3D Atlas.
 // ---------------------------------------------------------------------------
 
-export type StudyTab = 'emg' | 'ncs' | 'test'
-
-const TABS: { key: StudyTab; label: string }[] = [
-  { key: 'emg', label: 'EMG atlas' },
-  { key: 'ncs', label: 'NCS guide' },
-  { key: 'test', label: 'Test mode' },
-]
-
-export default function StudyTools({ initialTab = 'emg' }: { initialTab?: StudyTab }) {
-  const [tab, setTab] = useState<StudyTab>(initialTab)
-
+export default function StudyTools() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-display text-2xl font-bold text-ink">Study tools</h1>
+        <h1 className="font-display text-2xl font-bold text-ink">
+          Test Your Anatomy Knowledge
+        </h1>
         <p className="mt-1 text-sm text-muted">
-          EMG needle-localization atlas, nerve conduction guide, and self-test — pick one below
+          Self-test on muscles, nerves and roots — the atlas and the nerve conduction guide are
+          in the 3D Atlas
         </p>
       </div>
 
-      <div className="flex gap-1 border-b border-line" role="tablist" aria-label="Study tools">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            role="tab"
-            aria-selected={tab === t.key}
-            onClick={() => setTab(t.key)}
-            className={`-mb-px border-b-2 px-4 py-2 font-display text-sm font-semibold transition-colors ${
-              tab === t.key
-                ? 'border-accent text-accent'
-                : 'border-transparent text-muted hover:text-ink'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      <div>
-        {tab === 'emg' && <EmgAtlas />}
-        {tab === 'ncs' && <NerveGuide />}
-        {tab === 'test' && <TestMode />}
-      </div>
+      <TestMode />
     </div>
   )
 }

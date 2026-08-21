@@ -16,6 +16,7 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Card, CardHeader } from '../components/ui/Card'
 import { MuscleDetail } from '../components/MuscleDetail'
+import { StudyDetail } from '../components/StudyDetail'
 import { NeedlePanel } from '../components/atlas3d/NeedlePanel'
 import type { ElectrodeKind } from '../components/atlas3d/MarkerShapes'
 import { MarkerCallouts, type ScreenPos } from '../components/atlas3d/MarkerCallouts'
@@ -671,11 +672,12 @@ export default function Atlas3D() {
                     setPlacing(null)
                     setLandmarkMode(false)
                     setQuery('')
-                    // Leaving a mode clears its selection, so switching to
-                    // nerve conduction does not leave a muscle highlighted on
-                    // the model with nothing on the page referring to it.
-                    if (key === 'ncs') setSelectedId('')
-                    else setStudyId('')
+                    // Clear BOTH selections either way. Clearing only the
+                    // mode you are leaving still left a muscle highlighted on
+                    // the model when coming back from nerve conduction, with
+                    // nothing on the page referring to it.
+                    setSelectedId('')
+                    setStudyId('')
                   }}
                   className={`-mb-px border-b-2 px-3 py-2 font-display text-sm font-semibold transition-colors ${
                     mode === key
@@ -821,47 +823,7 @@ export default function Atlas3D() {
       {/* ---------------- NCS detail ---------------- */}
       {mode === 'ncs' && currentStudy && (
         <div className="space-y-4">
-          <Card>
-            <CardHeader title={currentStudy.name} sub={`${currentStudy.type} · ${currentStudy.region}`} />
-            <div className="space-y-3 px-5 py-4">
-              {currentStudy.recording && (
-                <p className="text-sm text-ink">
-                  <span className="font-semibold">Recording: </span>{currentStudy.recording}
-                </p>
-              )}
-              {currentStudy.active && (
-                <p className="text-sm text-ink">
-                  <span className="font-semibold">G1 (active): </span>{currentStudy.active}
-                </p>
-              )}
-              {currentStudy.reference && (
-                <p className="text-sm text-ink">
-                  <span className="font-semibold">G2 (reference): </span>{currentStudy.reference}
-                </p>
-              )}
-              {currentStudy.ground && (
-                <p className="text-sm text-ink">
-                  <span className="font-semibold">Ground: </span>{currentStudy.ground}
-                </p>
-              )}
-              {currentStudy.stim && currentStudy.stim.length > 0 && (
-                <div>
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">
-                    Stimulation
-                  </h3>
-                  <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-ink">
-                    {currentStudy.stim.map((sTxt, i) => (
-                      <li key={i}>{sTxt}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              <p className="text-xs text-muted">
-                Full technique, settings and reference values are in the NCS guide under study
-                tools. This view shows where the electrodes sit.
-              </p>
-            </div>
-          </Card>
+          <StudyDetail study={currentStudy} showIdentity={false} showDiagram={false} />
 
           {approvedMarker && approvedMarker.note && (
             <Card>

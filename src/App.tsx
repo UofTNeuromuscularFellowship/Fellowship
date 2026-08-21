@@ -14,11 +14,9 @@ import Calculators from './pages/Calculators'
 import StudyTools from './pages/StudyTools'
 import TeachingCases from './pages/TeachingCases'
 import Handbook from './pages/Handbook'
-import Library from './pages/Library'
 import People from './pages/People'
 import MyTeaching from './pages/MyTeaching'
 import RateTeaching from './pages/RateTeaching'
-import FeedbackReview from './pages/FeedbackReview'
 import Vacation from './pages/Vacation'
 import Evaluations from './pages/Evaluations'
 import Settings from './pages/Settings'
@@ -60,10 +58,11 @@ export default function App() {
       <Route path="/competency" element={<Shell allow={['fellow', 'director', 'admin']}><Competency /></Shell>} />
       <Route path="/calculators" element={<Shell allow={['fellow', 'supervisor', 'director']}><Calculators /></Shell>} />
       <Route path="/study" element={<Shell allow={['fellow', 'supervisor', 'director']}><StudyTools /></Shell>} />
-      {/* Legacy deep-links open the combined page on the matching tab */}
-      <Route path="/emg-atlas" element={<Shell allow={['fellow', 'supervisor', 'director']}><StudyTools initialTab="emg" /></Shell>} />
-      <Route path="/nerve-guide" element={<Shell allow={['fellow', 'supervisor', 'director']}><StudyTools initialTab="ncs" /></Shell>} />
-      <Route path="/test-mode" element={<Shell allow={['fellow', 'supervisor', 'director']}><StudyTools initialTab="test" /></Shell>} />
+      {/* The EMG atlas and NCS guide now live in the 3D Atlas, which carries
+          the same clinical text beside the anatomy. Old links follow. */}
+      <Route path="/emg-atlas" element={<Navigate to="/atlas-3d" replace />} />
+      <Route path="/nerve-guide" element={<Navigate to="/atlas-3d" replace />} />
+      <Route path="/test-mode" element={<Shell allow={['fellow', 'supervisor', 'director']}><StudyTools /></Shell>} />
       <Route
         path="/atlas-3d"
         element={
@@ -73,11 +72,9 @@ export default function App() {
         }
       />
       <Route path="/handbook" element={<Shell><Handbook /></Shell>} />
-      <Route path="/library" element={<Shell allow={['fellow', 'supervisor', 'director', 'admin']}><Library /></Shell>} />
       <Route path="/people" element={<Shell allow={['director', 'admin']}><People /></Shell>} />
       <Route path="/my-teaching" element={<Shell allow={['fellow', 'supervisor', 'director', 'assistant']}><MyTeaching /></Shell>} />
       <Route path="/rate-teaching" element={<Shell allow={['fellow']}><RateTeaching /></Shell>} />
-      <Route path="/feedback-review" element={<Shell allow={['director', 'admin']}><FeedbackReview /></Shell>} />
       <Route path="/vacation" element={<Shell allow={['fellow', 'supervisor', 'director', 'assistant']}><Vacation /></Shell>} />
       <Route path="/evaluations" element={<Shell allow={['fellow', 'supervisor', 'director']}><Evaluations /></Shell>} />
       <Route path="/settings" element={<Shell><Settings /></Shell>} />
