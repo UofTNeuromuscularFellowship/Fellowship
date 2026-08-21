@@ -144,6 +144,11 @@ export function MarkerCallouts({
               {title(m)}
             </span>
           </div>
+          {m.kind === 'stim' && (
+            <p className="text-[10px] font-medium leading-snug text-muted">
+              Cathode {Math.round(m.spinDeg)}°
+            </p>
+          )}
           {m.note && (
             <p className="mt-0.5 line-clamp-2 text-[10px] leading-snug text-muted">{m.note}</p>
           )}

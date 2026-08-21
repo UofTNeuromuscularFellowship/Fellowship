@@ -19,7 +19,7 @@ import { MuscleDetail } from '../components/MuscleDetail'
 import { NeedlePanel } from '../components/atlas3d/NeedlePanel'
 import type { ElectrodeKind } from '../components/atlas3d/MarkerShapes'
 import { MarkerCallouts, type ScreenPos } from '../components/atlas3d/MarkerCallouts'
-import { MuscleSummaryBar } from '../components/atlas3d/MuscleSummaryBar'
+import { MuscleSummaryBar, SummaryBar } from '../components/atlas3d/MuscleSummaryBar'
 import { NERVE_STUDIES } from '../data/nerveGuide'
 import { useAuth } from '../context/AuthContext'
 import {
@@ -150,6 +150,8 @@ export default function Atlas3D() {
   const [approach, setApproach] = useState('Standard')
   const [screenPos, setScreenPos] = useState<Record<string, ScreenPos>>({})
   const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 })
+  const [showDistance, setShowDistance] = useState(false)
+  const [distanceMm, setDistanceMm] = useState<number | null>(null)
   const [query, setQuery] = useState('')
   const [hoverLabel, setHoverLabel] = useState<string | null>(null)
   const [layers, setLayers] = useState({ bones: true, nerves: true, vessels: false })
@@ -446,6 +448,22 @@ export default function Atlas3D() {
               />
               Fade other muscles
             </label>
+            {mode === 'ncs' && (
+              <label className="flex items-center gap-2 text-sm text-ink">
+                <input
+                  type="checkbox"
+                  checked={showDistance}
+                  onChange={(e) => setShowDistance(e.target.checked)}
+                  className="h-4 w-4 rounded border-line text-accent focus:ring-accent"
+                />
+                Cathode → G1 distance
+                {showDistance && distanceMm !== null && (
+                  <span className="font-semibold tabular-nums text-accent">
+                    {distanceMm.toFixed(0)} mm
+                  </span>
+                )}
+              </label>
+            )}
             <label className="flex items-center gap-2 text-sm text-ink">
               <input
                 type="checkbox"
@@ -469,6 +487,46 @@ export default function Atlas3D() {
               the model. Because it is here, MuscleDetail's identity card is
               switched off below and the localization card moves to the top. */}
           {mode === 'emg' && current && <MuscleSummaryBar muscle={current} />}
+          {mode === 'ncs' && currentStudy && (
+            <SummaryBar
+              name={currentStudy.name}
+              sub={currentStudy.region}
+              parts={[
+                { label: 'Type', value: currentStudy.type },
+                { label: 'Roots', value: currentStudy.roots },
+                { label: 'Recording', value: currentStudy.recording },
+                { label: 'G1', value: currentStudy.active },
+                { label: 'G2', value: currentStudy.reference },
+                { label: 'Ground', value: currentStudy.ground },
+              ]}
+              footer={
+                currentStudy.stim && currentStudy.stim.length > 0
+                  ? { label: 'Stimulation', value: currentStudy.stim.join('  ·  ') }
+                  : null
+              }
+            />
+          )}
+
+          {mode === 'ncs' && showDistance && (
+            <div className="border-b border-line bg-amber-50/70 px-5 py-2.5">
+              <p className="text-xs text-ink">
+                {distanceMm === null ? (
+                  <>
+                    <span className="font-semibold">No distance to show. </span>
+                    Place both a stimulator and a G1 electrode in this approach and the line
+                    appears between them.
+                  </>
+                ) : (
+                  <>
+                    <span className="font-semibold">Straight-line distance, not tape distance. </span>
+                    Measured through space from the cathode to G1. A real conduction distance is
+                    measured over the skin and is longer wherever the limb curves between the
+                    two, so use this to sanity-check placement — not to compute a velocity.
+                  </>
+                )}
+              </p>
+            </div>
+          )}
 
           {sectionOn && (
             <div className="space-y-2 border-b border-line bg-paper/60 px-5 py-3">
@@ -548,6 +606,8 @@ export default function Atlas3D() {
                   markers={visibleMarkers}
                   activeMarkerId={activeMarkerId}
                   onMarkerScreenPositions={setScreenPos}
+                  showDistance={mode === 'ncs' && showDistance}
+                  onDistance={setDistanceMm}
                   placingNeedle={placing !== null}
                   anyStructure={mode === 'ncs' || landmarkMode}
                   onPlaceNeedle={handlePlaceNeedle}
@@ -609,7 +669,13 @@ export default function Atlas3D() {
                   onClick={() => {
                     setMode(key)
                     setPlacing(null)
+                    setLandmarkMode(false)
                     setQuery('')
+                    // Leaving a mode clears its selection, so switching to
+                    // nerve conduction does not leave a muscle highlighted on
+                    // the model with nothing on the page referring to it.
+                    if (key === 'ncs') setSelectedId('')
+                    else setStudyId('')
                   }}
                   className={`-mb-px border-b-2 px-3 py-2 font-display text-sm font-semibold transition-colors ${
                     mode === key
@@ -856,36 +922,6 @@ export default function Atlas3D() {
           )}
           <MuscleDetail muscle={current} showDiagram={false} showIdentity={false} />
 
-          {/* Approved markers are read-only clinical content, so everyone sees
-              them — the authoring panel below is faculty-only. */}
-          {approvedMarker && (
-            <Card>
-              <CardHeader
-                title="Needle placement"
-                sub={approvedMarker.label || 'Reviewed and approved by the program'}
-              />
-              <div className="space-y-3 px-5 py-4">
-                <p className="text-sm text-ink">
-                  <span className="font-semibold">Insertion depth: </span>
-                  {approvedMarker.depthMm} mm from the entry point, along the marked angle.
-                </p>
-                {approvedMarker.note && (
-                  <div>
-                    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">
-                      Landmarks &amp; cautions
-                    </h3>
-                    <p className="mt-1 whitespace-pre-line text-sm text-ink">
-                      {approvedMarker.note}
-                    </p>
-                  </div>
-                )}
-                <p className="text-xs text-muted">
-                  The marker shows an approach reviewed for teaching. Confirm landmarks on the
-                  patient in front of you — the written technique above remains the authority.
-                </p>
-              </div>
-            </Card>
-          )}
 
           {mayAuthor && (
             <NeedlePanel

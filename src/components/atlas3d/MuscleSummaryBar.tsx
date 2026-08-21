@@ -24,48 +24,76 @@ function Part({ label, value }: { label: string; value?: string | null }) {
   )
 }
 
+/**
+ * Generic strip: the target's NAME on its own line, then its details wrapped
+ * underneath. Used for both a muscle and an NCS study so the two modes read
+ * the same way.
+ */
+export function SummaryBar({
+  name,
+  sub,
+  parts,
+  footer,
+}: {
+  name: string
+  sub?: string | null
+  parts: Array<{ label: string; value?: string | null }>
+  footer?: { label: string; value: string } | null
+}) {
+  const shown = parts.filter((p) => p.value)
+  return (
+    <div className="border-b border-line bg-accent-soft/25 px-5 py-3">
+      <div className="flex flex-wrap items-baseline gap-x-3">
+        <span className="font-display text-base font-semibold text-ink">{name}</span>
+        {sub && <span className="text-xs text-muted">{sub}</span>}
+      </div>
+
+      {/* The divider TRAILS each item rather than leading the next one. With a
+          leading divider, a row that wraps starts the new line with a dangling
+          "|"; trailing it leaves the divider at the end of the previous line,
+          where it reads as a continuation. */}
+      {shown.length > 0 && (
+        <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          {shown.map((p, i) => (
+            <span key={p.label} className="flex items-baseline gap-2">
+              <Part label={p.label} value={p.value} />
+              {i < shown.length - 1 && (
+                <span aria-hidden="true" className="text-line">
+                  |
+                </span>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {footer && (
+        <p className="mt-1.5 text-sm text-ink">
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+            {footer.label}{' '}
+          </span>
+          {footer.value}
+        </p>
+      )}
+    </div>
+  )
+}
+
 export function MuscleSummaryBar({ muscle }: { muscle: EmgMuscle }) {
   // Cord › trunk › division reads as a path from the plexus outwards, which is
   // how it is traced clinically.
   const plexus = [muscle.cord, muscle.trunk, muscle.division].filter(Boolean).join(' › ')
-
   return (
-    <div className="border-b border-line bg-accent-soft/25 px-5 py-3">
-      {/* The divider TRAILS each item rather than leading the next one. With a
-          leading divider, a row that wraps starts the new line with a dangling
-          "|"; trailing it means the divider is left at the end of the previous
-          line instead, where it reads as a continuation. */}
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        {(
-          [
-            <span key="name" className="font-display text-base font-semibold text-ink">
-              {muscle.name}
-            </span>,
-            <Part key="roots" label="Roots" value={muscle.roots} />,
-            plexus ? <Part key="plexus" label="Plexus" value={plexus} /> : null,
-            <Part key="nerve" label="Nerve" value={muscle.nerve} />,
-            muscle.action ? <Part key="action" label="Action" value={muscle.action} /> : null,
-          ].filter(Boolean) as JSX.Element[]
-        ).map((el, i, all) => (
-          <span key={i} className="flex items-baseline gap-2">
-            {el}
-            {i < all.length - 1 && (
-              <span aria-hidden="true" className="text-line">
-                |
-              </span>
-            )}
-          </span>
-        ))}
-      </div>
-
-      {muscle.localization && (
-        <p className="mt-1.5 text-sm text-ink">
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted">
-            Insertion{' '}
-          </span>
-          {muscle.localization}
-        </p>
-      )}
-    </div>
+    <SummaryBar
+      name={muscle.name}
+      sub={muscle.region}
+      parts={[
+        { label: 'Roots', value: muscle.roots },
+        { label: 'Plexus', value: plexus },
+        { label: 'Nerve', value: muscle.nerve },
+        { label: 'Action', value: muscle.action },
+      ]}
+      footer={muscle.localization ? { label: 'Insertion', value: muscle.localization } : null}
+    />
   )
 }

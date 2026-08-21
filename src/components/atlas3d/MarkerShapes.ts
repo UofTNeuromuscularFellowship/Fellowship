@@ -21,6 +21,13 @@
 import * as THREE from 'three'
 
 export const MM = 0.001
+
+/**
+ * Where the cathode sits relative to the middle of the probe, in millimetres.
+ * Exported because the cathode-to-G1 distance has to be measured from the
+ * cathode itself, and that point moves when the probe is rotated.
+ */
+export const CATHODE_OFFSET_MM = -12
 const ORDER = 9990
 
 export type ElectrodeKind = 'needle' | 'stim' | 'g1' | 'g2' | 'ground' | 'landmark'
@@ -137,17 +144,26 @@ export function buildElectrode(kind: Exclude<ElectrodeKind, 'needle'>): THREE.Gr
 
   if (kind === 'stim') {
     const steel = markerMaterial('#AEB6C2', { metal: true, glow: 0.05 })
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(3 * MM, 3.6 * MM, 12 * MM, 14), mat)
-    body.position.y = -10 * MM
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(4.5 * MM, 5.5 * MM, 20 * MM, 14), mat)
+    body.position.y = -16 * MM
     add(g, body, 2)
+
+    // Cross-bar joining the two poles, so the probe reads as one instrument
+    // and its orientation is obvious at a glance.
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(28 * MM, 3 * MM, 5 * MM), mat)
+    bar.position.y = -6 * MM
+    add(g, bar, 2)
 
     // Two prongs about 25 mm apart, the usual cathode/anode spacing on a bar
     // stimulator. WHICH WAY ROUND THIS SITS MATTERS: the cathode is the pole
     // that depolarises the nerve, so it must face the recording electrode.
     // The cathode is drawn black with a black collar; the anode is bare steel.
     // Rotate the marker (spin) to aim the cathode.
-    const CATHODE_X = -6 * MM
-    const ANODE_X = 6 * MM
+    // A real bar stimulator has its poles about 25 mm apart and a handle you
+    // can see. Drawn at half that it was only a few pixels wide on screen, so
+    // turning it moved almost nothing and the rotation control looked dead.
+    const CATHODE_X = CATHODE_OFFSET_MM * MM
+    const ANODE_X = -CATHODE_OFFSET_MM * MM
     const black = markerMaterial('#111827', { metal: true, glow: 0.05 })
 
     for (const [dx, prongMat] of [
@@ -155,24 +171,26 @@ export function buildElectrode(kind: Exclude<ElectrodeKind, 'needle'>): THREE.Gr
       [ANODE_X, steel],
     ] as const) {
       const prong = new THREE.Mesh(
-        new THREE.CylinderGeometry(1.2 * MM, 1.2 * MM, 5 * MM, 10),
+        new THREE.CylinderGeometry(2 * MM, 2 * MM, 7 * MM, 10),
         prongMat,
       )
-      prong.position.set(dx, -2 * MM, 0)
+      prong.position.set(dx, -3 * MM, 0)
       add(g, prong, 1)
       const tipDisc = new THREE.Mesh(
-        new THREE.CylinderGeometry(1.8 * MM, 1.8 * MM, 0.9 * MM, 12),
+        new THREE.CylinderGeometry(3 * MM, 3 * MM, 1.4 * MM, 14),
         prongMat,
       )
       tipDisc.position.set(dx, 0, 0)
       add(g, tipDisc, 1)
     }
 
-    // A short fin on the cathode side, so which way the probe is turned is
-    // readable even when the two prongs overlap on screen.
-    const fin = new THREE.Mesh(new THREE.BoxGeometry(5 * MM, 1 * MM, 1.4 * MM), black)
-    fin.position.set(CATHODE_X - 3 * MM, -5 * MM, 0)
-    add(g, fin, 2)
+    // An arrowhead beyond the cathode, pointing the way the cathode faces.
+    // This is what makes the rotation control legible: even when the two poles
+    // overlap on screen, the arrow says which way round the probe is.
+    const arrow = new THREE.Mesh(new THREE.ConeGeometry(3.5 * MM, 9 * MM, 4), black)
+    arrow.rotation.z = Math.PI / 2 // point along -X, past the cathode
+    arrow.position.set(CATHODE_X - 9 * MM, -6 * MM, 0)
+    add(g, arrow, 3)
 
     return g
   }

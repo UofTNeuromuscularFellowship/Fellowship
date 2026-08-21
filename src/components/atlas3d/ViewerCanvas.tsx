@@ -77,6 +77,9 @@ export interface ViewerProps {
   onMarkerScreenPositions?: (
     p: Record<string, { x: number; y: number; visible: boolean }>,
   ) => void
+  /** NCS only: measure the straight line from the stimulator cathode to G1. */
+  showDistance?: boolean
+  onDistance?: (mm: number | null) => void
   /**
    * When true, a click places a needle instead of selecting a muscle. The
    * captured point and direction are in the LOCAL space of the mesh that was
@@ -148,6 +151,8 @@ function Model({
   markers,
   activeMarkerId,
   onMarkerScreenPositions,
+  showDistance,
+  onDistance,
   placingNeedle,
   onPlaceNeedle,
   onPlaceRejected,
@@ -387,6 +392,8 @@ function Model({
           markers={markers}
           activeId={activeMarkerId}
           onScreenPositions={onMarkerScreenPositions}
+          showDistance={showDistance}
+          onDistance={onDistance}
         />
       )}
       <CutCamera
