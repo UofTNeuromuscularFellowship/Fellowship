@@ -80,7 +80,20 @@
         "Hyoid bone"
       ],
       "decimateRatio": 0.4,
-      "knownUnmapped": [],
+      "knownUnmapped": [
+        {
+          "id": "dilator-naris",
+          "reason": "ABSENT FROM SOURCE \u2014 only nasalis is modelled"
+        },
+        {
+          "id": "occipitofrontalis",
+          "reason": "ABSENT FROM SOURCE \u2014 no frontalis/occipitalis belly in the source"
+        },
+        {
+          "id": "retroauricular-auricularis-posterior",
+          "reason": "ABSENT FROM SOURCE \u2014 no auricular muscles in the source"
+        }
+      ],
       "excludeStructures": [
         "Inner ear",
         "Internal ear",
@@ -108,7 +121,16 @@
         "Hip bone"
       ],
       "decimateRatio": 0.35,
-      "knownUnmapped": [],
+      "knownUnmapped": [
+        {
+          "id": "sphincter-urethrae",
+          "reason": "ABSENT FROM SOURCE \u2014 the source models the urethra, not its sphincter"
+        },
+        {
+          "id": "transversus-perineal-superficialis",
+          "reason": "ABSENT FROM SOURCE \u2014 no superficial perineal muscles in the source"
+        }
+      ],
       "excludeStructures": [
         "Kidney",
         "Kidneys"

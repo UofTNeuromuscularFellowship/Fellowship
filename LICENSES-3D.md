@@ -114,11 +114,15 @@ the attribution requirement of either. Flagged in §5.
 
 ## 3. Assets in use
 
-No model assets are in the repository yet. Phase 1 adds the first entry.
-
 | File | Region | Derived from | Licence | Added | Source commit |
 |---|---|---|---|---|---|
 | `public/models/upper-limb.glb` | Upper limb (right) | Z-Anatomy `Startup.blend` → BodyParts3D | CC BY-SA 4.0 | 2026-08-20 | `4169f1e` |
+| `public/models/lower-limb.glb` | Lower limb (right) | Z-Anatomy `Startup.blend` → BodyParts3D | CC BY-SA 4.0 | 2026-08-21 | `4169f1e` |
+| `public/models/head-neck.glb` | Head & neck | Z-Anatomy `Startup.blend` → BodyParts3D | CC BY-SA 4.0 | 2026-08-21 | `4169f1e` |
+| `public/models/trunk.glb` | Trunk & paraspinal | Z-Anatomy `Startup.blend` → BodyParts3D | CC BY-SA 4.0 | 2026-08-21 | `4169f1e` |
+
+Paired structures are right-side only; midline structures (tongue, diaphragm,
+sacrum, sternum, coccyx) are included as they are.
 
 The upper-limb file contains 91 meshes: 59 muscle bodies covering 46 of the 47
 upper-limb entries in the EMG atlas, plus 32 bones of the shoulder girdle, arm,
@@ -134,6 +138,7 @@ Required by the "indicate changes" term. Every pipeline run appends a row.
 
 | Date | Asset | Changes made |
 |---|---|---|
+| 2026-08-21 | `lower-limb.glb`, `head-neck.glb`, `trunk.glb` | Same treatment as the upper limb below: region isolated to its muscles, bones, nerves and vessels; curve-based nerves and vessels converted to mesh; everything not asked for deleted; parenting removed with baked world transforms kept; recentred on the anatomy; Z-up converted to Y-up; names normalised to word characters; exported to glTF and Draco-compressed with joining disabled so node names survive. No decimation — source polygon counts were already within budget. |
 | 2026-08-20 | `upper-limb.glb` | Extracted the right upper limb from `Startup.blend`: kept 59 named muscle-body meshes and 32 bone meshes, discarded everything else (including the source's own "Cross Section" helper planes and `*.g` label objects). Removed object parenting, keeping baked world transforms. Recentred the geometry on the limb so it sits at the origin. Converted Z-up to Y-up. Exported to glTF binary and compressed geometry with Draco. **No decimation** — the source polygon counts were already within budget. Mesh names were normalised to word characters only (spaces and the `.r` side suffix become underscores, e.g. `Long head of biceps brachii.r` → `Long_head_of_biceps_brachii_r`) because three.js's glTF loader deletes `.` and `:` from node names. The source's Terminologia Anatomica wording is otherwise preserved and remains recoverable; `src/data/atlas3d.ts` maps our identifiers onto these names. |
 
 Anticipated change types: isolation of a body region, deletion of unused
