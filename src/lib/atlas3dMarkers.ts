@@ -119,15 +119,34 @@ export async function createMarker(m: NewNeedleMarker, authorId: string): Promis
   return toMarker(data as unknown as Row)
 }
 
+export interface MarkerGeometryPatch {
+  meshName: string
+  local: [number, number, number]
+  direction: [number, number, number]
+}
+
 export async function updateMarker(
   id: string,
-  patch: Partial<Pick<NeedleMarker, 'depthMm' | 'label' | 'note' | 'status'>>,
+  patch: Partial<Pick<NeedleMarker, 'depthMm' | 'label' | 'note' | 'status'>> & {
+    geometry?: MarkerGeometryPatch
+  },
 ): Promise<NeedleMarker> {
   const row: Record<string, unknown> = {}
   if (patch.depthMm !== undefined) row.depth_mm = patch.depthMm
   if (patch.label !== undefined) row.label = patch.label
   if (patch.note !== undefined) row.note = patch.note
   if (patch.status !== undefined) row.status = patch.status
+  if (patch.geometry) {
+    // Moving an approved marker sends it back to draft — the database trigger
+    // does that, deliberately, rather than trusting the client to.
+    row.mesh_name = patch.geometry.meshName
+    row.local_x = patch.geometry.local[0]
+    row.local_y = patch.geometry.local[1]
+    row.local_z = patch.geometry.local[2]
+    row.dir_x = patch.geometry.direction[0]
+    row.dir_y = patch.geometry.direction[1]
+    row.dir_z = patch.geometry.direction[2]
+  }
 
   const { data, error } = await supabase
     .from('atlas3d_markers')

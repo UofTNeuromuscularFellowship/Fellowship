@@ -170,9 +170,13 @@ export const MESH_MAP: MeshMapEntry[] = [
  * from the source's own object lists — NOT guessed from the mesh name, which
  * is how you end up colouring a muscle as a nerve.
  */
-export type StructureKind = 'muscle' | 'bone' | 'nerve' | 'artery' | 'vein'
+export type StructureKind = 'muscle' | 'bone' | 'nerve' | 'artery' | 'vein' | 'skin'
 
 export const STRUCTURE_KINDS: Record<string, StructureKind> = {
+  // Not from the source model — Z-Anatomy has no skin. Derived by the pipeline
+  // from the outer surface of the anatomy itself. Approximate by construction;
+  // see the note in the viewer's skin toggle.
+  "Skin_envelope_r": "skin",
   "Abdominal_part_of_pectoralis_major_muscle_r": "muscle",
   "Abductor_digiti_minimi_of_hand_r": "muscle",
   "Abductor_pollicis_brevis_r": "muscle",

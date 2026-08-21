@@ -25,7 +25,8 @@ export function NeedlePanel({
   role,
   markers,
   placing,
-  onTogglePlacing,
+  onPlaceNew,
+  onMove,
   activeId,
   onSetActive,
   onSave,
@@ -37,8 +38,10 @@ export function NeedlePanel({
   muscleName: string
   role?: string | null
   markers: NeedleMarker[]
-  placing: boolean
-  onTogglePlacing: () => void
+  /** null, 'new', or the id of the marker being repositioned. */
+  placing: null | 'new' | string
+  onPlaceNew: () => void
+  onMove: (id: string) => void
   activeId: string | null
   onSetActive: (id: string | null) => void
   onSave: (id: string, patch: { depthMm?: number; label?: string; note?: string }) => void
@@ -49,6 +52,8 @@ export function NeedlePanel({
 }) {
   const canApprove = canApproveMarkers(role)
   const [depthDraft, setDepthDraft] = useState<Record<string, string>>({})
+  const [noteDraft, setNoteDraft] = useState<Record<string, string>>({})
+  const [labelDraft, setLabelDraft] = useState<Record<string, string>>({})
 
   return (
     <Card>
@@ -57,26 +62,29 @@ export function NeedlePanel({
         sub={`${muscleName} — faculty only`}
         action={
           <button
-            onClick={onTogglePlacing}
+            onClick={onPlaceNew}
             disabled={busy}
             className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold ${
-              placing
+              placing === 'new'
                 ? 'bg-accent text-white'
                 : 'border border-line text-muted hover:text-ink'
             }`}
           >
-            {placing ? 'Click the model…' : 'Place a needle'}
+            {placing === 'new' ? 'Click the model…' : 'Place a needle'}
           </button>
         }
       />
 
       <div className="space-y-3 px-5 py-4">
-        {placing && (
+        {placing !== null && (
           <div className="rounded-md bg-accent-soft/50 px-4 py-3">
             <p className="text-sm text-ink">
-              Click the point on the muscle where the needle enters. The insertion angle is
-              taken from the surface at that point, so click from the direction you would
-              actually approach. Set the depth afterwards.
+              {placing === 'new'
+                ? 'Click the point on the muscle where the needle enters.'
+                : 'Click the new entry point for this needle.'}{' '}
+              The insertion angle is taken from the surface at that point, so click from the
+              direction you would actually approach. Only the target muscle is clickable, so
+              you can rotate freely without losing the point.
             </p>
           </div>
         )}
@@ -159,6 +167,18 @@ export function NeedlePanel({
                 )}
 
                 <button
+                  onClick={() => onMove(m.id)}
+                  disabled={busy}
+                  className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
+                    placing === m.id
+                      ? 'bg-accent text-white'
+                      : 'border border-line text-muted hover:text-ink'
+                  }`}
+                >
+                  {placing === m.id ? 'Click new point…' : 'Move'}
+                </button>
+
+                <button
                   onClick={() => onDelete(m.id)}
                   disabled={busy}
                   className="ml-auto text-xs font-semibold text-red-600 hover:underline"
@@ -167,10 +187,59 @@ export function NeedlePanel({
                 </button>
               </div>
 
+              <div className="mt-3 space-y-2 border-t border-line pt-3">
+                <label className="block">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+                    Short label (optional)
+                  </span>
+                  <input
+                    value={labelDraft[m.id] ?? m.label ?? ''}
+                    onChange={(e) => setLabelDraft((d) => ({ ...d, [m.id]: e.target.value }))}
+                    placeholder="e.g. Standard approach"
+                    className="mt-1 w-full rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:outline-none"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+                    Landmarks &amp; cautions
+                  </span>
+                  <textarea
+                    rows={3}
+                    value={noteDraft[m.id] ?? m.note ?? ''}
+                    onChange={(e) => setNoteDraft((d) => ({ ...d, [m.id]: e.target.value }))}
+                    placeholder="Surface landmarks, what to palpate first, what lies deep, what to avoid…"
+                    className="mt-1 w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+                  />
+                </label>
+
+                <button
+                  onClick={() =>
+                    onSave(m.id, {
+                      label: labelDraft[m.id] ?? m.label ?? '',
+                      note: noteDraft[m.id] ?? m.note ?? '',
+                    })
+                  }
+                  disabled={
+                    busy ||
+                    ((labelDraft[m.id] ?? m.label ?? '') === (m.label ?? '') &&
+                      (noteDraft[m.id] ?? m.note ?? '') === (m.note ?? ''))
+                  }
+                  className="rounded-md border border-line px-3 py-1.5 text-xs font-semibold text-accent disabled:cursor-not-allowed disabled:text-muted/50"
+                >
+                  Save notes
+                </button>
+
+                <p className="text-xs text-muted">
+                  Notes stay with an approved marker and are shown to fellows. Text is kept
+                  as written — nothing is generated or filled in.
+                </p>
+              </div>
+
               {approved && (
                 <p className="mt-2 text-xs text-muted">
                   Moving this marker or changing its depth returns it to draft and needs
-                  approving again.
+                  approving again. Editing the notes does not.
                 </p>
               )}
             </div>

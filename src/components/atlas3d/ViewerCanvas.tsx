@@ -34,6 +34,7 @@ const C_BONE = '#E7E3DA'
 const C_NERVE = '#E8B62C'
 const C_ARTERY = '#C0392B'
 const C_VEIN = '#3A6EA5'
+const C_SKIN = '#E4C4AE'
 
 const KIND_COLOR: Record<StructureKind, string> = {
   muscle: C_MUSCLE,
@@ -41,12 +42,14 @@ const KIND_COLOR: Record<StructureKind, string> = {
   nerve: C_NERVE,
   artery: C_ARTERY,
   vein: C_VEIN,
+  skin: C_SKIN,
 }
 
 export interface LayerState {
   bones: boolean
   nerves: boolean
   vessels: boolean
+  skin: boolean
 }
 
 export interface ViewerProps {
@@ -215,6 +218,7 @@ function Model({
     root.traverse((o) => {
       const mesh = o as THREE.Mesh
       if (!mesh.isMesh) return
+      if (mesh.userData.atlasMarker) return // needle markers own their materials
       const owner = ownerName(mesh, known)
       const structure = structureName(mesh)
       const kind: StructureKind = (structure && kindOf(structure)) || 'muscle'
@@ -226,13 +230,15 @@ function Model({
         kind === 'bone' ? layers.bones
         : kind === 'nerve' ? layers.nerves
         : kind === 'artery' || kind === 'vein' ? layers.vessels
+        : kind === 'skin' ? layers.skin
         : true
 
       // Nerves and vessels are landmarks, not targets — they stay legible
       // rather than fading, because knowing what a needle is near is the
       // point of showing them at all.
       const landmark = kind === 'nerve' || kind === 'artery' || kind === 'vein'
-      const faded = isolate && !isSel && !landmark
+      const isSkin = kind === 'skin'
+      const faded = isolate && !isSel && !landmark && !isSkin
 
       const mat = new THREE.MeshStandardMaterial({
         color: isSel ? C_SELECTED : isHov ? C_HOVER : KIND_COLOR[kind],
@@ -241,10 +247,28 @@ function Model({
         // A cross-section is about reading solid tissue, so sectioning turns
         // the ghosting off: everything renders opaque, and each structure gets
         // a stencil cap so the cut face is solid.
-        transparent: !sectionOn,
+        // The skin envelope is always a see-through shell — it exists to show
+        // where the surface is, and must never hide the anatomy under it.
+        transparent: isSkin || !sectionOn,
+        // FrontSide, not BackSide: from outside the limb, back faces are the
+        // far wall of the envelope and sit behind the anatomy, so the layer
+        // rendered as nothing at all. depthWrite stays off so the shell never
+        // occludes what it is meant to sit over.
         side: THREE.FrontSide,
-        opacity: sectionOn ? 1 : isSel ? 1 : faded ? (kind === 'bone' ? 0.12 : 0.16) : kind === 'bone' ? 0.9 : 0.95,
-        depthWrite: sectionOn || isSel || !faded,
+        opacity: isSkin
+          ? 0.22
+          : sectionOn
+            ? 1
+            : isSel
+              ? 1
+              : faded
+                ? kind === 'bone'
+                  ? 0.12
+                  : 0.16
+                : kind === 'bone'
+                  ? 0.9
+                  : 0.95,
+        depthWrite: isSkin ? false : sectionOn || isSel || !faded,
       })
       if (isSel) {
         mat.emissive = new THREE.Color(C_SELECTED)
@@ -255,6 +279,8 @@ function Model({
       else old?.dispose()
       mat.clippingPlanes = sectionOn ? [plane] : null
       mesh.material = mat
+      // Never let the envelope swallow a click meant for the anatomy.
+      if (isSkin) mesh.raycast = () => {}
       mesh.userData.clinical = clinical
     })
     invalidate()
@@ -271,6 +297,7 @@ function Model({
       const mesh = o as THREE.Mesh
       if (!mesh.isMesh) return
       if (!placingNeedle) return
+      if (mesh.userData.atlasMarker) return
       const structure = structureName(mesh)
       if (structure && selected.has(structure)) return
       mesh.userData.savedRaycast = mesh.raycast

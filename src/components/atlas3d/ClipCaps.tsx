@@ -37,12 +37,16 @@ export interface CapLayers {
   bones: boolean
   nerves: boolean
   vessels: boolean
+  skin: boolean
 }
 
 function layerVisible(kind: StructureKind, layers: CapLayers) {
   if (kind === 'bone') return layers.bones
   if (kind === 'nerve') return layers.nerves
   if (kind === 'artery' || kind === 'vein') return layers.vessels
+  // The envelope is a derived shell, not tissue — capping it would draw a
+  // solid face across the whole cut and hide the section entirely.
+  if (kind === 'skin') return false
   return true
 }
 
@@ -53,6 +57,7 @@ export function collectCapTargets(root: THREE.Object3D, layers: CapLayers): CapT
   root.traverse((o) => {
     const mesh = o as THREE.Mesh
     if (!mesh.isMesh || !mesh.visible) return
+    if (mesh.userData.atlasMarker) return // markers are not tissue; never cap them
     let cur: THREE.Object3D | null = mesh
     let kind: StructureKind | undefined
     let name = ''
@@ -85,6 +90,7 @@ function stencilMaterial(side: THREE.Side, op: THREE.StencilOp, plane: THREE.Pla
 // Cut faces are a touch darker than the surface, the way a cut surface reads
 // in a real section.
 const CAP_COLOR: Record<StructureKind, string> = {
+  skin: '#E4C4AE',
   muscle: '#A96F62',
   bone: '#D8D2C6',
   nerve: '#D0A11E',

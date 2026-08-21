@@ -142,7 +142,7 @@ export default function Atlas3D() {
   const [selectedId, setSelectedId] = useState<string>('')
   const [query, setQuery] = useState('')
   const [hoverLabel, setHoverLabel] = useState<string | null>(null)
-  const [layers, setLayers] = useState({ bones: true, nerves: true, vessels: false })
+  const [layers, setLayers] = useState({ bones: true, nerves: true, vessels: false, skin: false })
   const [isolate, setIsolate] = useState(true)
   const [sectionOn, setSectionOn] = useState(false)
   const [sectionPos, setSectionPos] = useState(0.5)
@@ -154,7 +154,9 @@ export default function Atlas3D() {
   const mayAuthor = canAuthorMarkers(profile?.role)
   const [markers, setMarkers] = useState<NeedleMarker[]>([])
   const [activeMarkerId, setActiveMarkerId] = useState<string | null>(null)
-  const [placing, setPlacing] = useState(false)
+  // null = not placing. 'new' = next click creates a marker. Otherwise the id
+  // of the marker whose position the next click replaces.
+  const [placing, setPlacing] = useState<null | 'new' | string>(null)
   const [markerBusy, setMarkerBusy] = useState(false)
   const [markerError, setMarkerError] = useState<string | null>(null)
   const [bounds, setBounds] = useState<{ minY: number; maxY: number; radius: number } | null>(null)
@@ -247,6 +249,11 @@ export default function Atlas3D() {
     [markers, selectedId],
   )
 
+  const approvedMarker = useMemo(
+    () => visibleMarkers.find((m) => m.status === 'approved') ?? null,
+    [visibleMarkers],
+  )
+
   async function handlePlaceNeedle(p: {
     meshName: string
     local: [number, number, number]
@@ -256,6 +263,14 @@ export default function Atlas3D() {
     setMarkerBusy(true)
     setMarkerError(null)
     try {
+      if (placing && placing !== 'new') {
+        const moved = await updateMarker(placing, {
+          geometry: { meshName: p.meshName, local: p.local, direction: p.direction },
+        })
+        setMarkers((all) => all.map((m) => (m.id === moved.id ? moved : m)))
+        setActiveMarkerId(moved.id)
+        return
+      }
       const created = await createMarker(
         {
           muscleId: selectedId,
@@ -273,7 +288,7 @@ export default function Atlas3D() {
       setMarkerError(e instanceof Error ? e.message : String(e))
     } finally {
       setMarkerBusy(false)
-      setPlacing(false)
+      setPlacing(null)
     }
   }
 
@@ -359,6 +374,7 @@ export default function Atlas3D() {
                 ['bones', 'Bones', '#E7E3DA'],
                 ['nerves', 'Nerves', '#E8B62C'],
                 ['vessels', 'Vessels', '#C0392B'],
+                ['skin', 'Skin (approx.)', '#E4C4AE'],
               ] as const
             ).map(([key, label, swatch]) => (
               <label key={key} className="flex items-center gap-2 text-sm text-ink">
@@ -403,6 +419,18 @@ export default function Atlas3D() {
               </button>
             )}
           </div>
+
+          {layers.skin && (
+            <div className="border-b border-line bg-amber-50/70 px-5 py-2.5">
+              <p className="text-xs text-ink">
+                <span className="font-semibold">The skin surface is approximate. </span>
+                The source anatomical model has no skin, so this envelope is derived from the
+                outer surface of the modelled muscles and bones. It shows roughly where the
+                body surface lies; it carries no subcutaneous fat and its distance from any
+                muscle is not a measurement. Do not read insertion depth off it.
+              </p>
+            </div>
+          )}
 
           {sectionOn && (
             <div className="space-y-2 border-b border-line bg-paper/60 px-5 py-3">
@@ -474,7 +502,7 @@ export default function Atlas3D() {
                   viewCutSignal={viewCutSignal}
                   markers={visibleMarkers}
                   activeMarkerId={activeMarkerId}
-                  placingNeedle={placing}
+                  placingNeedle={placing !== null}
                   onPlaceNeedle={handlePlaceNeedle}
                   onPlaceRejected={(what) =>
                     setMarkerError(
@@ -622,13 +650,45 @@ export default function Atlas3D() {
           )}
           <MuscleDetail muscle={current} showDiagram={false} />
 
+          {/* Approved markers are read-only clinical content, so everyone sees
+              them — the authoring panel below is faculty-only. */}
+          {approvedMarker && (
+            <Card>
+              <CardHeader
+                title="Needle placement"
+                sub={approvedMarker.label || 'Reviewed and approved by the program'}
+              />
+              <div className="space-y-3 px-5 py-4">
+                <p className="text-sm text-ink">
+                  <span className="font-semibold">Insertion depth: </span>
+                  {approvedMarker.depthMm} mm from the entry point, along the marked angle.
+                </p>
+                {approvedMarker.note && (
+                  <div>
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">
+                      Landmarks &amp; cautions
+                    </h3>
+                    <p className="mt-1 whitespace-pre-line text-sm text-ink">
+                      {approvedMarker.note}
+                    </p>
+                  </div>
+                )}
+                <p className="text-xs text-muted">
+                  The marker shows an approach reviewed for teaching. Confirm landmarks on the
+                  patient in front of you — the written technique above remains the authority.
+                </p>
+              </div>
+            </Card>
+          )}
+
           {mayAuthor && (
             <NeedlePanel
               muscleName={current.name}
               role={profile?.role}
               markers={visibleMarkers}
               placing={placing}
-              onTogglePlacing={() => setPlacing((p) => !p)}
+              onPlaceNew={() => setPlacing((p) => (p === 'new' ? null : 'new'))}
+              onMove={(id) => setPlacing((p) => (p === id ? null : id))}
               activeId={activeMarkerId}
               onSetActive={setActiveMarkerId}
               onSave={(id, patch) => void patchMarker(id, patch)}
