@@ -21,6 +21,33 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
+   Print layout.
+
+   The Feedback review page has a Print button intended to produce something a
+   program review binder will accept, so printing drops the portal chrome and
+   lets the content use the full page. Individual controls opt out with
+   Tailwind's `print:hidden`; this handles the shell around them.
+   --------------------------------------------------------------------------- */
+@media print {
+  aside,
+  header { display: none !important; }
+
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+
+  /* Keep the rating bars and card rules visible — most browsers strip
+     backgrounds when printing unless asked not to. */
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* Never split a person's or a topic's block across a page boundary. */
+  li { break-inside: avoid; }
+
+  a[href]::after { content: ''; }
+}
+
+/* ---------------------------------------------------------------------------
    PDF text layer (library reader).
 
    pdf.js paints the page to a canvas and then lays invisible, correctly

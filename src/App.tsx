@@ -18,6 +18,7 @@ import Library from './pages/Library'
 import People from './pages/People'
 import MyTeaching from './pages/MyTeaching'
 import RateTeaching from './pages/RateTeaching'
+import FeedbackReview from './pages/FeedbackReview'
 import Vacation from './pages/Vacation'
 import Evaluations from './pages/Evaluations'
 import Settings from './pages/Settings'
@@ -76,6 +77,7 @@ export default function App() {
       <Route path="/people" element={<Shell allow={['director', 'admin']}><People /></Shell>} />
       <Route path="/my-teaching" element={<Shell allow={['fellow', 'supervisor', 'director', 'assistant']}><MyTeaching /></Shell>} />
       <Route path="/rate-teaching" element={<Shell allow={['fellow']}><RateTeaching /></Shell>} />
+      <Route path="/feedback-review" element={<Shell allow={['director', 'admin']}><FeedbackReview /></Shell>} />
       <Route path="/vacation" element={<Shell allow={['fellow', 'supervisor', 'director', 'assistant']}><Vacation /></Shell>} />
       <Route path="/evaluations" element={<Shell allow={['fellow', 'supervisor', 'director']}><Evaluations /></Shell>} />
       <Route path="/settings" element={<Shell><Settings /></Shell>} />

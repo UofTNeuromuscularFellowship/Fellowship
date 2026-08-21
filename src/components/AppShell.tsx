@@ -43,6 +43,7 @@ const SECTIONS: NavSection[] = [
       { to: '/my-teaching', label: 'Teaching Assignments', allow: ['fellow', 'supervisor', 'director', 'assistant'] },
       { to: '/teaching-cases', label: 'Teaching cases', allow: ['supervisor', 'director'] },
       { to: '/rate-teaching', label: 'Rate Teaching', allow: ['fellow'] },
+      { to: '/feedback-review', label: 'Feedback review', allow: ['director', 'admin'] },
       { to: '/evaluations', label: 'Evaluations', allow: ['fellow', 'supervisor', 'director'] },
     ],
   },

@@ -23,7 +23,9 @@ Drop each file into the repo at exactly this path, replacing what is there:
 | `src/index.css` | `src/index.css` |
 | `package.json` | `package.json` |
 | `src/pages/Library.tsx` | **new file** |
+| `src/pages/FeedbackReview.tsx` | **new file** |
 | `src/components/PdfViewer.tsx` | **new file** |
+| `supabase/migrations/0016_feedback_review.sql` | **new file** (record only — already applied) |
 | `gitignore.txt` | **new file**, renamed to `.gitignore` (optional) |
 | `supabase/migrations/0014_session_reports_and_library.sql` | **new file** (record only — already applied) |
 | `supabase/migrations/0015_same_day_post_session_emails.sql` | **new file** (record only — already applied) |
@@ -53,6 +55,26 @@ Waveform Rounds on Aug 20 finished before this change went in, so its emails go
 out at the **Aug 21, 9:00 AM** run instead. Everything from Aug 27 onward is
 same-day. If the front-end has not deployed by then, the emails still send but
 the "Complete session report" form will not be on the page yet.
+
+## Feedback review
+
+New page at **Teaching → Feedback review**, visible to you and the program admin
+only. Groups every rating by supervisor, by fellow, or by session; default sort
+is lowest-rated first, so a problem surfaces rather than being averaged away.
+
+Two things worth knowing:
+
+- **Sessions nobody rated get their own card.** They are the ones a
+  response-based report would hide.
+- **Recommended sessions** ranks requested topics across both sources — what
+  fellows ask for when rating, and what teachers suggest on their reports. Mark
+  one *Covered* or *Not planned* and it leaves the list; *Show handled* brings
+  them back. Grouping is by wording, so “Myasthenia gravis.” and “myasthenia
+  gravis” count as one but “MG” is listed separately. Open “Who asked” to see
+  the exact wording behind any group.
+
+**Print** drops the portal chrome and expands every collapsed response, so what
+comes out is the full record rather than whatever was open on screen.
 
 ## The library reader
 
