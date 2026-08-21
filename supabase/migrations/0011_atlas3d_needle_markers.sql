@@ -168,3 +168,10 @@ drop trigger if exists atlas3d_markers_touch_trg on public.atlas3d_markers;
 create trigger atlas3d_markers_touch_trg
   before update or insert on public.atlas3d_markers
   for each row execute function public.atlas3d_markers_touch();
+
+-- PostgREST exposes SECURITY DEFINER functions at /rest/v1/rpc/<name>, so this
+-- trigger function would otherwise be callable by any signed-in client (and by
+-- anon). It is only ever meant to run from its trigger.
+revoke execute on function public.atlas3d_markers_touch() from public;
+revoke execute on function public.atlas3d_markers_touch() from anon;
+revoke execute on function public.atlas3d_markers_touch() from authenticated;

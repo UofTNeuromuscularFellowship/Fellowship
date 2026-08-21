@@ -191,6 +191,8 @@ export default function Atlas3D() {
   const current: EmgMuscle | null = EMG_MUSCLES.find((m) => m.id === selectedId) ?? null
   const currentHas3d = selectedMeshes.length > 0
 
+  const searching = query.trim().length > 0
+
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return [] as EmgMuscle[]
@@ -530,16 +532,34 @@ export default function Atlas3D() {
                 <span className="text-xs font-semibold uppercase tracking-wide text-muted">
                   Search muscle, nerve or root
                 </span>
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="e.g. deltoid, ulnar, C8"
-                  className="mt-1 w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
-                />
+                <div className="relative mt-1">
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') setQuery('')
+                    }}
+                    placeholder="e.g. deltoid, ulnar, C8"
+                    className="w-full rounded-md border border-line bg-surface px-3 py-2 pr-16 text-sm text-ink focus:border-accent focus:outline-none"
+                  />
+                  {searching && (
+                    <button
+                      onClick={() => setQuery('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-2 py-0.5 text-xs font-semibold text-accent hover:underline"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
               </label>
 
-              {matches.length > 0 && (
+              {searching && (
                 <div className="overflow-hidden rounded-md border border-line">
+                  {matches.length === 0 && (
+                    <p className="px-3 py-2 text-sm text-muted">
+                      No muscle in this region matches “{query.trim()}”.
+                    </p>
+                  )}
                   {matches.map((m) => (
                     <button
                       key={m.id}
@@ -556,6 +576,11 @@ export default function Atlas3D() {
                 </div>
               )}
 
+              {/* The full list is hidden while searching. Showing both at once
+                  reads as one long list where the matches have simply been
+                  pushed to the top, which is the opposite of what a search
+                  should communicate. */}
+              {!searching && (
               <div className="max-h-72 overflow-y-auto rounded-md border border-line">
                 {regionMuscles.map((m) => {
                   const has3d = meshesFor(m.id).length > 0
@@ -578,6 +603,7 @@ export default function Atlas3D() {
                   )
                 })}
               </div>
+              )}
             </div>
           </Card>
         </div>
