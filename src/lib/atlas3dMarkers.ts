@@ -184,6 +184,48 @@ export async function updateMarker(
   return toMarker(data as unknown as Row)
 }
 
+/** Longest an approach name may be — the chips are a UI row, not a paragraph. */
+export const APPROACH_NAME_MAX = 40
+
+/**
+ * Rename an approach by moving every one of its markers onto a new name.
+ *
+ * Landmarks are excluded by the caller: they are shared across every approach
+ * (approach 'Standard' by convention), so renaming them would drag the bony
+ * points of every other approach along with this one.
+ *
+ * Caveat worth knowing: RLS is applied per row, and a row the caller may not
+ * update is skipped silently rather than raising. An approach whose markers
+ * have two different authors could therefore be half-renamed — which would
+ * split it in two. The caller checks authorship before offering the control,
+ * and this function verifies that as many rows came back as were sent, so a
+ * partial rename is reported instead of passing unnoticed.
+ */
+export async function renameApproach(ids: string[], to: string): Promise<NeedleMarker[]> {
+  const name = to.trim()
+  if (!name) throw new Error('An approach needs a name.')
+  if (name.length > APPROACH_NAME_MAX) {
+    throw new Error(`Keep the approach name to ${APPROACH_NAME_MAX} characters or fewer.`)
+  }
+  if (ids.length === 0) return []
+
+  const { data, error } = await supabase
+    .from('atlas3d_markers')
+    .update({ approach: name })
+    .in('id', ids)
+    .select(COLUMNS)
+  if (error) throw new Error(error.message)
+
+  const rows = (data ?? []) as unknown as Row[]
+  if (rows.length !== ids.length) {
+    throw new Error(
+      `Renamed ${rows.length} of ${ids.length} markers — the rest belong to another author. ` +
+        'Ask them, or the fellowship director, to rename the remainder so the approach is not split.',
+    )
+  }
+  return rows.map(toMarker)
+}
+
 export async function deleteMarker(id: string): Promise<void> {
   const { error } = await supabase.from('atlas3d_markers').delete().eq('id', id)
   if (error) throw new Error(error.message)

@@ -26,9 +26,11 @@ import { abbrFor, nerveFor, recordingMusclesFor } from '../data/ncsStudyIndex'
 import { useAuth } from '../context/AuthContext'
 import {
   canAuthorMarkers,
+  canPublishMarker,
   createMarker,
   deleteMarker,
   listMarkers,
+  renameApproach,
   updateMarker,
   type NeedleMarker,
 } from '../lib/atlas3dMarkers'
@@ -376,6 +378,47 @@ export default function Atlas3D() {
     lastTarget.current = target
     setApproach(viewerApproaches[0] ?? 'Standard')
   }, [mode, selectedId, studyId, viewerApproaches])
+
+  /**
+   * Markers that a rename would have to move: everything in the current
+   * approach except landmarks, which are shared across all approaches and must
+   * keep their own name.
+   */
+  const approachMarkers = useMemo(
+    () => targetMarkers.filter((m) => m.kind !== 'landmark' && m.approach === approach),
+    [targetMarkers, approach],
+  )
+
+  // Offered only when there is something to rename AND every marker in the
+  // approach is one this person may edit — a half-completed rename would leave
+  // the approach split across two names.
+  const canRenameApproach =
+    approachMarkers.length > 0 &&
+    approachMarkers.every((m) => canPublishMarker(profile?.role, profile?.id, m))
+
+  async function handleRenameApproach(to: string) {
+    const name = to.trim()
+    if (!name || name === approach) return
+    // Merging into an existing approach would put two approved markers of the
+    // same kind in one approach, which the database's unique index rejects with
+    // a constraint error nobody can act on.
+    if (viewerApproaches.some((a) => a.toLowerCase() === name.toLowerCase())) {
+      setMarkerError(`"${name}" already exists for this target. Pick a different name.`)
+      return
+    }
+    setMarkerBusy(true)
+    setMarkerError(null)
+    try {
+      const updated = await renameApproach(approachMarkers.map((m) => m.id), name)
+      const byId = new Map(updated.map((m) => [m.id, m]))
+      setMarkers((all) => all.map((m) => byId.get(m.id) ?? m))
+      setApproach(name)
+    } catch (e) {
+      setMarkerError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setMarkerBusy(false)
+    }
+  }
 
   async function handlePlaceNeedle(p: {
     meshName: string
@@ -1037,6 +1080,8 @@ export default function Atlas3D() {
               approach={approach}
               approaches={approaches}
               onApproach={setApproach}
+              onRenameApproach={handleRenameApproach}
+              canRenameApproach={canRenameApproach}
               landmarkMode={landmarkMode}
               onLandmarkMode={setLandmarkMode}
               role={profile?.role}
@@ -1122,6 +1167,8 @@ export default function Atlas3D() {
               approach={approach}
               approaches={approaches}
               onApproach={setApproach}
+              onRenameApproach={handleRenameApproach}
+              canRenameApproach={canRenameApproach}
               landmarkMode={landmarkMode}
               onLandmarkMode={setLandmarkMode}
               role={profile?.role}

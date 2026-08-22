@@ -1,10 +1,9 @@
 UPLOAD THIS ONE — IT REPLACES EVERY EARLIER ZIP
 ===============================================
 
-Everything outstanding, merged into one consistent set. It supersedes
-"fellowship-atlas-files.zip", "restore-library-nav.zip" and
-"fellowship-portal-update.zip". Upload this and ignore those — mixing them
-would undo work, because they contain different versions of the same files.
+Everything outstanding, merged into one consistent set. It supersedes every zip
+I have sent before. Upload this and ignore those — mixing them would undo work,
+because they contain different versions of the same files.
 
 HOW TO UPLOAD
 
@@ -20,34 +19,36 @@ build output showing as untracked.
 
 WHAT IS IN IT
 
-1. Multiple approaches per muscle (new)
-   - A row of approach chips under the summary bar, visible to everyone.
-     Triceps shows Long Head / Medial Head / Standard; choosing one swaps the
-     marker on the model and the note beside it.
-   - Only approaches that actually carry a marker the reader may see are
-     listed, so a fellow never gets a chip that shows an empty model.
-   - EMG now shows each approach's authored label and note, as nerve
-     conduction already did. That text is what separates one approach from
-     another.
+1. Renaming an approach (new)
+   - "Rename" beside "New approach" in the authoring panel. Type anything;
+     every marker in that approach moves to the new name.
+   - So the triceps chips can read Lateral Head / Long Head / Medial Head
+     instead of leaving the lateral head under "Standard".
+   - Refused if the name is already used for that muscle or study, and only
+     offered on approaches whose markers you are allowed to edit.
 
-2. "Centre" button (new)
-   - Slides the view so the highlighted muscle sits in the middle of the
-     canvas, keeping your current angle and zoom. Next to "Reset view", which
-     returns to the region's default framing.
+2. Switching between approaches (new)
+   - Approach chips under the summary bar, visible to everyone, not just
+     faculty. Choosing one swaps the marker on the model and the note beside
+     it. EMG now shows each approach's authored label and note, as nerve
+     conduction already did.
 
-3. Library
+3. "Centre" button (new)
+   - Slides the view so the highlighted muscle sits in the middle, keeping
+     your angle and zoom. Next to "Reset view".
+
+4. Library
    - Read / Download / Remove keep their own right-hand column and never wrap
      under the title. File name out of the subtitle; size moved beside the
      buttons.
 
-4. Supervisors can publish their own atlas markers
+5. Supervisors can publish their own atlas markers
    - Approve, edit and remove markers they placed — not anyone else's.
    - Fixes a Delete button that looked like it worked but did nothing.
 
-5. Library and Feedback review restored to the nav
-   - Undoes what my earlier atlas upload removed.
+6. Library and Feedback review restored to the nav
 
-6. The 3D atlas work from the last few days
+7. The 3D atlas work from the last few days
    - NCS highlights the study's recording muscle instead of click-to-select;
      study search and grouping by nerve; panning; cathode degree readout and
      the cathode-to-G1 distance feature both removed.
@@ -56,14 +57,6 @@ DATABASE
 
 Already applied. Nothing for you to run. The migration file is here so the
 repo's history matches the database.
-
-ONE THING TO FIX YOURSELF
-
-The triceps lateral-head approach is still named "Standard" in the database,
-so the chips read "Long Head / Medial Head / Standard" even though that third
-marker's own label says "Lateral Head". Rename the approach to "Lateral Head"
-in the authoring panel and the three chips will read correctly. I did not
-rename it myself — it is your authored clinical content.
 
 AFTERWARDS
 

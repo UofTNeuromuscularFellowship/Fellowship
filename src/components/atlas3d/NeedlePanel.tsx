@@ -15,7 +15,7 @@
 
 import { useState } from 'react'
 import { Card, CardHeader } from '../ui/Card'
-import { canPublishMarker, type NeedleMarker } from '../../lib/atlas3dMarkers'
+import { APPROACH_NAME_MAX, canPublishMarker, type NeedleMarker } from '../../lib/atlas3dMarkers'
 import { MARKER_COLORS, MARKER_LABELS, type ElectrodeKind } from './MarkerShapes'
 
 const ELECTRODES: ElectrodeKind[] = ['stim', 'g1', 'g2', 'ground']
@@ -28,6 +28,8 @@ export function NeedlePanel({
   approach,
   approaches,
   onApproach,
+  onRenameApproach,
+  canRenameApproach,
   landmarkMode,
   onLandmarkMode,
   role,
@@ -53,6 +55,14 @@ export function NeedlePanel({
   approach: string
   approaches: string[]
   onApproach: (name: string) => void
+  /** Move every marker in the current approach onto a new name. */
+  onRenameApproach: (to: string) => void
+  /**
+   * False when this approach has no markers yet (nothing to rename) or
+   * carries markers this person may not edit — a half-rename would split
+   * the approach in two.
+   */
+  canRenameApproach: boolean
   /** When on, the next placement drops a named landmark instead of hardware. */
   landmarkMode: boolean
   onLandmarkMode: (on: boolean) => void
@@ -80,6 +90,7 @@ export function NeedlePanel({
   const [labelDraft, setLabelDraft] = useState<Record<string, string>>({})
   const [newApproach, setNewApproach] = useState('')
   const [addingApproach, setAddingApproach] = useState(false)
+  const [renameTo, setRenameTo] = useState<string | null>(null)
 
   return (
     <Card>
@@ -156,13 +167,65 @@ export function NeedlePanel({
                 Cancel
               </button>
             </>
+          ) : renameTo !== null ? (
+            <>
+              {/* Renaming moves every marker in this approach onto the new
+                  name. "Standard" is only a default, and a muscle sampled at
+                  three bellies deserves three names a reader recognises. */}
+              <input
+                value={renameTo}
+                onChange={(e) => setRenameTo(e.target.value.slice(0, APPROACH_NAME_MAX))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setRenameTo(null)
+                  if (e.key === 'Enter' && renameTo.trim()) {
+                    onRenameApproach(renameTo)
+                    setRenameTo(null)
+                  }
+                }}
+                autoFocus
+                aria-label="New name for this approach"
+                placeholder="e.g. Lateral head"
+                className="w-44 rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink focus:border-accent focus:outline-none"
+              />
+              <button
+                onClick={() => {
+                  if (!renameTo.trim()) return
+                  onRenameApproach(renameTo)
+                  setRenameTo(null)
+                }}
+                disabled={busy || !renameTo.trim() || renameTo.trim() === approach}
+                className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold text-accent disabled:cursor-not-allowed disabled:text-muted/50"
+              >
+                Save name
+              </button>
+              <button
+                onClick={() => setRenameTo(null)}
+                className="text-xs font-semibold text-muted hover:text-ink"
+              >
+                Cancel
+              </button>
+            </>
           ) : (
-            <button
-              onClick={() => setAddingApproach(true)}
-              className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold text-muted hover:text-ink"
-            >
-              New approach
-            </button>
+            <>
+              <button
+                onClick={() => setAddingApproach(true)}
+                className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold text-muted hover:text-ink"
+              >
+                New approach
+              </button>
+              <button
+                onClick={() => setRenameTo(approach)}
+                disabled={!canRenameApproach}
+                title={
+                  canRenameApproach
+                    ? 'Rename this approach — every marker in it moves to the new name'
+                    : 'Place a marker in this approach first, or ask its author to rename it'
+                }
+                className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold text-muted hover:text-ink disabled:cursor-not-allowed disabled:text-muted/40"
+              >
+                Rename
+              </button>
+            </>
           )}
 
           <label className="ml-auto flex items-center gap-2 text-sm text-ink">
