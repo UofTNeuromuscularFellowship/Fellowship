@@ -1,34 +1,26 @@
-HOW TO UPLOAD THESE FILES
-=========================
+RESTORES THE LIBRARY (AND FEEDBACK REVIEW) NAV
+==============================================
 
-This zip contains two folders — src and tools — laid out exactly as they sit in
-the repo.
+Two files. Unzip, open the folder, and drag the src folder THAT IS INSIDE IT
+into the GitHub uploader at the ROOT of the Fellowship repo
+(Add file -> Upload files).
 
-Unzip it. You will get a folder (probably named after the zip). Open it.
+  DO drag:   src
+  DO NOT drag the folder that contains it.
 
-Then drag the src and tools folders THAT ARE INSIDE IT into the GitHub uploader
-at the ROOT of the Fellowship repo (Add file -> Upload files).
+  src/App.tsx                    (replaces existing)
+  src/components/AppShell.tsx    (replaces existing)
 
-  DO drag:   src        and   tools
-  DO NOT drag the folder that contains them.
+WHAT HAPPENED
 
-Dragging the outer folder is what happened last time: everything landed under a
-new folder called atlasncsupdate/ and the real files were never replaced, which
-is why the study search never appeared on the site.
+The Library page, its database table, the private file bucket and the seven
+documents on the shelf were all still there. What went missing was the way in:
+the /library route and its nav item. The 3D atlas files I sent on 21 Aug
+included App.tsx and AppShell.tsx copied from a checkout made BEFORE the
+library was built, so uploading them removed the route and the nav entry.
+Same for the director-only Feedback review page.
 
-The six files, and where they belong:
+These two files put both back, exactly as they were, and keep the atlas
+changes.
 
-  src/pages/Atlas3D.tsx                          (replaces existing)
-  src/components/atlas3d/ViewerCanvas.tsx        (replaces existing)
-  src/components/atlas3d/NeedleMarkers.tsx       (replaces existing)
-  src/components/atlas3d/MarkerCallouts.tsx      (replaces existing)
-  src/data/ncsStudyIndex.ts                      (NEW file)
-  tools/atlas-pipeline/validate.mjs              (replaces existing)
-
-Uploading src and tools this way overwrites only these six paths. Everything
-else in src/ and tools/ is left alone.
-
-Afterwards you can delete the leftover atlasncsupdate/ folder from the repo. It
-is not used by the build, just clutter.
-
-No database migration is needed.
+Nothing to change in the database.

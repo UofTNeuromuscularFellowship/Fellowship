@@ -19,6 +19,8 @@ import MyTeaching from './pages/MyTeaching'
 import RateTeaching from './pages/RateTeaching'
 import Vacation from './pages/Vacation'
 import Evaluations from './pages/Evaluations'
+import FeedbackReview from './pages/FeedbackReview'
+import Library from './pages/Library'
 import Settings from './pages/Settings'
 import NotFound from './pages/NotFound'
 
@@ -77,6 +79,14 @@ export default function App() {
       <Route path="/rate-teaching" element={<Shell allow={['fellow']}><RateTeaching /></Shell>} />
       <Route path="/vacation" element={<Shell allow={['fellow', 'supervisor', 'director', 'assistant']}><Vacation /></Shell>} />
       <Route path="/evaluations" element={<Shell allow={['fellow', 'supervisor', 'director']}><Evaluations /></Shell>} />
+      {/* Cross-session ratings and topic demand — director and program admin,
+          matching the RPCs behind the page. */}
+      <Route path="/feedback-review" element={<Shell allow={['director', 'admin']}><FeedbackReview /></Shell>} />
+      {/* The shelf is readable by everyone who trains or teaches here; only the
+          director and admin can put anything on it (enforced in the page and by
+          RLS, not by this route). Library itself is a light import — the pdf.js
+          reader inside it is lazily loaded when a document is opened. */}
+      <Route path="/library" element={<Shell allow={['fellow', 'supervisor', 'director', 'admin']}><Library /></Shell>} />
       <Route path="/settings" element={<Shell><Settings /></Shell>} />
       {/* Legacy path redirects */}
       <Route path="/home" element={<Navigate to="/dashboard" replace />} />
