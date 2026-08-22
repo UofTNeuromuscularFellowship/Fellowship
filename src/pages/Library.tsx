@@ -205,34 +205,48 @@ export default function Library() {
             {grouped.map(([category, items]) => (
               <div key={category} className="px-5 py-4">
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">{category}</p>
+                {/* The actions keep their own column and never wrap into the
+                    title. `flex-wrap` used to drop them under a long title,
+                    which put Read and Download in a different place on every
+                    row. */}
                 <ul className="divide-y divide-line">
                   {items.map((d) => (
-                    <li key={d.id} className="flex flex-wrap items-baseline justify-between gap-2 py-3 first:pt-0 last:pb-0">
-                      <div className="min-w-0">
+                    <li key={d.id} className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
+                      <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-ink">{d.title}</p>
-                        <p className="text-sm text-muted">
-                          {[d.authors, d.edition].filter(Boolean).join(' · ')}
-                          {(d.authors || d.edition) && ' · '}
-                          {d.file_name}
-                          {d.size_bytes ? ` · ${humanSize(d.size_bytes)}` : ''}
-                        </p>
+                        {/* Authors and edition only. The stored file name is an
+                            upload artefact — URL-escaped, publisher-mangled and
+                            longer than the title — and nothing is done with it
+                            here that would need it shown. */}
+                        {(d.authors || d.edition) && (
+                          <p className="text-sm text-muted">
+                            {[d.authors, d.edition].filter(Boolean).join(' · ')}
+                          </p>
+                        )}
                         {d.description && <p className="mt-0.5 text-sm text-muted">{d.description}</p>}
                       </div>
-                      <div className="flex shrink-0 gap-4 text-sm">
+                      {/* Stacked on a phone, in a row from sm up — right-aligned
+                          either way. */}
+                      <div className="flex shrink-0 flex-col items-end gap-1 text-sm sm:flex-row sm:items-baseline sm:gap-4">
+                        {/* Size sits with the actions, where it answers "how big
+                            is this download?" rather than padding the subtitle. */}
+                        {d.size_bytes ? (
+                          <span className="whitespace-nowrap text-xs text-muted">{humanSize(d.size_bytes)}</span>
+                        ) : null}
                         {isPdf(d) && (
                           <button
-                            className="font-medium text-accent hover:underline disabled:opacity-50"
+                            className="whitespace-nowrap font-medium text-accent hover:underline disabled:opacity-50"
                             disabled={opening === d.id}
                             onClick={() => read(d)}
                           >
                             {opening === d.id ? 'Opening…' : 'Read'}
                           </button>
                         )}
-                        <button className="font-medium text-accent hover:underline" onClick={() => download(d)}>
+                        <button className="whitespace-nowrap font-medium text-accent hover:underline" onClick={() => download(d)}>
                           Download
                         </button>
                         {canManage && (
-                          <button className="font-medium text-red-600 hover:underline" onClick={() => remove(d)}>
+                          <button className="whitespace-nowrap font-medium text-red-600 hover:underline" onClick={() => remove(d)}>
                             Remove
                           </button>
                         )}

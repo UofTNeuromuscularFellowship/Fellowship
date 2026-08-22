@@ -15,7 +15,7 @@
 
 import { useState } from 'react'
 import { Card, CardHeader } from '../ui/Card'
-import { canApproveMarkers, type NeedleMarker } from '../../lib/atlas3dMarkers'
+import { canPublishMarker, type NeedleMarker } from '../../lib/atlas3dMarkers'
 import { MARKER_COLORS, MARKER_LABELS, type ElectrodeKind } from './MarkerShapes'
 
 const ELECTRODES: ElectrodeKind[] = ['stim', 'g1', 'g2', 'ground']
@@ -31,6 +31,7 @@ export function NeedlePanel({
   landmarkMode,
   onLandmarkMode,
   role,
+  userId,
   markers,
   placing,
   onPlaceNew,
@@ -56,6 +57,8 @@ export function NeedlePanel({
   landmarkMode: boolean
   onLandmarkMode: (on: boolean) => void
   role?: string | null
+  /** Signed-in user's id — a supervisor may only publish their own markers. */
+  userId?: string | null
   markers: NeedleMarker[]
   /** null, 'new', or the id of the marker being repositioned. */
   placing: null | 'new' | string
@@ -72,7 +75,6 @@ export function NeedlePanel({
   busy: boolean
   error: string | null
 }) {
-  const canApprove = canApproveMarkers(role)
   const [depthDraft, setDepthDraft] = useState<Record<string, string>>({})
   const [noteDraft, setNoteDraft] = useState<Record<string, string>>({})
   const [labelDraft, setLabelDraft] = useState<Record<string, string>>({})
@@ -236,6 +238,7 @@ export function NeedlePanel({
 
         {markers.map((m) => {
           const approved = m.status === 'approved'
+          const mayPublish = canPublishMarker(role, userId, m)
           const depthValue = depthDraft[m.id] ?? String(m.depthMm)
           return (
             <div
@@ -322,7 +325,7 @@ export function NeedlePanel({
                 </button>
                 )}
 
-                {canApprove && (
+                {mayPublish && (
                   <button
                     onClick={() => onApprove(m.id, !approved)}
                     disabled={busy}
@@ -336,6 +339,7 @@ export function NeedlePanel({
                   </button>
                 )}
 
+                {mayPublish && (
                 <button
                   onClick={() => onMove(m.id)}
                   disabled={busy}
@@ -347,7 +351,9 @@ export function NeedlePanel({
                 >
                   {placing === m.id ? 'Click new point…' : 'Move'}
                 </button>
+                )}
 
+                {mayPublish && (
                 <button
                   onClick={() => onDelete(m.id)}
                   disabled={busy}
@@ -355,7 +361,18 @@ export function NeedlePanel({
                 >
                   Delete
                 </button>
+                )}
               </div>
+
+              {/* A supervisor sees another supervisor's markers so they can be
+                  reviewed, but the database will not let them change one. The
+                  controls are hidden rather than left to fail silently. */}
+              {!mayPublish && (
+                <p className="mt-2 text-xs text-muted">
+                  Placed by someone else — only its author or the fellowship director can
+                  change it.
+                </p>
+              )}
 
               <div className="mt-3 space-y-2 border-t border-line pt-3">
                 <label className="block">

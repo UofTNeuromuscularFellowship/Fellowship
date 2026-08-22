@@ -193,6 +193,21 @@ export function canAuthorMarkers(role?: string | null): boolean {
   return role === 'supervisor' || role === 'director'
 }
 
-export function canApproveMarkers(role?: string | null): boolean {
-  return role === 'director'
+/**
+ * Who may publish, edit or remove a given marker.
+ *
+ * A director signs off on anything. A supervisor may do so for the markers they
+ * authored, and only those — this mirrors the RLS in
+ * 0017_atlas3d_supervisor_publish.sql exactly. It is the database that decides;
+ * this function only decides whether to offer the button, so that a supervisor
+ * is not shown an Approve control that silently does nothing on someone else's
+ * marker.
+ */
+export function canPublishMarker(
+  role: string | null | undefined,
+  userId: string | null | undefined,
+  marker: Pick<NeedleMarker, 'authoredBy'>,
+): boolean {
+  if (role === 'director') return true
+  return role === 'supervisor' && !!userId && marker.authoredBy === userId
 }

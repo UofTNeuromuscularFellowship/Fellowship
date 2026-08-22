@@ -964,6 +964,7 @@ export default function Atlas3D() {
               landmarkMode={landmarkMode}
               onLandmarkMode={setLandmarkMode}
               role={profile?.role}
+              userId={profile?.id}
               markers={visibleMarkers}
               placing={placing}
               onPlaceNew={() => setPlacing((p) => (p === 'new' ? null : 'new'))}
@@ -1015,6 +1016,7 @@ export default function Atlas3D() {
               landmarkMode={landmarkMode}
               onLandmarkMode={setLandmarkMode}
               role={profile?.role}
+              userId={profile?.id}
               markers={visibleMarkers}
               placing={placing}
               onPlaceNew={() => setPlacing((p) => (p === 'new' ? null : 'new'))}

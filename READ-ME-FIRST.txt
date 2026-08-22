@@ -1,26 +1,72 @@
-RESTORES THE LIBRARY (AND FEEDBACK REVIEW) NAV
+UPLOAD THIS ONE — IT REPLACES THE EARLIER ZIPS
 ==============================================
 
-Two files. Unzip, open the folder, and drag the src folder THAT IS INSIDE IT
-into the GitHub uploader at the ROOT of the Fellowship repo
+This is everything outstanding, merged into one consistent set. It supersedes
+"fellowship-atlas-files.zip" and "restore-library-nav.zip". Upload this and
+ignore those two — mixing them would undo work, because they each contain
+different versions of the same files.
+
+HOW TO UPLOAD
+
+Unzip it. Open the folder you get. Drag the src, supabase and tools folders
+THAT ARE INSIDE IT into the GitHub uploader at the ROOT of the Fellowship repo
 (Add file -> Upload files).
 
-  DO drag:   src
-  DO NOT drag the folder that contains it.
+  DO drag:   src   supabase   tools
+  DO NOT drag the folder that contains them.
 
-  src/App.tsx                    (replaces existing)
-  src/components/AppShell.tsx    (replaces existing)
+Dragging the outer folder is what created the stray "atlasncsupdate" folder
+last time and left the real files untouched.
 
-WHAT HAPPENED
+.gitignore is also in here, at the top level. Optional — it just stops
+node_modules and build output showing as untracked. Drag it in alongside the
+folders if you want it.
 
-The Library page, its database table, the private file bucket and the seven
-documents on the shelf were all still there. What went missing was the way in:
-the /library route and its nav item. The 3D atlas files I sent on 21 Aug
-included App.tsx and AppShell.tsx copied from a checkout made BEFORE the
-library was built, so uploading them removed the route and the nav entry.
-Same for the director-only Feedback review page.
+WHAT IS IN IT
 
-These two files put both back, exactly as they were, and keep the atlas
-changes.
+1. Library
+   - Read / Download / Remove keep their own right-hand column and never wrap
+     under the title. On a phone they stack, still right-aligned.
+   - The stored file name is out of the subtitle. Only authors and edition
+     remain; the file size moved over beside the buttons.
 
-Nothing to change in the database.
+2. Supervisors can publish their own atlas markers
+   - A supervisor can now approve, edit and remove the needle and NCS markers
+     they placed. Not anyone else's — the database checks authorship.
+   - Fixes a Delete button that looked like it worked but silently did nothing
+     for supervisors.
+
+3. Library and Feedback review back in the nav
+   - Restores the routes and nav items my earlier atlas upload removed.
+
+4. The 3D atlas changes from the last few days
+   - NCS mode highlights the study's recording muscle instead of letting you
+     click-select; study search and grouping by nerve; panning; cathode degree
+     readout and the cathode-to-G1 distance feature both removed.
+
+DATABASE
+
+Already applied — supervisors can publish right now, before you upload
+anything. The migration file in here is the repo's record of that change, so
+the history matches the database. Nothing for you to run.
+
+FILES
+
+  src/pages/Library.tsx
+  src/pages/Atlas3D.tsx
+  src/App.tsx
+  src/components/AppShell.tsx
+  src/components/atlas3d/NeedlePanel.tsx
+  src/components/atlas3d/ViewerCanvas.tsx
+  src/components/atlas3d/NeedleMarkers.tsx
+  src/components/atlas3d/MarkerCallouts.tsx
+  src/lib/atlas3dMarkers.ts
+  src/data/ncsStudyIndex.ts                                (new)
+  supabase/migrations/0017_atlas3d_supervisor_publish.sql  (new)
+  tools/atlas-pipeline/validate.mjs
+  .gitignore                                               (new, optional)
+
+AFTERWARDS
+
+Open the sidebar and check Library and Feedback review are both there. That
+30-second look is what would have caught the missing Library a day earlier.
