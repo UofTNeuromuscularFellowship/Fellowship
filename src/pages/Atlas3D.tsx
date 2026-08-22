@@ -12,7 +12,7 @@
 // Model licensing/attribution: see LICENSES-3D.md at the repo root.
 // ---------------------------------------------------------------------------
 
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Card, CardHeader } from '../components/ui/Card'
 import { MuscleDetail } from '../components/MuscleDetail'
@@ -166,6 +166,7 @@ export default function Atlas3D() {
   const [studyQuery, setStudyQuery] = useState('')
   const [studyGroupBy, setStudyGroupBy] = useState<'nerve' | 'region'>('nerve')
   const [resetSignal, setResetSignal] = useState(0)
+  const [centreSignal, setCentreSignal] = useState(0)
 
   const { profile } = useAuth()
   const mayAuthor = canAuthorMarkers(profile?.role)
@@ -293,6 +294,22 @@ export default function Atlas3D() {
     return [...names].sort()
   }, [targetMarkers, approach])
 
+  /**
+   * The approaches a READER can actually look at: the named approaches that
+   * have a marker this person is allowed to see. RLS already filtered the
+   * markers, so a fellow's list contains only approved work.
+   *
+   * Deliberately not `approaches` above — that one always carries 'Standard'
+   * and whatever the author is currently drafting, which is right for the
+   * authoring panel and wrong for a switcher, where an approach with nothing
+   * behind it is a dead chip.
+   */
+  const viewerApproaches = useMemo(() => {
+    const names = new Set<string>()
+    for (const m of targetMarkers) if (m.kind !== 'landmark') names.add(m.approach)
+    return [...names].sort()
+  }, [targetMarkers])
+
   // Landmarks are shown with every approach — a bony point does not belong to
   // one technique. Everything else is filtered to the selected approach.
   const visibleMarkers = useMemo(
@@ -347,6 +364,18 @@ export default function Atlas3D() {
     () => visibleMarkers.find((m) => m.status === 'approved') ?? null,
     [visibleMarkers],
   )
+
+  // Moving to a different muscle or study lands on an approach that target
+  // actually has, rather than carrying the last one over and showing an empty
+  // model. Keyed on the target only: re-picking whenever the approach list
+  // changes would yank an author off a new approach the moment they named it.
+  const lastTarget = useRef<string>('')
+  useEffect(() => {
+    const target = `${mode}:${mode === 'emg' ? selectedId : studyId}`
+    if (target === lastTarget.current) return
+    lastTarget.current = target
+    setApproach(viewerApproaches[0] ?? 'Standard')
+  }, [mode, selectedId, studyId, viewerApproaches])
 
   async function handlePlaceNeedle(p: {
     meshName: string
@@ -524,6 +553,13 @@ export default function Atlas3D() {
               Drag to pan
             </label>
             <button
+              onClick={() => setCentreSignal((n) => n + 1)}
+              className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold text-muted hover:text-ink"
+              title="Slide the view so the highlighted structure sits in the middle, keeping the current angle and zoom"
+            >
+              Centre
+            </button>
+            <button
               onClick={() => setResetSignal((n) => n + 1)}
               className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold text-muted hover:text-ink"
             >
@@ -543,6 +579,7 @@ export default function Atlas3D() {
               the model. Because it is here, MuscleDetail's identity card is
               switched off below and the localization card moves to the top. */}
           {mode === 'emg' && current && <MuscleSummaryBar muscle={current} />}
+
           {mode === 'ncs' && currentStudy && (
             <SummaryBar
               name={currentStudy.name}
@@ -561,6 +598,44 @@ export default function Atlas3D() {
                   : null
               }
             />
+          )}
+
+          {/* Approach switcher.
+              A muscle like the triceps has one entry in the written atlas but
+              more than one accepted place to put the needle. Each approach is a
+              separate set of markers, and until now only the authoring panel
+              could switch between them — a fellow saw whichever one happened to
+              be first and had no idea the others existed.
+
+              Only approaches that carry a marker this reader may see are
+              listed, so a fellow never gets a chip that shows an empty model. */}
+          {viewerApproaches.length > 1 && (
+            <div className="flex flex-wrap items-center gap-2 border-b border-line bg-paper/60 px-5 py-2.5">
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+                Approach
+              </span>
+              {viewerApproaches.map((a) => (
+                <button
+                  key={a}
+                  onClick={() => {
+                    setApproach(a)
+                    setActiveMarkerId(null)
+                  }}
+                  aria-pressed={approach === a}
+                  className={`rounded-md border px-2.5 py-1 text-xs font-semibold ${
+                    approach === a
+                      ? 'border-accent bg-accent-soft text-accent'
+                      : 'border-line text-muted hover:text-ink'
+                  }`}
+                >
+                  {a}
+                </button>
+              ))}
+              <span className="text-xs text-muted">
+                {viewerApproaches.length} accepted approaches — the markers and notes change with
+                your choice
+              </span>
+            </div>
           )}
 
           {sectionOn && (
@@ -636,6 +711,7 @@ export default function Atlas3D() {
                   selectable={mode === 'emg'}
                   panMode={panMode}
                   resetSignal={resetSignal}
+                  centreSignal={centreSignal}
                   onHoverName={setHoverLabel}
                   layers={layers}
                   isolate={isolate}
@@ -1001,6 +1077,39 @@ export default function Atlas3D() {
               unaffected.
             </div>
           )}
+          {/* Per-approach notes. The written atlas entry below has ONE
+              localization paragraph per muscle — for the triceps it names all
+              three bellies in a single sentence — so the text that separates
+              one approach from another is whatever the reviewing faculty wrote
+              on that approach's marker. Shown here rather than left inside the
+              authoring panel, where only supervisors could read it. */}
+          {viewerApproaches.length > 1 && (
+            <Card>
+              <CardHeader
+                title={`${approach} approach`}
+                sub={approvedMarker ? 'Reviewed and approved' : 'No approved marker for this approach yet'}
+              />
+              <div className="space-y-2 px-5 py-4">
+                {/* Faculty put the short "where it goes in" line in the marker's
+                    label and anything longer in its note. Both are shown, and
+                    the label alone is enough — most markers carry only that. */}
+                {approvedMarker?.label && (
+                  <p className="text-sm font-medium text-ink">{approvedMarker.label}</p>
+                )}
+                {approvedMarker?.note && (
+                  <p className="whitespace-pre-line text-sm text-ink">{approvedMarker.note}</p>
+                )}
+                {!approvedMarker?.label && !approvedMarker?.note && (
+                  <p className="text-sm text-muted">
+                    Nothing written for this approach yet. The technique below is the muscle&apos;s
+                    general entry and covers every approach; the marker on the model shows where
+                    this one goes in.
+                  </p>
+                )}
+              </div>
+            </Card>
+          )}
+
           <MuscleDetail muscle={current} showDiagram={false} showIdentity={false} />
 
 

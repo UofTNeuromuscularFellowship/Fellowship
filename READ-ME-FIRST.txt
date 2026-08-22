@@ -1,10 +1,10 @@
-UPLOAD THIS ONE — IT REPLACES THE EARLIER ZIPS
-==============================================
+UPLOAD THIS ONE — IT REPLACES EVERY EARLIER ZIP
+===============================================
 
-This is everything outstanding, merged into one consistent set. It supersedes
-"fellowship-atlas-files.zip" and "restore-library-nav.zip". Upload this and
-ignore those two — mixing them would undo work, because they each contain
-different versions of the same files.
+Everything outstanding, merged into one consistent set. It supersedes
+"fellowship-atlas-files.zip", "restore-library-nav.zip" and
+"fellowship-portal-update.zip". Upload this and ignore those — mixing them
+would undo work, because they contain different versions of the same files.
 
 HOW TO UPLOAD
 
@@ -15,58 +15,56 @@ THAT ARE INSIDE IT into the GitHub uploader at the ROOT of the Fellowship repo
   DO drag:   src   supabase   tools
   DO NOT drag the folder that contains them.
 
-Dragging the outer folder is what created the stray "atlasncsupdate" folder
-last time and left the real files untouched.
-
-.gitignore is also in here, at the top level. Optional — it just stops
-node_modules and build output showing as untracked. Drag it in alongside the
-folders if you want it.
+.gitignore sits at the top level too. Optional — it stops node_modules and
+build output showing as untracked.
 
 WHAT IS IN IT
 
-1. Library
+1. Multiple approaches per muscle (new)
+   - A row of approach chips under the summary bar, visible to everyone.
+     Triceps shows Long Head / Medial Head / Standard; choosing one swaps the
+     marker on the model and the note beside it.
+   - Only approaches that actually carry a marker the reader may see are
+     listed, so a fellow never gets a chip that shows an empty model.
+   - EMG now shows each approach's authored label and note, as nerve
+     conduction already did. That text is what separates one approach from
+     another.
+
+2. "Centre" button (new)
+   - Slides the view so the highlighted muscle sits in the middle of the
+     canvas, keeping your current angle and zoom. Next to "Reset view", which
+     returns to the region's default framing.
+
+3. Library
    - Read / Download / Remove keep their own right-hand column and never wrap
-     under the title. On a phone they stack, still right-aligned.
-   - The stored file name is out of the subtitle. Only authors and edition
-     remain; the file size moved over beside the buttons.
+     under the title. File name out of the subtitle; size moved beside the
+     buttons.
 
-2. Supervisors can publish their own atlas markers
-   - A supervisor can now approve, edit and remove the needle and NCS markers
-     they placed. Not anyone else's — the database checks authorship.
-   - Fixes a Delete button that looked like it worked but silently did nothing
-     for supervisors.
+4. Supervisors can publish their own atlas markers
+   - Approve, edit and remove markers they placed — not anyone else's.
+   - Fixes a Delete button that looked like it worked but did nothing.
 
-3. Library and Feedback review back in the nav
-   - Restores the routes and nav items my earlier atlas upload removed.
+5. Library and Feedback review restored to the nav
+   - Undoes what my earlier atlas upload removed.
 
-4. The 3D atlas changes from the last few days
-   - NCS mode highlights the study's recording muscle instead of letting you
-     click-select; study search and grouping by nerve; panning; cathode degree
-     readout and the cathode-to-G1 distance feature both removed.
+6. The 3D atlas work from the last few days
+   - NCS highlights the study's recording muscle instead of click-to-select;
+     study search and grouping by nerve; panning; cathode degree readout and
+     the cathode-to-G1 distance feature both removed.
 
 DATABASE
 
-Already applied — supervisors can publish right now, before you upload
-anything. The migration file in here is the repo's record of that change, so
-the history matches the database. Nothing for you to run.
+Already applied. Nothing for you to run. The migration file is here so the
+repo's history matches the database.
 
-FILES
+ONE THING TO FIX YOURSELF
 
-  src/pages/Library.tsx
-  src/pages/Atlas3D.tsx
-  src/App.tsx
-  src/components/AppShell.tsx
-  src/components/atlas3d/NeedlePanel.tsx
-  src/components/atlas3d/ViewerCanvas.tsx
-  src/components/atlas3d/NeedleMarkers.tsx
-  src/components/atlas3d/MarkerCallouts.tsx
-  src/lib/atlas3dMarkers.ts
-  src/data/ncsStudyIndex.ts                                (new)
-  supabase/migrations/0017_atlas3d_supervisor_publish.sql  (new)
-  tools/atlas-pipeline/validate.mjs
-  .gitignore                                               (new, optional)
+The triceps lateral-head approach is still named "Standard" in the database,
+so the chips read "Long Head / Medial Head / Standard" even though that third
+marker's own label says "Lateral Head". Rename the approach to "Lateral Head"
+in the authoring panel and the three chips will read correctly. I did not
+rename it myself — it is your authored clinical content.
 
 AFTERWARDS
 
-Open the sidebar and check Library and Feedback review are both there. That
-30-second look is what would have caught the missing Library a day earlier.
+Open the sidebar and check Library and Feedback review are both there.

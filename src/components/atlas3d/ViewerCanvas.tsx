@@ -106,6 +106,11 @@ export interface ViewerProps {
   panMode?: boolean
   /** Bumping this number returns the camera to the region's default pose. */
   resetSignal?: number
+  /**
+   * Bumping this number slides the view so the selected structure sits in the
+   * middle of the canvas, without changing the angle or the zoom.
+   */
+  centreSignal?: number
 }
 
 /**
@@ -163,6 +168,7 @@ function Model({
   onPlaceRejected,
   anyStructure,
   selectable = true,
+  centreSignal,
 }: Omit<ViewerProps, 'camera' | 'panMode'>) {
   const { scene } = useGLTF(glbPath, '/draco/')
   const invalidate = useThree((s) => s.invalidate)
@@ -411,6 +417,7 @@ function Model({
           onScreenPositions={onMarkerScreenPositions}
         />
       )}
+      <CentreCamera signal={centreSignal} focus={selectionFocus} bounds={bounds} />
       <CutCamera
         signal={viewCutSignal}
         plane={sectionOn ? plane : null}
@@ -433,6 +440,47 @@ function Model({
  * Swings the camera to look straight down the clipping plane's normal, so the
  * cut face is seen head-on — the view an anatomy atlas plate shows.
  */
+/**
+ * "Centre on selection": pans the camera so the chosen structure is in the
+ * middle of the canvas.
+ *
+ * The camera and its target move by the SAME offset, so the direction you are
+ * looking from and how close you are both survive. Pointing the camera at the
+ * target instead would swing the model round and lose the view someone had
+ * just set up; re-framing it would undo their zoom.
+ *
+ * With nothing selected it centres the model as a whole, which is what a
+ * viewer that has been panned off into white space needs.
+ */
+function CentreCamera({
+  signal,
+  focus,
+  bounds,
+}: {
+  signal?: number
+  focus: THREE.Vector3 | null
+  bounds: { minY: number; maxY: number; radius: number }
+}) {
+  const camera = useThree((s) => s.camera)
+  const controls = useThree((s) => s.controls) as OrbitControlsImpl | null
+  const invalidate = useThree((s) => s.invalidate)
+  const last = useRef<number | undefined>(undefined)
+
+  useEffect(() => {
+    if (signal === undefined || signal === last.current) return
+    last.current = signal
+    if (!controls) return
+    const target = focus ?? new THREE.Vector3(0, (bounds.minY + bounds.maxY) / 2, 0)
+    const delta = target.clone().sub(controls.target)
+    camera.position.add(delta)
+    controls.target.copy(target)
+    controls.update()
+    invalidate()
+  }, [signal, focus, bounds, camera, controls, invalidate])
+
+  return null
+}
+
 function CutCamera({
   signal,
   plane,
