@@ -13,7 +13,7 @@ import { useEffect, useMemo } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import type { NeedleMarker } from '../../lib/atlas3dMarkers'
-import { buildElectrode, buildNeedle, MARKER_COLORS, MM, CATHODE_OFFSET_MM } from './MarkerShapes'
+import { buildElectrode, buildNeedle, MARKER_COLORS } from './MarkerShapes'
 
 const HIGHLIGHT = '#16B5C2'
 const DRAFT = '#E07B2C'
@@ -63,46 +63,17 @@ function markerGroup(m: NeedleMarker, active: boolean): THREE.Group {
   return outer
 }
 
-/**
- * The point a distance is measured FROM or TO. For the stimulator that is the
- * cathode tip, not the middle of the probe — the cathode is the pole that
- * depolarises the nerve, so it is what the textbook distance is measured from.
- * It moves with the spin, which is why this has to be derived rather than
- * taken as the marker's own position.
- */
-function measurePoint(group: THREE.Object3D, m: NeedleMarker): THREE.Vector3 {
-  const p = new THREE.Vector3()
-  group.getWorldPosition(p)
-  if (m.kind !== 'stim') return p
-  const local = new THREE.Vector3(CATHODE_OFFSET_MM * MM, 0, 0)
-  local.applyAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(m.spinDeg ?? 0))
-  const dir = new THREE.Vector3(...m.direction)
-  if (dir.lengthSq() === 0) dir.set(0, -1, 0)
-  dir.normalize()
-  local.applyQuaternion(
-    new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir),
-  )
-  // The offset is in the model's local metres; the parent's world scale is 1,
-  // so it can be added directly.
-  return p.add(local)
-}
-
 export function NeedleMarkers({
   root,
   markers,
   activeId,
   onScreenPositions,
-  showDistance,
-  onDistance,
 }: {
   root: THREE.Object3D
   markers: NeedleMarker[]
   activeId?: string | null
   /** Marker id -> position in canvas pixels, for the side callouts. */
   onScreenPositions?: (p: Record<string, { x: number; y: number; visible: boolean }>) => void
-  /** Draw a straight line from the stimulator cathode to G1 and measure it. */
-  showDistance?: boolean
-  onDistance?: (mm: number | null) => void
 }) {
   const invalidate = useThree((s) => s.invalidate)
   const camera = useThree((s) => s.camera)
@@ -144,47 +115,6 @@ export function NeedleMarkers({
     }
     onScreenPositions(out)
   })
-
-  // Cathode-to-G1 distance. STRAIGHT LINE through space — a real conduction
-  // distance is measured over the skin with a tape and is longer wherever the
-  // limb curves between the two, so this is a sanity check on placement, not a
-  // number to compute a velocity from. The UI says so.
-  useEffect(() => {
-    if (!showDistance) {
-      onDistance?.(null)
-      return
-    }
-    const stim = attached.find((a) => a.marker.kind === 'stim')
-    const g1 = attached.find((a) => a.marker.kind === 'g1')
-    if (!stim || !g1) {
-      onDistance?.(null)
-      return
-    }
-    root.updateMatrixWorld(true)
-    const from = measurePoint(stim.group, stim.marker)
-    const to = measurePoint(g1.group, g1.marker)
-    onDistance?.(from.distanceTo(to) / MM)
-
-    const geom = new THREE.BufferGeometry().setFromPoints([from, to])
-    const mat = new THREE.LineDashedMaterial({
-      color: '#0E7C86',
-      dashSize: 6 * MM,
-      gapSize: 4 * MM,
-      transparent: true,
-      depthTest: false,
-    })
-    const line = new THREE.Line(geom, mat)
-    line.computeLineDistances()
-    line.renderOrder = 9995
-    line.userData.atlasMarker = true
-    root.add(line)
-    invalidate()
-    return () => {
-      root.remove(line)
-      geom.dispose()
-      mat.dispose()
-    }
-  }, [showDistance, attached, root, onDistance, invalidate])
 
   useEffect(() => {
     invalidate()

@@ -1,0 +1,34 @@
+HOW TO UPLOAD THESE FILES
+=========================
+
+This zip contains two folders — src and tools — laid out exactly as they sit in
+the repo.
+
+Unzip it. You will get a folder (probably named after the zip). Open it.
+
+Then drag the src and tools folders THAT ARE INSIDE IT into the GitHub uploader
+at the ROOT of the Fellowship repo (Add file -> Upload files).
+
+  DO drag:   src        and   tools
+  DO NOT drag the folder that contains them.
+
+Dragging the outer folder is what happened last time: everything landed under a
+new folder called atlasncsupdate/ and the real files were never replaced, which
+is why the study search never appeared on the site.
+
+The six files, and where they belong:
+
+  src/pages/Atlas3D.tsx                          (replaces existing)
+  src/components/atlas3d/ViewerCanvas.tsx        (replaces existing)
+  src/components/atlas3d/NeedleMarkers.tsx       (replaces existing)
+  src/components/atlas3d/MarkerCallouts.tsx      (replaces existing)
+  src/data/ncsStudyIndex.ts                      (NEW file)
+  tools/atlas-pipeline/validate.mjs              (replaces existing)
+
+Uploading src and tools this way overwrites only these six paths. Everything
+else in src/ and tools/ is left alone.
+
+Afterwards you can delete the leftover atlasncsupdate/ folder from the repo. It
+is not used by the build, just clutter.
+
+No database migration is needed.

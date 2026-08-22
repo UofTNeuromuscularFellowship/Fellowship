@@ -21,7 +21,8 @@ import { NeedlePanel } from '../components/atlas3d/NeedlePanel'
 import type { ElectrodeKind } from '../components/atlas3d/MarkerShapes'
 import { MarkerCallouts, type ScreenPos } from '../components/atlas3d/MarkerCallouts'
 import { MuscleSummaryBar, SummaryBar } from '../components/atlas3d/MuscleSummaryBar'
-import { NERVE_STUDIES } from '../data/nerveGuide'
+import { NERVE_STUDIES, type NerveStudy } from '../data/nerveGuide'
+import { abbrFor, nerveFor, recordingMusclesFor } from '../data/ncsStudyIndex'
 import { useAuth } from '../context/AuthContext'
 import {
   canAuthorMarkers,
@@ -151,8 +152,6 @@ export default function Atlas3D() {
   const [approach, setApproach] = useState('Standard')
   const [screenPos, setScreenPos] = useState<Record<string, ScreenPos>>({})
   const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 })
-  const [showDistance, setShowDistance] = useState(false)
-  const [distanceMm, setDistanceMm] = useState<number | null>(null)
   const [query, setQuery] = useState('')
   const [hoverLabel, setHoverLabel] = useState<string | null>(null)
   const [layers, setLayers] = useState({ bones: true, nerves: true, vessels: false })
@@ -162,6 +161,11 @@ export default function Atlas3D() {
   const [sectionFlip, setSectionFlip] = useState(false)
   const [selectionCentre, setSelectionCentre] = useState<[number, number, number] | null>(null)
   const [viewCutSignal, setViewCutSignal] = useState(0)
+  /** Left-drag pans instead of rotating. Right-drag pans either way. */
+  const [panMode, setPanMode] = useState(false)
+  const [studyQuery, setStudyQuery] = useState('')
+  const [studyGroupBy, setStudyGroupBy] = useState<'nerve' | 'region'>('nerve')
+  const [resetSignal, setResetSignal] = useState(0)
 
   const { profile } = useAuth()
   const mayAuthor = canAuthorMarkers(profile?.role)
@@ -204,9 +208,23 @@ export default function Atlas3D() {
     return map
   }, [region])
 
-  const selectedMeshes = useMemo(() => (selectedId ? meshesFor(selectedId) : []), [selectedId])
+  // In nerve conduction mode the highlight is not a choice the user makes: it
+  // is the muscle the selected study RECORDS from, taken from the reviewed
+  // NCS_STUDY_INDEX. Clicking anatomy does not change it — a highlight that
+  // disagreed with the study's own recording site would be worse than none.
+  // Sensory studies record from skin and so highlight nothing.
+  const ncsMuscleIds = useMemo(
+    () => (mode === 'ncs' && studyId ? recordingMusclesFor(studyId) : []),
+    [mode, studyId],
+  )
+
+  const selectedMeshes = useMemo(() => {
+    if (mode === 'ncs') return ncsMuscleIds.flatMap((id) => meshesFor(id))
+    return selectedId ? meshesFor(selectedId) : []
+  }, [mode, ncsMuscleIds, selectedId])
+
   const current: EmgMuscle | null = EMG_MUSCLES.find((m) => m.id === selectedId) ?? null
-  const currentHas3d = selectedMeshes.length > 0
+  const currentHas3d = mode === 'emg' && selectedMeshes.length > 0
 
   const searching = query.trim().length > 0
 
@@ -291,6 +309,39 @@ export default function Atlas3D() {
     () => regionStudies.find((st) => st.id === studyId) ?? null,
     [regionStudies, studyId],
   )
+
+  // Search covers the fields a reader would name a study by: its own name, the
+  // nerve, the recording site, the roots and the study type.
+  const studyMatches = useMemo(() => {
+    const q = studyQuery.trim().toLowerCase()
+    if (!q) return regionStudies
+    // A short query is an abbreviation or a root ("TA", "C8"), not a fragment:
+    // matched as a whole word, it finds the study; matched as a substring it
+    // also returns every study with "ta" somewhere inside a word, which buries
+    // the one that was wanted.
+    const short = q.length <= 3
+    const word = short ? new RegExp(`\\b${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`) : null
+    return regionStudies.filter((st) => {
+      const abbr = abbrFor(st.id)
+      if (abbr.some((a) => a.toLowerCase() === q)) return true
+      const hay = [st.name, nerveFor(st.id), abbr.join(' '), st.type, st.recording ?? '', st.roots ?? '']
+        .join('  ')
+        .toLowerCase()
+      return word ? word.test(hay) : hay.includes(q)
+    })
+  }, [studyQuery, regionStudies])
+
+  /** Matching studies bucketed by nerve (or by the guide's own region order). */
+  const studyGroups = useMemo(() => {
+    const by = new Map<string, NerveStudy[]>()
+    for (const st of studyMatches) {
+      const key = studyGroupBy === 'nerve' ? nerveFor(st.id) || 'Other' : st.region
+      const list = by.get(key)
+      if (list) list.push(st)
+      else by.set(key, [st])
+    }
+    return [...by.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  }, [studyMatches, studyGroupBy])
 
   const approvedMarker = useMemo(
     () => visibleMarkers.find((m) => m.status === 'approved') ?? null,
@@ -404,7 +455,9 @@ export default function Atlas3D() {
             title={region?.label ?? 'Viewer'}
             sub={
               region?.ready
-                ? `Right limb · ${mappedCount} of ${regionMuscles.length} muscles selectable · drag to rotate, scroll to zoom`
+                ? mode === 'emg'
+                  ? `Right limb · ${mappedCount} of ${regionMuscles.length} muscles selectable · drag to rotate, right-drag or two fingers to pan, scroll to zoom`
+                  : 'Right limb · the recording muscle for the chosen study is highlighted · drag to rotate, right-drag or two fingers to pan, scroll to zoom'
                 : 'Model not built yet'
             }
             action={
@@ -449,22 +502,6 @@ export default function Atlas3D() {
               />
               Fade other muscles
             </label>
-            {mode === 'ncs' && (
-              <label className="flex items-center gap-2 text-sm text-ink">
-                <input
-                  type="checkbox"
-                  checked={showDistance}
-                  onChange={(e) => setShowDistance(e.target.checked)}
-                  className="h-4 w-4 rounded border-line text-accent focus:ring-accent"
-                />
-                Cathode → G1 distance
-                {showDistance && distanceMm !== null && (
-                  <span className="font-semibold tabular-nums text-accent">
-                    {distanceMm.toFixed(0)} mm
-                  </span>
-                )}
-              </label>
-            )}
             <label className="flex items-center gap-2 text-sm text-ink">
               <input
                 type="checkbox"
@@ -474,7 +511,25 @@ export default function Atlas3D() {
               />
               Cross-section
             </label>
-            {selectedId && (
+            {/* Right-drag and two-finger drag always pan. This makes it
+                reachable with one button — a trackpad with no right click
+                otherwise leaves distal limbs stuck off-screen when zoomed in. */}
+            <label className="flex items-center gap-2 text-sm text-ink">
+              <input
+                type="checkbox"
+                checked={panMode}
+                onChange={(e) => setPanMode(e.target.checked)}
+                className="h-4 w-4 rounded border-line text-accent focus:ring-accent"
+              />
+              Drag to pan
+            </label>
+            <button
+              onClick={() => setResetSignal((n) => n + 1)}
+              className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold text-muted hover:text-ink"
+            >
+              Reset view
+            </button>
+            {selectedId && mode === 'emg' && (
               <button
                 onClick={() => setSelectedId('')}
                 className="ml-auto text-xs font-semibold text-accent hover:underline"
@@ -506,27 +561,6 @@ export default function Atlas3D() {
                   : null
               }
             />
-          )}
-
-          {mode === 'ncs' && showDistance && (
-            <div className="border-b border-line bg-amber-50/70 px-5 py-2.5">
-              <p className="text-xs text-ink">
-                {distanceMm === null ? (
-                  <>
-                    <span className="font-semibold">No distance to show. </span>
-                    Place both a stimulator and a G1 electrode in this approach and the line
-                    appears between them.
-                  </>
-                ) : (
-                  <>
-                    <span className="font-semibold">Straight-line distance, not tape distance. </span>
-                    Measured through space from the cathode to G1. A real conduction distance is
-                    measured over the skin and is longer wherever the limb curves between the
-                    two, so use this to sanity-check placement — not to compute a velocity.
-                  </>
-                )}
-              </p>
-            </div>
           )}
 
           {sectionOn && (
@@ -596,7 +630,12 @@ export default function Atlas3D() {
                   camera={region.defaultCamera}
                   selectedMeshes={selectedMeshes}
                   meshToTarget={meshToTarget}
-                  onSelect={setSelectedId}
+                  // Nerve conduction mode takes its highlight from the study,
+                  // so clicking anatomy must not override it.
+                  onSelect={mode === 'emg' ? setSelectedId : () => {}}
+                  selectable={mode === 'emg'}
+                  panMode={panMode}
+                  resetSignal={resetSignal}
                   onHoverName={setHoverLabel}
                   layers={layers}
                   isolate={isolate}
@@ -607,8 +646,6 @@ export default function Atlas3D() {
                   markers={visibleMarkers}
                   activeMarkerId={activeMarkerId}
                   onMarkerScreenPositions={setScreenPos}
-                  showDistance={mode === 'ncs' && showDistance}
-                  onDistance={setDistanceMm}
                   placingNeedle={placing !== null}
                   anyStructure={mode === 'ncs' || landmarkMode}
                   onPlaceNeedle={handlePlaceNeedle}
@@ -672,6 +709,7 @@ export default function Atlas3D() {
                     setPlacing(null)
                     setLandmarkMode(false)
                     setQuery('')
+                    setStudyQuery('')
                     // Clear BOTH selections either way. Clearing only the
                     // mode you are leaving still left a muscle highlighted on
                     // the model when coming back from nerve conduction, with
@@ -698,7 +736,12 @@ export default function Atlas3D() {
                   value={regionId}
                   onChange={(e) => {
                     setRegionId(e.target.value)
+                    // A study belongs to a region's list; keeping the old id
+                    // after a region change leaves markers filtered against a
+                    // study the page no longer shows.
                     setSelectedId('')
+                    setStudyId('')
+                    setPlacing(null)
                   }}
                   className="mt-1 w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
                 >
@@ -712,29 +755,104 @@ export default function Atlas3D() {
               </label>
 
               {mode === 'ncs' && (
-                <label className="block">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-muted">
-                    Study
-                  </span>
-                  <select
-                    value={studyId}
-                    onChange={(e) => {
-                      setStudyId(e.target.value)
-                      setPlacing(null)
-                    }}
-                    className="mt-1 w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
-                  >
-                    <option value="">— Choose a study —</option>
-                    {regionStudies.map((st) => (
-                      <option key={st.id} value={st.id}>
-                        {st.name}
-                      </option>
+                <>
+                  <label className="block">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+                      Search study, nerve or recording site
+                    </span>
+                    <div className="relative mt-1">
+                      <input
+                        value={studyQuery}
+                        onChange={(e) => setStudyQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Escape') setStudyQuery('')
+                        }}
+                        placeholder="e.g. ulnar, APB, sensory, C8"
+                        className="w-full rounded-md border border-line bg-surface px-3 py-2 pr-16 text-sm text-ink focus:border-accent focus:outline-none"
+                      />
+                      {studyQuery.trim() && (
+                        <button
+                          onClick={() => setStudyQuery('')}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-2 py-0.5 text-xs font-semibold text-accent hover:underline"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </label>
+
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-muted">
+                      {studyMatches.length} of {regionStudies.length} studies
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-muted">Group by</span>
+                      {(
+                        [
+                          ['nerve', 'Nerve'],
+                          ['region', 'Region'],
+                        ] as const
+                      ).map(([key, label]) => (
+                        <button
+                          key={key}
+                          onClick={() => setStudyGroupBy(key)}
+                          className={`rounded-md border px-2 py-0.5 text-xs font-semibold ${
+                            studyGroupBy === key
+                              ? 'border-accent bg-accent-soft text-accent'
+                              : 'border-line text-muted hover:text-ink'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="max-h-72 overflow-y-auto rounded-md border border-line">
+                    {studyGroups.length === 0 && (
+                      <p className="px-3 py-2 text-sm text-muted">
+                        No study in this region matches “{studyQuery.trim()}”.
+                      </p>
+                    )}
+                    {studyGroups.map(([group, list]) => (
+                      <div key={group}>
+                        <p className="sticky top-0 bg-paper px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                          {group}
+                        </p>
+                        {list.map((st) => {
+                          const active = st.id === studyId
+                          const short = abbrFor(st.id)[0]
+                          return (
+                            <button
+                              key={st.id}
+                              onClick={() => {
+                                setStudyId(st.id)
+                                setPlacing(null)
+                              }}
+                              className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm ${
+                                active ? 'bg-accent-soft text-accent' : 'text-ink hover:bg-paper'
+                              }`}
+                            >
+                              <span className="truncate" title={st.name}>
+                                {st.name}
+                              </span>
+                              <span className="flex shrink-0 items-center gap-1.5">
+                                {short && (
+                                  <span className="rounded border border-line px-1 text-[10px] font-semibold text-muted">
+                                    {short}
+                                  </span>
+                                )}
+                                <span className="text-[10px] font-semibold uppercase text-muted">
+                                  {st.type}
+                                </span>
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
                     ))}
-                  </select>
-                  <span className="mt-1 block text-xs text-muted">
-                    {regionStudies.length} studies in this region
-                  </span>
-                </label>
+                  </div>
+                </>
               )}
 
               {mode === 'emg' && (

@@ -175,6 +175,43 @@ async function main() {
       }
     }
 
+    // -- check 6: the NCS study index covers every study, and only real ids -
+    //
+    // Nerve conduction mode highlights the recording muscle from this table
+    // rather than from a click. A study missing from it silently highlights
+    // nothing; a stale muscle id silently highlights nothing. Both look like
+    // "the model just doesn't show that one", so they are checked here.
+    const ncs = await loadTsModule(path.join('src', 'data', 'nerveGuide.ts'), tmp)
+    const index = await loadTsModule(path.join('src', 'data', 'ncsStudyIndex.ts'), tmp)
+    const studies = ncs.NERVE_STUDIES ?? []
+    const studyIndex = index.NCS_STUDY_INDEX ?? {}
+    const muscleIds = new Set(muscles.map((m) => m.id))
+
+    for (const study of studies) {
+      const entry = studyIndex[study.id]
+      if (!entry) {
+        fail(
+          `NCS study "${study.id}" is not in NCS_STUDY_INDEX. Add it — with muscles: [] if it records from skin or from a site chosen per patient.`,
+        )
+        continue
+      }
+      if (!entry.nerve) fail(`NCS study "${study.id}" has no nerve in NCS_STUDY_INDEX.`)
+      for (const id of entry.muscles) {
+        if (!muscleIds.has(id)) {
+          fail(`NCS study "${study.id}" records from muscle id "${id}", which is not in EMG_MUSCLES.`)
+        }
+      }
+    }
+    const studyIds = new Set(studies.map((s) => s.id))
+    for (const id of Object.keys(studyIndex)) {
+      if (!studyIds.has(id)) fail(`NCS_STUDY_INDEX has an entry for "${id}", which is not a study.`)
+    }
+    notes.push(
+      `${studies.length} NCS studies indexed, ${
+        Object.values(studyIndex).filter((e) => e.muscles.length > 0).length
+      } with a recording muscle to highlight`,
+    )
+
     // -- check 5: every shipped asset is recorded in LICENSES-3D.md --------
     if (existsSync(MODELS_DIR)) {
       const licenceText = existsSync(LICENSES) ? readFileSync(LICENSES, 'utf8') : ''

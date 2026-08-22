@@ -77,9 +77,6 @@ export interface ViewerProps {
   onMarkerScreenPositions?: (
     p: Record<string, { x: number; y: number; visible: boolean }>,
   ) => void
-  /** NCS only: measure the straight line from the stimulator cathode to G1. */
-  showDistance?: boolean
-  onDistance?: (mm: number | null) => void
   /**
    * When true, a click places a needle instead of selecting a muscle. The
    * captured point and direction are in the LOCAL space of the mesh that was
@@ -99,6 +96,16 @@ export interface ViewerProps {
    * stay locked to their own muscle.
    */
   anyStructure?: boolean
+  /**
+   * Whether clicking anatomy changes the selection. Off in nerve conduction
+   * mode, where the highlight comes from the study's recording site and a
+   * click that overrode it would contradict the technique text on screen.
+   */
+  selectable?: boolean
+  /** Left-drag pans instead of orbiting. Right-drag and two fingers always pan. */
+  panMode?: boolean
+  /** Bumping this number returns the camera to the region's default pose. */
+  resetSignal?: number
 }
 
 /**
@@ -151,18 +158,23 @@ function Model({
   markers,
   activeMarkerId,
   onMarkerScreenPositions,
-  showDistance,
-  onDistance,
   placingNeedle,
   onPlaceNeedle,
   onPlaceRejected,
   anyStructure,
-}: Omit<ViewerProps, 'camera'>) {
+  selectable = true,
+}: Omit<ViewerProps, 'camera' | 'panMode'>) {
   const { scene } = useGLTF(glbPath, '/draco/')
   const invalidate = useThree((s) => s.invalidate)
   const [hovered, setHovered] = useState<string | null>(null)
   const [selectionFocus, setSelectionFocus] = useState<THREE.Vector3 | null>(null)
   const [selectionRadius, setSelectionRadius] = useState(0)
+
+  // Switching to a mode that doesn't select must not leave a hover tint behind
+  // on whatever the pointer happened to be over.
+  useEffect(() => {
+    if (!selectable) setHovered(null)
+  }, [selectable])
 
   // One clone per model, so materials we recolour don't leak into the cache.
   const root = useMemo(() => scene.clone(true), [scene])
@@ -322,8 +334,12 @@ function Model({
     const owner = ownerName(e.object, known)
     if (owner === null) return          // bones and unmapped structures are inert
     e.stopPropagation()
-    setHovered(owner)
+    // Naming what's under the pointer stays useful even where clicking does
+    // nothing, so the label is kept; only the hover tint and the pointer
+    // cursor — the affordances that promise a click — are dropped.
     onHoverName(prettyMeshName(owner))
+    if (!selectable && !placingNeedle) return
+    setHovered(owner)
     document.body.style.cursor = 'pointer'
   }
 
@@ -376,6 +392,7 @@ function Model({
       return
     }
 
+    if (!selectable) return
     const owner = ownerName(e.object, known)
     const target = owner ? meshToTarget[owner] : undefined
     if (!target) return
@@ -392,8 +409,6 @@ function Model({
           markers={markers}
           activeId={activeMarkerId}
           onScreenPositions={onMarkerScreenPositions}
-          showDistance={showDistance}
-          onDistance={onDistance}
         />
       )}
       <CutCamera
@@ -466,9 +481,11 @@ function CutCamera({
 function CameraRig({
   pose,
   controls,
+  resetSignal,
 }: {
   pose: CameraPose
   controls: React.RefObject<OrbitControlsImpl>
+  resetSignal?: number
 }) {
   const camera = useThree((s) => s.camera)
   const invalidate = useThree((s) => s.invalidate)
@@ -481,12 +498,12 @@ function CameraRig({
       controls.current.update()
     }
     invalidate()
-  }, [pose, camera, controls, invalidate])
+  }, [pose, resetSignal, camera, controls, invalidate])
 
   return null
 }
 
-export function ViewerCanvas({ glbPath, camera, ...rest }: ViewerProps) {
+export function ViewerCanvas({ glbPath, camera, panMode, resetSignal, ...rest }: ViewerProps) {
   const controls = useRef<OrbitControlsImpl>(null)
 
   return (
@@ -508,17 +525,37 @@ export function ViewerCanvas({ glbPath, camera, ...rest }: ViewerProps) {
         <Model glbPath={glbPath} {...rest} />
       </Suspense>
 
-      <CameraRig pose={camera} controls={controls} />
+      <CameraRig pose={camera} controls={controls} resetSignal={resetSignal} />
 
+      {/*
+        Panning. The target is set by CameraRig on mount and on region change,
+        NOT passed as a prop here: a `target` prop is re-applied on re-render,
+        which snapped a panned view back to the model's centre and made panning
+        look broken.
+
+        screenSpacePanning keeps the drag in the plane of the screen, which is
+        what "move the foot into view" means; the default pans along the ground
+        plane and slides the model away from the camera instead.
+      */}
       <OrbitControls
         ref={controls}
         makeDefault
-        target={camera.target}
         enableDamping
         dampingFactor={0.08}
         minDistance={0.04}
         maxDistance={4}
+        enablePan
+        screenSpacePanning
+        panSpeed={1.1}
         keyPanSpeed={12}
+        mouseButtons={{
+          LEFT: panMode ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE,
+          MIDDLE: THREE.MOUSE.DOLLY,
+          RIGHT: panMode ? THREE.MOUSE.ROTATE : THREE.MOUSE.PAN,
+        }}
+        // Two fingers zoom AND pan together, which is what a phone user
+        // expects; one finger keeps rotating.
+        touches={{ ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN }}
       />
     </Canvas>
   )

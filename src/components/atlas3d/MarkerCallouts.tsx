@@ -144,11 +144,10 @@ export function MarkerCallouts({
               {title(m)}
             </span>
           </div>
-          {m.kind === 'stim' && (
-            <p className="text-[10px] font-medium leading-snug text-muted">
-              Cathode {Math.round(m.spinDeg)}°
-            </p>
-          )}
+          {/* The cathode's bearing is shown by the probe on the model, not as
+              a number here: a degree reading off an arbitrary zero is not
+              something anyone repeats at the bedside, and it crowded out the
+              note. The authoring slider still sets it. */}
           {m.note && (
             <p className="mt-0.5 line-clamp-2 text-[10px] leading-snug text-muted">{m.note}</p>
           )}
