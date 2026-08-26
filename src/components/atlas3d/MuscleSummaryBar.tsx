@@ -4,8 +4,9 @@
 //
 // It carries the facts you want in view WHILE looking at the anatomy — name,
 // roots, plexus chain, nerve, action — laid out horizontally so it costs one
-// or two lines instead of a card, plus the insertion line underneath, which is
-// the sentence a fellow is actually reading when they aim a needle.
+// or two lines instead of a card, plus the insertion line underneath — the
+// sentence a fellow is actually reading when they aim a needle — and the
+// pitfalls for that muscle directly beneath it.
 //
 // Because this exists, the identity card that used to sit under the model is
 // switched off there (MuscleDetail's `showIdentity`), and the needle
@@ -34,11 +35,14 @@ export function SummaryBar({
   sub,
   parts,
   footer,
+  footers,
 }: {
   name: string
   sub?: string | null
   parts: Array<{ label: string; value?: string | null }>
+  /** Full-width lines under the details, in order. Empty values are dropped. */
   footer?: { label: string; value: string } | null
+  footers?: Array<{ label: string; value?: string | null; tone?: 'ink' | 'caution' }>
 }) {
   const shown = parts.filter((p) => p.value)
   return (
@@ -67,14 +71,24 @@ export function SummaryBar({
         </div>
       )}
 
-      {footer && (
-        <p className="mt-1.5 text-sm text-ink">
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted">
-            {footer.label}{' '}
-          </span>
-          {footer.value}
-        </p>
-      )}
+      {[...(footer ? [{ label: footer.label, value: footer.value, tone: 'ink' as const }] : []),
+        ...(footers ?? [])]
+        .filter((f) => f.value)
+        .map((f) => (
+          <p
+            key={f.label}
+            className={`mt-1.5 text-sm ${f.tone === 'caution' ? 'text-amber-800' : 'text-ink'}`}
+          >
+            <span
+              className={`text-xs font-semibold uppercase tracking-wide ${
+                f.tone === 'caution' ? 'text-amber-700' : 'text-muted'
+              }`}
+            >
+              {f.label}{' '}
+            </span>
+            {f.value}
+          </p>
+        ))}
     </div>
   )
 }
@@ -94,6 +108,10 @@ export function MuscleSummaryBar({ muscle }: { muscle: EmgMuscle }) {
         { label: 'Action', value: muscle.action },
       ]}
       footer={muscle.localization ? { label: 'Insertion', value: muscle.localization } : null}
+      // Pitfalls sit directly under the insertion line: what to avoid belongs
+      // beside where to go in, not in a card further down the page that a
+      // reader has already scrolled past by the time they aim the needle.
+      footers={[{ label: 'Pitfalls', value: muscle.pitfalls, tone: 'caution' }]}
     />
   )
 }

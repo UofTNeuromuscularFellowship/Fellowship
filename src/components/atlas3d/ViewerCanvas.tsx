@@ -111,6 +111,11 @@ export interface ViewerProps {
    * middle of the canvas, without changing the angle or the zoom.
    */
   centreSignal?: number
+  /**
+   * Step zoom from the toolbar buttons. `seq` must change for the step to fire;
+   * `factor` below 1 moves the camera closer, above 1 further away.
+   */
+  zoomCommand?: { seq: number; factor: number }
 }
 
 /**
@@ -526,6 +531,39 @@ function CutCamera({
   return null
 }
 
+/**
+ * The + and − buttons. Scroll-wheel zoom is fine on a mouse and awkward on a
+ * trackpad, and invisible to anyone who has not tried it, so the same movement
+ * is available as a button: slide the camera along the line to the target.
+ *
+ * Clamped to the same limits OrbitControls enforces for the wheel, so a button
+ * cannot put the camera somewhere dragging could not.
+ */
+function ZoomCamera({ command }: { command?: { seq: number; factor: number } }) {
+  const camera = useThree((s) => s.camera)
+  const controls = useThree((s) => s.controls) as OrbitControlsImpl | null
+  const invalidate = useThree((s) => s.invalidate)
+  const last = useRef<number | undefined>(undefined)
+
+  useEffect(() => {
+    if (!command || command.seq === last.current) return
+    last.current = command.seq
+    if (!controls) return
+    const offset = camera.position.clone().sub(controls.target)
+    const distance = offset.length()
+    if (distance === 0) return
+    const next = Math.min(
+      controls.maxDistance,
+      Math.max(controls.minDistance, distance * command.factor),
+    )
+    camera.position.copy(controls.target).addScaledVector(offset.normalize(), next)
+    controls.update()
+    invalidate()
+  }, [command, camera, controls, invalidate])
+
+  return null
+}
+
 function CameraRig({
   pose,
   controls,
@@ -551,7 +589,14 @@ function CameraRig({
   return null
 }
 
-export function ViewerCanvas({ glbPath, camera, panMode, resetSignal, ...rest }: ViewerProps) {
+export function ViewerCanvas({
+  glbPath,
+  camera,
+  panMode,
+  resetSignal,
+  zoomCommand,
+  ...rest
+}: ViewerProps) {
   const controls = useRef<OrbitControlsImpl>(null)
 
   return (
@@ -574,6 +619,7 @@ export function ViewerCanvas({ glbPath, camera, panMode, resetSignal, ...rest }:
       </Suspense>
 
       <CameraRig pose={camera} controls={controls} resetSignal={resetSignal} />
+      <ZoomCamera command={zoomCommand} />
 
       {/*
         Panning. The target is set by CameraRig on mount and on region change,

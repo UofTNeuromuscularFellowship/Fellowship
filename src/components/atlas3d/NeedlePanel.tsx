@@ -78,14 +78,13 @@ export function NeedlePanel({
   onSetActive: (id: string | null) => void
   onSave: (
     id: string,
-    patch: { depthMm?: number; spinDeg?: number; label?: string; note?: string },
+    patch: { spinDeg?: number; label?: string; note?: string },
   ) => void
   onApprove: (id: string, approved: boolean) => void
   onDelete: (id: string) => void
   busy: boolean
   error: string | null
 }) {
-  const [depthDraft, setDepthDraft] = useState<Record<string, string>>({})
   const [noteDraft, setNoteDraft] = useState<Record<string, string>>({})
   const [labelDraft, setLabelDraft] = useState<Record<string, string>>({})
   const [newApproach, setNewApproach] = useState('')
@@ -302,7 +301,6 @@ export function NeedlePanel({
         {markers.map((m) => {
           const approved = m.status === 'approved'
           const mayPublish = canPublishMarker(role, userId, m)
-          const depthValue = depthDraft[m.id] ?? String(m.depthMm)
           return (
             <div
               key={m.id}
@@ -332,25 +330,6 @@ export function NeedlePanel({
               </div>
 
               <div className="mt-3 flex flex-wrap items-end gap-3">
-                {m.kind === 'needle' && (
-                <label className="block">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-muted">
-                    Depth (mm)
-                  </span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={150}
-                    step={1}
-                    value={depthValue}
-                    onChange={(e) =>
-                      setDepthDraft((d) => ({ ...d, [m.id]: e.target.value }))
-                    }
-                    className="mt-1 w-24 rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink focus:border-accent focus:outline-none"
-                  />
-                </label>
-                )}
-
                 {m.kind === 'stim' && (
                   <label className="block">
                     <span className="text-xs font-semibold uppercase tracking-wide text-muted">
@@ -373,19 +352,6 @@ export function NeedlePanel({
                       Turn the probe so the black cathode faces the recording electrode.
                     </span>
                   </label>
-                )}
-
-                {m.kind === 'needle' && (
-                <button
-                  onClick={() => {
-                    const v = Number(depthValue)
-                    if (Number.isFinite(v) && v > 0 && v <= 150) onSave(m.id, { depthMm: v })
-                  }}
-                  disabled={busy || depthValue === String(m.depthMm)}
-                  className="rounded-md border border-line px-3 py-1.5 text-xs font-semibold text-accent disabled:cursor-not-allowed disabled:text-muted/50"
-                >
-                  Save depth
-                </button>
                 )}
 
                 {mayPublish && (
@@ -488,8 +454,8 @@ export function NeedlePanel({
 
               {approved && (
                 <p className="mt-2 text-xs text-muted">
-                  Moving this marker or changing its depth returns it to draft and needs
-                  approving again. Editing the notes does not.
+                  Moving this marker returns it to draft and needs approving again. Editing
+                  the notes does not.
                 </p>
               )}
             </div>

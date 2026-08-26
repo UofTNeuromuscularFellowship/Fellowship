@@ -19,39 +19,41 @@ build output showing as untracked.
 
 WHAT IS IN IT
 
-1. Renaming an approach (new)
-   - "Rename" beside "New approach" in the authoring panel. Type anything;
-     every marker in that approach moves to the new name.
-   - So the triceps chips can read Lateral Head / Long Head / Medial Head
-     instead of leaving the lateral head under "Standard".
-   - Refused if the name is already used for that muscle or study, and only
-     offered on approaches whose markers you are allowed to edit.
+1. Viewer control bar (new)
+   - Rotate | Pan (one either/or pair, the live one highlighted), Zoom in,
+     Zoom out, Centre, Reset — icons with labels, in one row above the model.
+   - A hint line that follows the mode: "Drag to rotate · right-drag or two
+     fingers to pan · scroll to zoom".
 
-2. Switching between approaches (new)
-   - Approach chips under the summary bar, visible to everyone, not just
-     faculty. Choosing one swaps the marker on the model and the note beside
-     it. EMG now shows each approach's authored label and note, as nerve
-     conduction already did.
+2. Needle depth removed from EMG authoring (new)
+   - No depth field, no Save depth. Depth stays in the written technique.
 
-3. "Centre" button (new)
-   - Slides the view so the highlighted muscle sits in the middle, keeping
-     your angle and zoom. Next to "Reset view".
+3. Pitfalls & cautions moved (new)
+   - Now an amber line directly under INSERTION in the title box at the top.
+     The separate card lower down is gone.
 
-4. Library
+4. Renaming an approach
+   - "Rename" beside "New approach" — every marker in that approach moves to
+     the new name, so the triceps can read Lateral Head / Long Head / Medial
+     Head instead of leaving one under "Standard".
+
+5. Switching between approaches
+   - Approach chips under the title box, visible to everyone, not just faculty.
+     Each approach shows its own authored note.
+
+6. Library
    - Read / Download / Remove keep their own right-hand column and never wrap
-     under the title. File name out of the subtitle; size moved beside the
-     buttons.
+     under the title. File name out of the subtitle; size beside the buttons.
 
-5. Supervisors can publish their own atlas markers
+7. Supervisors can publish their own atlas markers
    - Approve, edit and remove markers they placed — not anyone else's.
-   - Fixes a Delete button that looked like it worked but did nothing.
 
-6. Library and Feedback review restored to the nav
+8. Library and Feedback review restored to the nav
 
-7. The 3D atlas work from the last few days
+9. The rest of the 3D atlas work
    - NCS highlights the study's recording muscle instead of click-to-select;
-     study search and grouping by nerve; panning; cathode degree readout and
-     the cathode-to-G1 distance feature both removed.
+     study search and grouping by nerve; cathode degree readout and the
+     cathode-to-G1 distance feature both removed.
 
 DATABASE
 

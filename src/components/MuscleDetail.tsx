@@ -28,6 +28,7 @@ export function MuscleDetail({
   muscle,
   showDiagram = true,
   showIdentity = true,
+  showPitfalls = true,
 }: {
   muscle: EmgMuscle
   /**
@@ -42,6 +43,12 @@ export function MuscleDetail({
    * card underneath just pushes the needle-localization detail down the page.
    */
   showIdentity?: boolean
+  /**
+   * The 3D Atlas turns this off as well: pitfalls are shown in the summary
+   * strip directly under the insertion line, where what to avoid sits beside
+   * where to go in. The text atlas keeps the card.
+   */
+  showPitfalls?: boolean
 }) {
   const chain = chainParts(muscle)
   return (
@@ -95,7 +102,7 @@ export function MuscleDetail({
         />
       )}
 
-      {muscle.pitfalls && (
+      {showPitfalls && muscle.pitfalls && (
         <Card>
           <div className="px-5 py-4">
             <h3 className="font-display text-sm font-semibold text-ink">Pitfalls &amp; cautions</h3>

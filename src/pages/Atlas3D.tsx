@@ -21,6 +21,7 @@ import { NeedlePanel } from '../components/atlas3d/NeedlePanel'
 import type { ElectrodeKind } from '../components/atlas3d/MarkerShapes'
 import { MarkerCallouts, type ScreenPos } from '../components/atlas3d/MarkerCallouts'
 import { MuscleSummaryBar, SummaryBar } from '../components/atlas3d/MuscleSummaryBar'
+import { ViewerToolbar } from '../components/atlas3d/ViewerToolbar'
 import { NERVE_STUDIES, type NerveStudy } from '../data/nerveGuide'
 import { abbrFor, nerveFor, recordingMusclesFor } from '../data/ncsStudyIndex'
 import { useAuth } from '../context/AuthContext'
@@ -169,6 +170,7 @@ export default function Atlas3D() {
   const [studyGroupBy, setStudyGroupBy] = useState<'nerve' | 'region'>('nerve')
   const [resetSignal, setResetSignal] = useState(0)
   const [centreSignal, setCentreSignal] = useState(0)
+  const [zoomCommand, setZoomCommand] = useState({ seq: 0, factor: 1 })
 
   const { profile } = useAuth()
   const mayAuthor = canAuthorMarkers(profile?.role)
@@ -450,6 +452,9 @@ export default function Atlas3D() {
           meshName: p.meshName,
           local: p.local,
           direction: p.direction,
+          // The needle drawn on the model is a fixed 15 mm shaft: the atlas
+          // shows WHERE the needle goes in, and the depth for each muscle is
+          // in the written technique. There is no depth control any more.
           depthMm: placingKind === 'needle' ? 15 : null,
         },
         profile.id,
@@ -466,7 +471,7 @@ export default function Atlas3D() {
 
   async function patchMarker(
     id: string,
-    patch: { depthMm?: number; label?: string; note?: string; status?: 'draft' | 'approved' },
+    patch: { spinDeg?: number; label?: string; note?: string; status?: 'draft' | 'approved' },
   ) {
     setMarkerBusy(true)
     setMarkerError(null)
@@ -528,8 +533,8 @@ export default function Atlas3D() {
             sub={
               region?.ready
                 ? mode === 'emg'
-                  ? `Right limb · ${mappedCount} of ${regionMuscles.length} muscles selectable · drag to rotate, right-drag or two fingers to pan, scroll to zoom`
-                  : 'Right limb · the recording muscle for the chosen study is highlighted · drag to rotate, right-drag or two fingers to pan, scroll to zoom'
+                  ? `Right limb · ${mappedCount} of ${regionMuscles.length} muscles selectable`
+                  : 'Right limb · the recording muscle for the chosen study is highlighted'
                 : 'Model not built yet'
             }
             action={
@@ -583,31 +588,6 @@ export default function Atlas3D() {
               />
               Cross-section
             </label>
-            {/* Right-drag and two-finger drag always pan. This makes it
-                reachable with one button — a trackpad with no right click
-                otherwise leaves distal limbs stuck off-screen when zoomed in. */}
-            <label className="flex items-center gap-2 text-sm text-ink">
-              <input
-                type="checkbox"
-                checked={panMode}
-                onChange={(e) => setPanMode(e.target.checked)}
-                className="h-4 w-4 rounded border-line text-accent focus:ring-accent"
-              />
-              Drag to pan
-            </label>
-            <button
-              onClick={() => setCentreSignal((n) => n + 1)}
-              className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold text-muted hover:text-ink"
-              title="Slide the view so the highlighted structure sits in the middle, keeping the current angle and zoom"
-            >
-              Centre
-            </button>
-            <button
-              onClick={() => setResetSignal((n) => n + 1)}
-              className="rounded-md border border-line px-2.5 py-1 text-xs font-semibold text-muted hover:text-ink"
-            >
-              Reset view
-            </button>
             {selectedId && mode === 'emg' && (
               <button
                 onClick={() => setSelectedId('')}
@@ -621,6 +601,16 @@ export default function Atlas3D() {
           {/* Identity strip: the facts worth having in view while looking at
               the model. Because it is here, MuscleDetail's identity card is
               switched off below and the localization card moves to the top. */}
+          <ViewerToolbar
+            panMode={panMode}
+            onPanMode={setPanMode}
+            onZoomIn={() => setZoomCommand((z) => ({ seq: z.seq + 1, factor: 0.8 }))}
+            onZoomOut={() => setZoomCommand((z) => ({ seq: z.seq + 1, factor: 1.25 }))}
+            onCentre={() => setCentreSignal((n) => n + 1)}
+            onReset={() => setResetSignal((n) => n + 1)}
+            canCentre={selectionCentre !== null}
+          />
+
           {mode === 'emg' && current && <MuscleSummaryBar muscle={current} />}
 
           {mode === 'ncs' && currentStudy && (
@@ -755,6 +745,7 @@ export default function Atlas3D() {
                   panMode={panMode}
                   resetSignal={resetSignal}
                   centreSignal={centreSignal}
+                  zoomCommand={zoomCommand}
                   onHoverName={setHoverLabel}
                   layers={layers}
                   isolate={isolate}
@@ -1155,7 +1146,13 @@ export default function Atlas3D() {
             </Card>
           )}
 
-          <MuscleDetail muscle={current} showDiagram={false} showIdentity={false} />
+          <MuscleDetail
+            muscle={current}
+            showDiagram={false}
+            showIdentity={false}
+            /* Pitfalls moved up into the summary strip, beside the insertion line. */
+            showPitfalls={false}
+          />
 
 
           {mayAuthor && (
