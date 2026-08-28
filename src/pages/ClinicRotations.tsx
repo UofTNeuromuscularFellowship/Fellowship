@@ -30,6 +30,25 @@ interface TallyRow { fellow_id: string; fellow_label: string; provider_name: str
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
 
+// One entry per distinct clinic (site + supervisor). Full class strings are
+// required here — Tailwind only generates classes it can see in the source.
+const CLINIC_COLORS = [
+  { cell: 'bg-sky-50', chip: 'bg-sky-100 text-sky-900' },
+  { cell: 'bg-emerald-50', chip: 'bg-emerald-100 text-emerald-900' },
+  { cell: 'bg-amber-50', chip: 'bg-amber-100 text-amber-900' },
+  { cell: 'bg-violet-50', chip: 'bg-violet-100 text-violet-900' },
+  { cell: 'bg-rose-50', chip: 'bg-rose-100 text-rose-900' },
+  { cell: 'bg-teal-50', chip: 'bg-teal-100 text-teal-900' },
+  { cell: 'bg-indigo-50', chip: 'bg-indigo-100 text-indigo-900' },
+  { cell: 'bg-orange-50', chip: 'bg-orange-100 text-orange-900' },
+  { cell: 'bg-lime-50', chip: 'bg-lime-100 text-lime-900' },
+  { cell: 'bg-fuchsia-50', chip: 'bg-fuchsia-100 text-fuchsia-900' },
+  { cell: 'bg-cyan-50', chip: 'bg-cyan-100 text-cyan-900' },
+  { cell: 'bg-stone-100', chip: 'bg-stone-200 text-stone-900' },
+]
+const clinicKeyOf = (site: string | null, provider: string | null) =>
+  site ? `${site}|${provider ?? ''}` : null
+
 export default function ClinicRotations() {
   const { profile } = useAuth()
   const isManager = profile?.role === 'director' || profile?.role === 'admin'
@@ -73,6 +92,10 @@ export default function ClinicRotations() {
       const { data: cat } = await supabase.from('clinic_template').select('id, provider_name, provider_id, weekday, site_code, fellow_capacity, recurrence, specific_dates')
       setCatalog((cat as ClinicCat[]) ?? [])
     } else if (isFellow && profile) {
+      // Fellows see their own away dates rendered as "AWAY" on the grid.
+      const { data: aw } = await supabase.from('fellow_away_dates')
+        .select('fellow_id, away_date').eq('fellow_id', profile.id).gte('away_date', today)
+      setAway((aw as AwayDate[]) ?? [])
       setFellows([{ id: profile.id, full_name: profile.full_name }])
     }
   }
@@ -90,6 +113,20 @@ export default function ClinicRotations() {
   const byCell = useMemo(() => {
     const m = new Map<string, Rotation>()
     for (const r of rotations) if (r.fellow_id) m.set(`${r.fellow_id}|${r.rotation_date}`, r)
+    return m
+  }, [rotations])
+
+  // Each distinct clinic (site + supervisor) gets a stable colour, assigned
+  // alphabetically so it doesn't shuffle between reloads.
+  const clinicColors = useMemo(() => {
+    const keys = new Set<string>()
+    for (const r of rotations) {
+      if (r.is_away || r.is_protected || r.status === 'cancelled') continue
+      const k = clinicKeyOf(r.site_code, r.provider_name)
+      if (k) keys.add(k)
+    }
+    const m = new Map<string, (typeof CLINIC_COLORS)[number]>()
+    Array.from(keys).sort().forEach((k, i) => m.set(k, CLINIC_COLORS[i % CLINIC_COLORS.length]))
     return m
   }, [rotations])
 
@@ -146,8 +183,13 @@ export default function ClinicRotations() {
     return 'Needs review'
   }
 
-  function cellContent(r: Rotation | undefined) {
-    if (!r) return <span className="text-muted">—</span>
+  function cellContent(r: Rotation | undefined, fellowAway: boolean) {
+    if (!r) {
+      if (fellowAway) {
+        return <span className="text-xs font-semibold uppercase tracking-wide text-amber-600" title="Marked away — no clinic scheduled">Away</span>
+      }
+      return <span className="text-muted">—</span>
+    }
     if (r.is_away) return <span className="font-medium text-red-600">Fellow Away</span>
     if (r.is_protected) return <span className="text-ink">Protected</span>
     if (r.status === 'cancelled') {
@@ -226,6 +268,20 @@ export default function ClinicRotations() {
         </>
       )}
 
+      {(isManager || isFellow) && weeks.length > 0 && clinicColors.size > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-xs font-semibold uppercase tracking-wider text-muted">Clinics</span>
+          {Array.from(clinicColors.entries()).map(([k, c]) => {
+            const [site, provider] = k.split('|')
+            return (
+              <span key={k} className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${c.chip}`}>
+                {site}{provider ? ` · ${provider}` : ''}
+              </span>
+            )
+          })}
+        </div>
+      )}
+
       {(isManager || isFellow) && (weeks.length === 0 ? (
         <Card><p className="px-5 py-4 text-sm text-muted">No upcoming clinic assignments.</p></Card>
       ) : (
@@ -250,8 +306,12 @@ export default function ClinicRotations() {
                       <td className="p-2 font-medium text-ink">{f.full_name}</td>
                       {dates.map((dt, i) => {
                         const r = byCell.get(`${f.id}|${dt}`)
+                        const fellowAway = awaySet.has(`${f.id}|${dt}`)
                         const conflictReason = conflictReasonFor(r, f.id, dt)
                         const conflicted = conflictReason !== null
+                        const clinicColor = r && !r.is_away && !r.is_protected && r.status !== 'cancelled'
+                          ? clinicColors.get(clinicKeyOf(r.site_code, r.provider_name) ?? '')
+                          : undefined
                         const canCancel = supervisorCanCancel(r, dt)
                         const clickable = isManager || canCancel
                         return (
@@ -262,8 +322,8 @@ export default function ClinicRotations() {
                               : undefined
                             }
                             title={canCancel ? 'Your clinic — click to cancel it if something has come up' : conflictReason ?? undefined}
-                            className={`p-2 ${clickable ? 'cursor-pointer hover:bg-paper' : ''} ${conflicted ? 'bg-red-50 outline outline-1 outline-red-400' : ''}`}>
-                            {cellContent(r)}
+                            className={`p-2 ${clickable ? 'cursor-pointer hover:bg-paper' : ''} ${conflicted ? 'bg-red-50 outline outline-1 outline-red-400' : clinicColor ? clinicColor.cell : ''}`}>
+                            {cellContent(r, fellowAway)}
                             {conflictReason && isManager && (
                               <span className="mt-0.5 block break-words text-[10px] font-semibold leading-snug text-red-600">⚠ {conflictReason}</span>
                             )}
