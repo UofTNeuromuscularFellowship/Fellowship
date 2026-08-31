@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
-import { shortDate } from '../lib/format'
+import { shortDate, localToday } from '../lib/format'
 import { useActingProvider, ActingForBar } from '../components/ActingFor'
 
 interface Rotation {
@@ -29,6 +29,15 @@ interface TemplateSlot { id: string; template_id: string; weekday: number; slot_
 interface TallyRow { fellow_id: string; fellow_label: string; provider_name: string; n: number }
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
+// Indexed by Date#getDay(), for labelling a column from its own date.
+const WEEKDAYS_FULL = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/** Local-calendar YYYY-MM-DD — toISOString() would give the UTC date, which in
+ *  Toronto rolls over to tomorrow at 20:00 and shifts the whole grid. */
+function isoLocal(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
 
 // One entry per distinct clinic (site + supervisor). Full class strings are
 // required here — Tailwind only generates classes it can see in the source.
@@ -68,7 +77,7 @@ export default function ClinicRotations() {
   const [editCell, setEditCell] = useState<{ fellowId: string; date: string; weekday: number } | null>(null)
   const [cancelTarget, setCancelTarget] = useState<Rotation | null>(null)
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
 
   async function load() {
     const horizon = new Date(); horizon.setDate(horizon.getDate() + 90)
@@ -76,7 +85,7 @@ export default function ClinicRotations() {
       .from('clinic_rotations')
       .select('id, fellow_id, fellow_label, rotation_date, site_code, provider_name, supervisor_id, status, is_draft, is_protected, has_conflict, is_away, notes')
       .gte('rotation_date', today)
-      .lte('rotation_date', horizon.toISOString().slice(0, 10))
+      .lte('rotation_date', isoLocal(horizon))
       .order('rotation_date')
     if (isFellow && profile) q = q.eq('fellow_id', profile.id).eq('is_draft', false)
     if (!isFellow && !isManager) q = q.eq('is_draft', false)
@@ -394,19 +403,41 @@ export default function ClinicRotations() {
   )
 }
 
+/** The Monday (local) of the week a date falls in. */
+function mondayOf(iso: string): string {
+  const d = new Date(iso + 'T00:00:00')
+  const day = d.getDay() === 0 ? 7 : d.getDay()
+  const mon = new Date(d); mon.setDate(d.getDate() - day + 1)
+  return isoLocal(mon)
+}
+
+function addDays(iso: string, n: number): string {
+  const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n)
+  return isoLocal(d)
+}
+
+/** The clinic page as a supervisor or their assistant sees it.
+ *
+ *  A provider runs only one or two clinics in a week, so a grid of fellows
+ *  against days would be almost all blanks. This is the other way round:
+ *  weeks run down the page, Mon-Fri across it, and each day names the clinic
+ *  and the fellow in it — the same shape as a wall calendar. Clicking a day
+ *  cancels that clinic. */
 function ProviderClinicsList({ providerId, onError }: { providerId: string; onError: (m: string) => void }) {
   const [rows, setRows] = useState<Rotation[]>([])
   const [loading, setLoading] = useState(true)
   const [cancelTarget, setCancelTarget] = useState<Rotation | null>(null)
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
 
   async function load() {
     setLoading(true)
+    const horizon = new Date(); horizon.setDate(horizon.getDate() + 90)
     const { data, error } = await supabase
       .from('clinic_rotations')
       .select('id, fellow_id, fellow_label, rotation_date, site_code, provider_name, supervisor_id, status, is_draft, is_protected, has_conflict, is_away, notes')
       .eq('supervisor_id', providerId)
       .gte('rotation_date', today)
+      .lte('rotation_date', isoLocal(horizon))
       .order('rotation_date')
     if (error) onError(error.message)
     setRows((data as Rotation[]) ?? [])
@@ -414,37 +445,98 @@ function ProviderClinicsList({ providerId, onError }: { providerId: string; onEr
   }
   useEffect(() => { load() }, [providerId]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Mon-Fri unless a clinic actually falls on a weekend, in which case that
+  // day earns a column for every week so the table stays rectangular.
+  const offsets = useMemo(() => {
+    const base = [0, 1, 2, 3, 4]
+    const weekend = new Set<number>()
+    for (const r of rows) {
+      const d = new Date(r.rotation_date + 'T00:00:00').getDay()
+      if (d === 6) weekend.add(5)
+      if (d === 0) weekend.add(6)
+    }
+    return [...base, ...Array.from(weekend).sort()]
+  }, [rows])
+
+  const weeks = useMemo(() => Array.from(new Set(rows.map((r) => mondayOf(r.rotation_date)))).sort(), [rows])
+
+  // date -> the clinics running that day (capacity can put two fellows in one)
+  const byDate = useMemo(() => {
+    const m = new Map<string, Rotation[]>()
+    for (const r of rows) m.set(r.rotation_date, [...(m.get(r.rotation_date) ?? []), r])
+    return m
+  }, [rows])
+
   return (
     <Card>
       <CardHeader
-        title="Upcoming clinics"
-        sub="Cancel a clinic if it can't run — the fellowship director, program admin, and the assigned fellow are notified"
+        title="Your upcoming clinics"
+        sub="Click a day to cancel that clinic if it can't run — the fellowship director, program admin, and the assigned fellow are notified"
       />
       {loading ? (
         <p className="px-5 py-4 text-sm text-muted">Loading…</p>
-      ) : rows.length === 0 ? (
+      ) : weeks.length === 0 ? (
         <p className="px-5 py-4 text-sm text-muted">No upcoming clinics.</p>
       ) : (
-        <ul className="divide-y divide-line">
-          {rows.map((r) => {
-            const cancellable = !r.is_draft && !r.is_protected && !r.is_away && r.status !== 'cancelled'
-            return (
-              <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 text-sm">
-                <div>
-                  <span className={r.status === 'cancelled' ? 'font-medium text-muted line-through' : 'font-medium text-ink'}>{r.site_code}</span>
-                  {r.fellow_label && <span className="text-muted"> — {r.fellow_label}</span>}
-                  {r.status === 'cancelled' && (
-                    <span className="ml-2 rounded-full border border-red-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-600">Cancelled</span>
-                  )}
-                  <span className="ml-2 text-muted">{shortDate(r.rotation_date)}</span>
-                </div>
-                {cancellable && (
-                  <button onClick={() => setCancelTarget(r)} className="text-xs font-medium text-red-600 hover:underline">Cancel clinic</button>
-                )}
-              </li>
-            )
-          })}
-        </ul>
+        <div className="overflow-x-auto px-2 py-2">
+          <table className="w-full min-w-[720px] table-fixed border-collapse text-sm">
+            <thead>
+              <tr>
+                <th className="w-28 p-2 text-left text-xs font-semibold uppercase tracking-wider text-muted">Week</th>
+                {offsets.map((o) => (
+                  <th key={o} className="p-2 text-left text-xs font-semibold uppercase tracking-wider text-muted">
+                    {WEEKDAYS_FULL[(o + 1) % 7]}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {weeks.map((weekStart) => (
+                <tr key={weekStart} className="border-t border-line align-top">
+                  <td className="p-2 text-xs font-medium text-muted">Week of {shortDate(weekStart)}</td>
+                  {offsets.map((o) => {
+                    const dt = addDays(weekStart, o)
+                    const cell = byDate.get(dt) ?? []
+                    return (
+                      <td key={o} className={`p-2 ${dt === today ? 'bg-accent-soft/40' : ''}`}>
+                        <span className={`nums block text-[11px] leading-tight ${dt === today ? 'font-semibold text-accent' : 'text-muted'}`}>
+                          {shortDate(dt)}{dt === today ? ' · Today' : ''}
+                        </span>
+                        {cell.map((r) => {
+                          const cancellable = !r.is_draft && !r.is_protected && !r.is_away && r.status !== 'cancelled' && dt >= today
+                          return (
+                            <div key={r.id}
+                              onClick={cancellable ? () => setCancelTarget(r) : undefined}
+                              title={cancellable ? "Your clinic — click to cancel it if something has come up" : undefined}
+                              className={`mt-1 rounded-md px-1.5 py-1 ${cancellable ? 'cursor-pointer bg-accent-soft hover:ring-1 hover:ring-accent' : 'bg-paper'}`}>
+                              {r.is_away ? (
+                                <span className="block text-xs font-semibold uppercase tracking-wide text-amber-600">Fellow away</span>
+                              ) : r.is_protected ? (
+                                <span className="block text-xs text-muted">Protected</span>
+                              ) : (
+                                <>
+                                  <span className={`block text-xs font-semibold leading-tight ${r.status === 'cancelled' ? 'text-muted line-through' : 'text-ink'}`}>
+                                    {r.site_code ?? 'TBD'}
+                                  </span>
+                                  {r.fellow_label && (
+                                    <span className="block text-[11px] leading-tight text-muted">{r.fellow_label}</span>
+                                  )}
+                                  {r.status === 'cancelled' && (
+                                    <span className="block text-[10px] font-semibold uppercase tracking-wide text-red-600">Cancelled</span>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </td>
+                    )
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       {cancelTarget && (
         <CancelClinicModal
@@ -512,7 +604,7 @@ function CancelClinicModal({ rotation, onClose, onDone, onError }: {
 function GeneratorToolbar({ draftCount, onChanged, onError }: {
   draftCount: number; onChanged: () => void; onError: (m: string) => void
 }) {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
   const [from, setFrom] = useState(today)
   const [to, setTo] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
