@@ -1,27 +1,62 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
-import { shortDate } from '../lib/format'
+import { shortDate, localToday } from '../lib/format'
+import { useActingProvider } from '../components/ActingFor'
 
-interface Rotation { id: string; rotation_date: string; site_code: string; fellow_label: string | null; is_draft: boolean; status: string }
+interface Rotation {
+  id: string
+  rotation_date: string
+  site_code: string | null
+  fellow_id: string | null
+  fellow_label: string | null
+  provider_name: string | null
+  supervisor_id: string | null
+  is_draft: boolean
+  is_protected: boolean | null
+  is_away: boolean | null
+  status: string
+}
 interface Session { id: string; session_date: string; start_time: string; topic: string | null; provider_name: string | null; zoom_link: string | null; status: string }
 interface Notification { id: string; title: string; body: string | null; link: string | null; created_at: string }
 interface Publication { title: string; journal: string | null; authors: string | null; published_on: string | null; url: string | null }
 
-function weekRange(): { from: string; to: string } {
-  const now = new Date()
+const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/** Local-calendar YYYY-MM-DD. Not toISOString() — that is the UTC date, which
+ *  in Toronto rolls over to tomorrow at 20:00 and shifts the whole week. */
+function isoLocal(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+function weekRange(now: Date = new Date()): { from: string; to: string } {
   const day = now.getDay() === 0 ? 7 : now.getDay()
   const mon = new Date(now); mon.setDate(now.getDate() - day + 1)
   const sun = new Date(mon); sun.setDate(mon.getDate() + 6)
-  return { from: mon.toISOString().slice(0, 10), to: sun.toISOString().slice(0, 10) }
+  return { from: isoLocal(mon), to: isoLocal(sun) }
+}
+
+function weekdayOf(iso: string): string {
+  return WEEKDAY_LABELS[new Date(iso + 'T00:00:00').getDay()]
 }
 
 export default function Dashboard() {
   const { profile } = useAuth()
   const isFellow = profile?.role === 'fellow'
   const isDirector = profile?.role === 'director'
+  const isManager = profile?.role === 'director' || profile?.role === 'admin'
+  const isSupervisor = profile?.role === 'supervisor'
+  const acting = useActingProvider(profile?.role, profile?.id)
+  const isAssistant = acting.isAssistant
+  // The provider whose clinics count as "yours" — the user themselves, or the
+  // linked provider an assistant is acting for.
+  const viewerProviderId = isAssistant ? acting.effectiveId : (profile?.id ?? null)
+  // Supervisors and assistants see only that provider's clinics; a director
+  // sees every fellow's week.
+  const providerScopeId = isManager || isFellow ? null : viewerProviderId
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [rotations, setRotations] = useState<Rotation[]>([])
   const [sessions, setSessions] = useState<Session[]>([])
@@ -29,9 +64,32 @@ export default function Dashboard() {
   const [pubsLoading, setPubsLoading] = useState(true)
   const [pendingVacations, setPendingVacations] = useState(0)
 
+  const { from: weekFrom, to: weekTo } = useMemo(() => weekRange(), [])
+  const today = localToday()
+
+  // Clinics are fetched on their own because the scope depends on the acting
+  // provider, which for assistants resolves a beat after the profile does.
   useEffect(() => {
     if (!profile) return
-    const { from, to } = weekRange()
+    if ((isSupervisor || isAssistant) && !providerScopeId) {
+      if (!acting.loading) setRotations([])
+      return
+    }
+    let rq = supabase
+      .from('clinic_rotations')
+      .select('id, rotation_date, site_code, fellow_id, fellow_label, provider_name, supervisor_id, is_draft, is_protected, is_away, status')
+      .gte('rotation_date', weekFrom).lte('rotation_date', weekTo)
+      .eq('is_draft', false)
+      .order('rotation_date')
+    if (isFellow) rq = rq.eq('fellow_id', profile.id)
+    else if (providerScopeId) rq = rq.eq('supervisor_id', providerScopeId)
+    rq.then(({ data }) => setRotations((data as Rotation[]) ?? []))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id, providerScopeId, acting.loading])
+
+  useEffect(() => {
+    if (!profile) return
+    const { from, to } = { from: weekFrom, to: weekTo }
 
     supabase
       .from('notifications')
@@ -40,15 +98,6 @@ export default function Dashboard() {
       .eq('user_id', profile.id)
       .order('created_at', { ascending: false })
       .then(({ data }) => setNotifications((data as Notification[]) ?? []))
-
-    let rq = supabase
-      .from('clinic_rotations')
-      .select('id, rotation_date, site_code, fellow_label, is_draft, status')
-      .gte('rotation_date', from).lte('rotation_date', to)
-      .eq('is_draft', false)
-      .order('rotation_date')
-    if (isFellow) rq = rq.eq('fellow_id', profile.id)
-    rq.then(({ data }) => setRotations((data as Rotation[]) ?? []))
 
     supabase
       .from('teaching_sessions')
@@ -70,6 +119,33 @@ export default function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id])
 
+  // Mon–Fri columns, plus any weekend date that actually has a clinic on it so
+  // nothing is silently dropped from the grid.
+  const weekDays = useMemo(() => {
+    const days: string[] = []
+    const mon = new Date(weekFrom + 'T00:00:00')
+    for (let i = 0; i < 5; i++) { const d = new Date(mon); d.setDate(mon.getDate() + i); days.push(isoLocal(d)) }
+    const extra = rotations.map((r) => r.rotation_date).filter((d) => !days.includes(d))
+    return Array.from(new Set([...days, ...extra])).sort()
+  }, [weekFrom, rotations])
+
+  // One row per fellow appearing in the week, each keyed date -> clinics.
+  const clinicRows = useMemo(() => {
+    const m = new Map<string, { key: string; label: string; cells: Map<string, Rotation[]> }>()
+    for (const r of rotations) {
+      const key = r.fellow_id ?? r.fellow_label ?? 'unassigned'
+      const row = m.get(key) ?? { key, label: r.fellow_label ?? 'Unassigned', cells: new Map<string, Rotation[]>() }
+      row.cells.set(r.rotation_date, [...(row.cells.get(r.rotation_date) ?? []), r])
+      m.set(key, row)
+    }
+    return Array.from(m.values()).sort((a, b) => a.label.localeCompare(b.label))
+  }, [rotations])
+
+  const myClinicCount = useMemo(
+    () => (viewerProviderId ? rotations.filter((r) => r.supervisor_id === viewerProviderId && r.status !== 'cancelled').length : 0),
+    [rotations, viewerProviderId]
+  )
+
   async function acknowledge(n: Notification) {
     await supabase.from('notifications').update({ read_at: new Date().toISOString() }).eq('id', n.id)
     setNotifications(notifications.filter((x) => x.id !== n.id))
@@ -83,7 +159,9 @@ export default function Dashboard() {
         <h1 className="font-display text-2xl font-bold text-ink">
           Welcome, {profile.full_name.split(' ')[0]}
         </h1>
-        <p className="mt-1 text-sm text-muted">Your week at a glance</p>
+        <p className="mt-1 text-sm text-muted">
+          {isFellow ? 'Your week at a glance' : 'The fellowship week at a glance'}
+        </p>
       </div>
 
       {notifications.length > 0 && (
@@ -120,28 +198,28 @@ export default function Dashboard() {
         </Card>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader title="Clinics this week" action={<Link to="/clinic" className="text-sm font-medium text-accent hover:underline">Full schedule</Link>} />
-          {rotations.length === 0 ? (
-            <p className="px-5 py-4 text-sm text-muted">No clinics scheduled this week.</p>
-          ) : (
-            <ul className="divide-y divide-line">
-              {rotations.map((r) => (
-                <li key={r.id} className="flex items-baseline justify-between px-5 py-3 text-sm">
-                  <span className={r.status === 'cancelled' ? 'font-medium text-muted line-through' : 'font-medium text-ink'}>
-                    {r.site_code}{!isFellow && r.fellow_label ? ` — ${r.fellow_label}` : ''}
-                  </span>
-                  <span className="text-muted">
-                    {r.status === 'cancelled' && <span className="mr-2 font-semibold text-red-600">Cancelled</span>}
-                    {shortDate(r.rotation_date)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
+      <Card>
+        <CardHeader
+          title={isFellow ? 'Your clinics this week' : 'Clinic schedule this week'}
+          sub={
+            isFellow
+              ? undefined
+              : isManager
+                ? `Every fellow's clinic week${myClinicCount > 0 ? ` — ${myClinicCount} of these ${myClinicCount === 1 ? 'day is' : 'days are'} supervised by you, marked “With you.”` : '. None of this week\'s clinics are supervised by you.'}`
+                : 'The clinics you are supervising this week, and the fellow assigned to each.'
+          }
+          action={<Link to="/clinic" className="text-sm font-medium text-accent hover:underline">Full schedule</Link>}
+        />
+        <ClinicWeekGrid
+          rows={clinicRows}
+          weekDays={weekDays}
+          today={today}
+          showFellowColumn={!isFellow}
+          viewerProviderId={viewerProviderId}
+        />
+      </Card>
 
+      <div>
         <Card>
           <CardHeader title="Teaching this week" action={<Link to="/teaching" className="text-sm font-medium text-accent hover:underline">Full schedule</Link>} />
           {sessions.length === 0 ? (
@@ -208,6 +286,91 @@ export default function Dashboard() {
           </ul>
         )}
       </Card>
+    </div>
+  )
+}
+
+export interface ClinicRow { key: string; label: string; cells: Map<string, Rotation[]> }
+
+/** The dashboard's Mon–Fri clinic grid: one column per weekday, one row per
+ *  fellow (fellows see a single unlabelled row of their own days). */
+export function ClinicWeekGrid({ rows, weekDays, today, showFellowColumn, viewerProviderId }: {
+  rows: ClinicRow[]
+  weekDays: string[]
+  today: string
+  showFellowColumn: boolean
+  viewerProviderId: string | null
+}) {
+  if (rows.length === 0) {
+    return <p className="px-5 py-4 text-sm text-muted">No clinics scheduled this week.</p>
+  }
+  return (
+    <div className="overflow-x-auto px-2 py-2">
+      <table className={`w-full ${showFellowColumn ? 'min-w-[680px]' : 'min-w-[560px]'} table-fixed border-collapse text-sm`}>
+        <thead>
+          <tr>
+            {showFellowColumn && <th className="w-32 p-2 text-left text-xs font-semibold uppercase tracking-wider text-muted">Fellow</th>}
+            {weekDays.map((dt) => (
+              <th key={dt} className={`p-2 text-left text-xs font-semibold uppercase tracking-wider ${dt === today ? 'text-accent' : 'text-muted'}`}>
+                {weekdayOf(dt)}
+                <span className={`block font-normal normal-case ${dt === today ? 'text-accent' : 'text-muted'}`}>
+                  {shortDate(dt)}{dt === today ? ' · Today' : ''}
+                </span>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.key} className="border-t border-line align-top">
+              {showFellowColumn && <td className="p-2 font-medium text-ink">{row.label}</td>}
+              {weekDays.map((dt) => {
+                const cell = row.cells.get(dt) ?? []
+                return (
+                  <td key={dt} className={`p-2 ${dt === today ? 'bg-accent-soft/40' : ''}`}>
+                    {cell.length === 0 ? (
+                      <span className="text-muted">—</span>
+                    ) : (
+                      cell.map((r) => (
+                        <ClinicCell key={r.id} r={r} mine={Boolean(viewerProviderId) && r.supervisor_id === viewerProviderId} />
+                      ))
+                    )}
+                  </td>
+                )
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/** One clinic inside a day cell of the dashboard week grid. */
+function ClinicCell({ r, mine }: { r: Rotation; mine: boolean }) {
+  if (r.is_away) {
+    return <span className="block text-xs font-semibold uppercase tracking-wide text-amber-600">Away</span>
+  }
+  if (r.is_protected) {
+    return <span className="block text-xs text-muted">Protected</span>
+  }
+  // The teal outline means "an active clinic of yours" — a cancelled one is
+  // no longer yours to attend, so it drops the highlight.
+  const highlight = mine && r.status !== 'cancelled'
+  return (
+    <div className={`rounded-md px-1.5 py-1 ${highlight ? 'bg-accent-soft ring-1 ring-accent' : ''}`}>
+      <span className={`block text-xs font-semibold leading-tight ${r.status === 'cancelled' ? 'text-muted line-through' : 'text-ink'}`}>
+        {r.site_code ?? 'TBD'}
+      </span>
+      {r.provider_name && r.provider_name !== r.site_code && (
+        <span className="block text-[11px] leading-tight text-muted">{r.provider_name}</span>
+      )}
+      {r.status === 'cancelled' && (
+        <span className="block text-[10px] font-semibold uppercase tracking-wide text-red-600">Cancelled</span>
+      )}
+      {highlight && (
+        <span className="mt-0.5 block text-[10px] font-semibold uppercase tracking-wide text-accent">With you</span>
+      )}
     </div>
   )
 }
