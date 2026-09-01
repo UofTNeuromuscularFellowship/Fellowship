@@ -29,8 +29,8 @@ interface TemplateSlot { id: string; template_id: string; weekday: number; slot_
 interface TallyRow { fellow_id: string; fellow_label: string; provider_name: string; n: number }
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
-// Indexed by Date#getDay(), for labelling a column from its own date.
-const WEEKDAYS_FULL = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+// Calendar column headings, indexed by offset from Monday.
+const WEEKDAY_COLS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 /** Local-calendar YYYY-MM-DD — toISOString() would give the UTC date, which in
  *  Toronto rolls over to tomorrow at 20:00 and shifts the whole grid. */
@@ -403,41 +403,58 @@ export default function ClinicRotations() {
   )
 }
 
-/** The Monday (local) of the week a date falls in. */
-function mondayOf(iso: string): string {
-  const d = new Date(iso + 'T00:00:00')
-  const day = d.getDay() === 0 ? 7 : d.getDay()
-  const mon = new Date(d); mon.setDate(d.getDate() - day + 1)
-  return isoLocal(mon)
-}
-
 function addDays(iso: string, n: number): string {
   const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n)
   return isoLocal(d)
 }
 
+/** 'YYYY-MM' -> the next / previous one. */
+function shiftMonth(ym: string, by: number): string {
+  const [y, m] = ym.split('-').map(Number)
+  const d = new Date(y, m - 1 + by, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+function monthLabel(ym: string): string {
+  const [y, m] = ym.split('-').map(Number)
+  return new Date(y, m - 1, 1).toLocaleDateString('en-CA', { month: 'long', year: 'numeric' })
+}
+
+/** The Mondays of every week that touches the given month, in order. */
+function weeksOfMonth(ym: string): string[] {
+  const [y, m] = ym.split('-').map(Number)
+  const first = new Date(y, m - 1, 1)
+  const last = new Date(y, m, 0)
+  const dow = first.getDay() === 0 ? 7 : first.getDay()
+  const cursor = new Date(first); cursor.setDate(first.getDate() - dow + 1)
+  const out: string[] = []
+  while (cursor <= last) { out.push(isoLocal(cursor)); cursor.setDate(cursor.getDate() + 7) }
+  return out
+}
+
 /** The clinic page as a supervisor or their assistant sees it.
  *
- *  A provider runs only one or two clinics in a week, so a grid of fellows
- *  against days would be almost all blanks. This is the other way round:
- *  weeks run down the page, Mon-Fri across it, and each day names the clinic
- *  and the fellow in it — the same shape as a wall calendar. Clicking a day
- *  cancels that clinic. */
+ *  One month at a time, laid out like a wall calendar: weekday columns, one
+ *  row per week of that month — including the weeks with nothing booked, so
+ *  the shape of the month stays readable. A day with no clinic is simply
+ *  blank. Clicking a clinic cancels it. */
 function ProviderClinicsList({ providerId, onError }: { providerId: string; onError: (m: string) => void }) {
   const [rows, setRows] = useState<Rotation[]>([])
   const [loading, setLoading] = useState(true)
   const [cancelTarget, setCancelTarget] = useState<Rotation | null>(null)
   const today = localToday()
+  const thisMonth = today.slice(0, 7)
+  const [month, setMonth] = useState(thisMonth)
 
+  // Every clinic this provider runs, fetched once — a provider's schedule is
+  // small enough that paging through months needs no further round trips.
   async function load() {
     setLoading(true)
-    const horizon = new Date(); horizon.setDate(horizon.getDate() + 90)
     const { data, error } = await supabase
       .from('clinic_rotations')
       .select('id, fellow_id, fellow_label, rotation_date, site_code, provider_name, supervisor_id, status, is_draft, is_protected, has_conflict, is_away, notes')
       .eq('supervisor_id', providerId)
-      .gte('rotation_date', today)
-      .lte('rotation_date', isoLocal(horizon))
+      .eq('is_draft', false)
       .order('rotation_date')
     if (error) onError(error.message)
     setRows((data as Rotation[]) ?? [])
@@ -445,20 +462,20 @@ function ProviderClinicsList({ providerId, onError }: { providerId: string; onEr
   }
   useEffect(() => { load() }, [providerId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Mon-Fri unless a clinic actually falls on a weekend, in which case that
-  // day earns a column for every week so the table stays rectangular.
-  const offsets = useMemo(() => {
-    const base = [0, 1, 2, 3, 4]
-    const weekend = new Set<number>()
-    for (const r of rows) {
-      const d = new Date(r.rotation_date + 'T00:00:00').getDay()
-      if (d === 6) weekend.add(5)
-      if (d === 0) weekend.add(6)
-    }
-    return [...base, ...Array.from(weekend).sort()]
-  }, [rows])
+  // Selectable months: every month from the first clinic to the last, with no
+  // gaps, so the arrows step through a continuous range. Always includes the
+  // current month even when nothing is booked in it.
+  const monthOptions = useMemo(() => {
+    const seen = [thisMonth, ...rows.map((r) => r.rotation_date.slice(0, 7))].sort()
+    const out: string[] = []
+    for (let ym = seen[0]; ym <= seen[seen.length - 1]; ym = shiftMonth(ym, 1)) out.push(ym)
+    return out
+  }, [rows, thisMonth])
 
-  const weeks = useMemo(() => Array.from(new Set(rows.map((r) => mondayOf(r.rotation_date)))).sort(), [rows])
+  // Keep the selection inside the range once the data arrives.
+  useEffect(() => {
+    if (monthOptions.length > 0 && !monthOptions.includes(month)) setMonth(monthOptions[0])
+  }, [monthOptions]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // date -> the clinics running that day (capacity can put two fellows in one)
   const byDate = useMemo(() => {
@@ -467,25 +484,60 @@ function ProviderClinicsList({ providerId, onError }: { providerId: string; onEr
     return m
   }, [rows])
 
+
+  // Mon–Fri, unless this month has a clinic on a weekend — then that day earns
+  // a column too rather than disappearing.
+  const offsets = useMemo(() => {
+    const weekend = new Set<number>()
+    for (const r of rows) {
+      if (r.rotation_date.slice(0, 7) !== month) continue
+      const d = new Date(r.rotation_date + 'T00:00:00').getDay()
+      if (d === 6) weekend.add(5)
+      if (d === 0) weekend.add(6)
+    }
+    return [0, 1, 2, 3, 4, ...Array.from(weekend).sort()]
+  }, [rows, month])
+
+  // Drop a leading or trailing week that shows no day of this month at all —
+  // when the 1st falls on a Saturday, the Mon–Fri view of that week is empty.
+  const weeks = useMemo(
+    () => weeksOfMonth(month).filter((ws) => offsets.some((o) => addDays(ws, o).slice(0, 7) === month)),
+    [month, offsets]
+  )
+
+  const idx = monthOptions.indexOf(month)
+  const navBtn = 'rounded-md border border-line px-2.5 py-1.5 text-sm font-medium text-ink hover:bg-paper disabled:opacity-40 disabled:hover:bg-transparent'
+
   return (
     <Card>
       <CardHeader
-        title="Your upcoming clinics"
-        sub="Click a day to cancel that clinic if it can't run — the fellowship director, program admin, and the assigned fellow are notified"
+        title="Your clinics"
+        sub="Click a clinic to cancel it if it can't run — the fellowship director, program admin, and the assigned fellow are notified"
       />
+      <div className="flex flex-wrap items-center gap-2 border-b border-line px-5 py-3">
+        <button type="button" className={navBtn} aria-label="Previous month"
+          disabled={idx <= 0} onClick={() => setMonth(monthOptions[idx - 1])}>←</button>
+        <select value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Month"
+          className="rounded-md border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink">
+          {monthOptions.map((ym) => <option key={ym} value={ym}>{monthLabel(ym)}</option>)}
+        </select>
+        <button type="button" className={navBtn} aria-label="Next month"
+          disabled={idx < 0 || idx >= monthOptions.length - 1} onClick={() => setMonth(monthOptions[idx + 1])}>→</button>
+        {month !== thisMonth && monthOptions.includes(thisMonth) && (
+          <button type="button" onClick={() => setMonth(thisMonth)}
+            className="text-sm font-medium text-accent hover:underline">Today</button>
+        )}
+      </div>
       {loading ? (
         <p className="px-5 py-4 text-sm text-muted">Loading…</p>
-      ) : weeks.length === 0 ? (
-        <p className="px-5 py-4 text-sm text-muted">No upcoming clinics.</p>
       ) : (
         <div className="overflow-x-auto px-2 py-2">
-          <table className="w-full min-w-[720px] table-fixed border-collapse text-sm">
+          <table className="w-full min-w-[640px] table-fixed border-collapse text-sm">
             <thead>
               <tr>
-                <th className="w-28 p-2 text-left text-xs font-semibold uppercase tracking-wider text-muted">Week</th>
                 {offsets.map((o) => (
                   <th key={o} className="p-2 text-left text-xs font-semibold uppercase tracking-wider text-muted">
-                    {WEEKDAYS_FULL[(o + 1) % 7]}
+                    {WEEKDAY_COLS[o]}
                   </th>
                 ))}
               </tr>
@@ -493,17 +545,20 @@ function ProviderClinicsList({ providerId, onError }: { providerId: string; onEr
             <tbody>
               {weeks.map((weekStart) => (
                 <tr key={weekStart} className="border-t border-line align-top">
-                  <td className="p-2 text-xs font-medium text-muted">Week of {shortDate(weekStart)}</td>
                   {offsets.map((o) => {
                     const dt = addDays(weekStart, o)
-                    const cell = byDate.get(dt) ?? []
+                    const outside = dt.slice(0, 7) !== month
+                    const cell = outside ? [] : (byDate.get(dt) ?? [])
+                    const isToday = dt === today && !outside
                     return (
-                      <td key={o} className={`p-2 ${dt === today ? 'bg-accent-soft/40' : ''}`}>
-                        <span className={`nums block text-[11px] leading-tight ${dt === today ? 'font-semibold text-accent' : 'text-muted'}`}>
-                          {shortDate(dt)}{dt === today ? ' · Today' : ''}
+                      <td key={o} className={`h-20 p-2 ${isToday ? 'bg-accent-soft/40' : ''}`}>
+                        <span className={`nums block text-xs leading-tight ${
+                          outside ? 'text-line' : isToday ? 'font-semibold text-accent' : 'text-muted'
+                        }`}>
+                          {Number(dt.slice(8, 10))}{isToday ? ' · Today' : ''}
                         </span>
                         {cell.map((r) => {
-                          const cancellable = !r.is_draft && !r.is_protected && !r.is_away && r.status !== 'cancelled' && dt >= today
+                          const cancellable = !r.is_protected && !r.is_away && r.status !== 'cancelled' && dt >= today
                           return (
                             <div key={r.id}
                               onClick={cancellable ? () => setCancelTarget(r) : undefined}
