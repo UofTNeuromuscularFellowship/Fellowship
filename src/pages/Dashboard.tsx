@@ -22,7 +22,6 @@ interface Rotation {
 interface Session { id: string; session_date: string; start_time: string; topic: string | null; provider_name: string | null; zoom_link: string | null; status: string }
 interface Notification { id: string; title: string; body: string | null; link: string | null; created_at: string }
 interface Publication { title: string; journal: string | null; authors: string | null; published_on: string | null; url: string | null; doi: string | null }
-interface PubGroup { key: string; label: string; publications: Publication[] }
 
 // U of T Libraries' my.access proxy. Sending the reader through it means the
 // publisher sees a subscribed institution, so paywalled full text opens after
@@ -72,7 +71,7 @@ export default function Dashboard() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [rotations, setRotations] = useState<Rotation[]>([])
   const [sessions, setSessions] = useState<Session[]>([])
-  const [pubGroups, setPubGroups] = useState<PubGroup[]>([])
+  const [pubs, setPubs] = useState<Publication[]>([])
   const [pubsLoading, setPubsLoading] = useState(true)
   const [pendingVacations, setPendingVacations] = useState(0)
 
@@ -120,7 +119,7 @@ export default function Dashboard() {
       .then(({ data }) => setSessions((data as Session[]) ?? []))
 
     supabase.functions.invoke('pubmed-digest').then(({ data }) => {
-      setPubGroups((data?.groups as PubGroup[]) ?? [])
+      setPubs((data?.publications as Publication[]) ?? [])
       setPubsLoading(false)
     }).catch(() => setPubsLoading(false))
 
@@ -275,7 +274,7 @@ export default function Dashboard() {
         <CalendarSubscribe userId={profile.id} />
       </div>
 
-      <InterestingReads groups={pubGroups} loading={pubsLoading} />
+      <InterestingReads publications={pubs} loading={pubsLoading} />
     </div>
   )
 }
@@ -365,55 +364,45 @@ function ClinicCell({ r, mine }: { r: Rotation; mine: boolean }) {
   )
 }
 
-/** The monthly journal digest. Each source keeps its own section: Muscle &
- *  Nerve indexes roughly ten times as many papers a month as the JAMA journals
- *  do on neuromuscular topics, so one date-sorted list would be all one
- *  journal. */
-function InterestingReads({ groups, loading }: { groups: PubGroup[]; loading: boolean }) {
+/** The reading list: all three journals pooled into one run of papers, newest
+ *  first. The journal name sits in each entry's byline, which is what tells
+ *  them apart now that they are no longer in separate sections. */
+function InterestingReads({ publications, loading }: { publications: Publication[]; loading: boolean }) {
   return (
     <Card>
       <CardHeader
         title="Interesting reads"
-        sub="Published in the last month. Titles open the full text through the U of T library — sign in with your UTORid when prompted."
+        sub="Muscle & Nerve, the Journal of Neuromuscular Diseases and the JAMA journals — checked weekly, each paper stays for a month. Titles open the full text through the U of T library; sign in with your UTORid when prompted."
       />
       {loading ? (
         <p className="px-5 py-4 text-sm text-muted">Checking for new publications…</p>
-      ) : groups.length === 0 ? (
-        <p className="px-5 py-4 text-sm text-muted">No publications to show right now.</p>
+      ) : publications.length === 0 ? (
+        <p className="px-5 py-4 text-sm text-muted">Nothing new in the last month.</p>
       ) : (
-        groups.map((g) => (
-          <div key={g.key} className="border-b border-line last:border-b-0">
-            <p className="px-5 pt-4 text-xs font-semibold uppercase tracking-wider text-muted">{g.label}</p>
-            {g.publications.length === 0 ? (
-              <p className="px-5 pb-4 pt-1 text-sm text-muted">Nothing new this month.</p>
-            ) : (
-              <ul className="divide-y divide-line">
-                {g.publications.map((p, i) => {
-                  const href = accessUrl(p)
-                  return (
-                    <li key={i} className="px-5 py-3 text-sm">
-                      {href ? (
-                        <a href={href} target="_blank" rel="noreferrer" className="font-medium text-ink hover:text-accent hover:underline">
-                          {p.title}
-                        </a>
-                      ) : (
-                        <span className="font-medium text-ink">{p.title}</span>
-                      )}
-                      <p className="mt-0.5 text-muted">
-                        {[p.authors, p.journal, p.published_on ? shortDate(p.published_on) : null].filter(Boolean).join(' · ')}
-                      </p>
-                      {p.url && (
-                        <a href={p.url} target="_blank" rel="noreferrer" className="text-xs font-medium text-accent hover:underline">
-                          Abstract on PubMed
-                        </a>
-                      )}
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-          </div>
-        ))
+        <ul className="divide-y divide-line">
+          {publications.map((p, i) => {
+            const href = accessUrl(p)
+            return (
+              <li key={i} className="px-5 py-3 text-sm">
+                {href ? (
+                  <a href={href} target="_blank" rel="noreferrer" className="font-medium text-ink hover:text-accent hover:underline">
+                    {p.title}
+                  </a>
+                ) : (
+                  <span className="font-medium text-ink">{p.title}</span>
+                )}
+                <p className="mt-0.5 text-muted">
+                  {[p.authors, p.journal, p.published_on ? shortDate(p.published_on) : null].filter(Boolean).join(' · ')}
+                </p>
+                {p.url && (
+                  <a href={p.url} target="_blank" rel="noreferrer" className="text-xs font-medium text-accent hover:underline">
+                    Abstract on PubMed
+                  </a>
+                )}
+              </li>
+            )
+          })}
+        </ul>
       )}
     </Card>
   )
