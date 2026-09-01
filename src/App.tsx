@@ -12,6 +12,7 @@ import Cases from './pages/Cases'
 import Competency from './pages/Competency'
 import Calculators from './pages/Calculators'
 import StudyTools from './pages/StudyTools'
+import TestDirectory from './pages/TestDirectory'
 import TeachingCases from './pages/TeachingCases'
 import Handbook from './pages/Handbook'
 import People from './pages/People'
@@ -60,6 +61,7 @@ export default function App() {
       <Route path="/competency" element={<Shell allow={['fellow', 'director', 'admin']}><Competency /></Shell>} />
       <Route path="/calculators" element={<Shell allow={['fellow', 'supervisor', 'director']}><Calculators /></Shell>} />
       <Route path="/study" element={<Shell allow={['fellow', 'supervisor', 'director']}><StudyTools /></Shell>} />
+      <Route path="/test-directory" element={<Shell allow={['fellow', 'supervisor', 'director']}><TestDirectory /></Shell>} />
       {/* The EMG atlas and NCS guide now live in the 3D Atlas, which carries
           the same clinical text beside the anatomy. Old links follow. */}
       <Route path="/emg-atlas" element={<Navigate to="/atlas-3d" replace />} />
