@@ -21,7 +21,19 @@ interface Rotation {
 }
 interface Session { id: string; session_date: string; start_time: string; topic: string | null; provider_name: string | null; zoom_link: string | null; status: string }
 interface Notification { id: string; title: string; body: string | null; link: string | null; created_at: string }
-interface Publication { title: string; journal: string | null; authors: string | null; published_on: string | null; url: string | null }
+interface Publication { title: string; journal: string | null; authors: string | null; published_on: string | null; url: string | null; doi: string | null }
+interface PubGroup { key: string; label: string; publications: Publication[] }
+
+// U of T Libraries' my.access proxy. Sending the reader through it means the
+// publisher sees a subscribed institution, so paywalled full text opens after
+// a UTORid sign-in instead of asking for a credit card.
+const UOFT_PROXY = 'https://login.library.utoronto.ca/index.php?url='
+
+/** Full text via the library where we know the DOI, the PubMed record otherwise. */
+function accessUrl(p: Publication): string | null {
+  const target = p.doi ? `https://doi.org/${p.doi}` : p.url
+  return target ? UOFT_PROXY + encodeURIComponent(target) : null
+}
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -60,7 +72,7 @@ export default function Dashboard() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [rotations, setRotations] = useState<Rotation[]>([])
   const [sessions, setSessions] = useState<Session[]>([])
-  const [pubs, setPubs] = useState<Publication[]>([])
+  const [pubGroups, setPubGroups] = useState<PubGroup[]>([])
   const [pubsLoading, setPubsLoading] = useState(true)
   const [pendingVacations, setPendingVacations] = useState(0)
 
@@ -108,7 +120,7 @@ export default function Dashboard() {
       .then(({ data }) => setSessions((data as Session[]) ?? []))
 
     supabase.functions.invoke('pubmed-digest').then(({ data }) => {
-      setPubs((data?.publications as Publication[]) ?? [])
+      setPubGroups((data?.groups as PubGroup[]) ?? [])
       setPubsLoading(false)
     }).catch(() => setPubsLoading(false))
 
@@ -263,29 +275,7 @@ export default function Dashboard() {
         <CalendarSubscribe userId={profile.id} />
       </div>
 
-      <Card>
-        <CardHeader title="Interesting reads" sub="Recent neuromuscular publications, refreshed weekly from PubMed" />
-        {pubsLoading ? (
-          <p className="px-5 py-4 text-sm text-muted">Checking for new publications…</p>
-        ) : pubs.length === 0 ? (
-          <p className="px-5 py-4 text-sm text-muted">Nothing new this week.</p>
-        ) : (
-          <ul className="divide-y divide-line">
-            {pubs.map((p, i) => (
-              <li key={i} className="px-5 py-3 text-sm">
-                {p.url ? (
-                  <a href={p.url} target="_blank" rel="noreferrer" className="font-medium text-ink hover:text-accent">{p.title}</a>
-                ) : (
-                  <span className="font-medium text-ink">{p.title}</span>
-                )}
-                <p className="mt-0.5 text-muted">
-                  {[p.authors, p.journal, p.published_on ? shortDate(p.published_on) : null].filter(Boolean).join(' · ')}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+      <InterestingReads groups={pubGroups} loading={pubsLoading} />
     </div>
   )
 }
@@ -372,6 +362,60 @@ function ClinicCell({ r, mine }: { r: Rotation; mine: boolean }) {
         <span className="mt-0.5 block text-[10px] font-semibold uppercase tracking-wide text-accent">With you</span>
       )}
     </div>
+  )
+}
+
+/** The monthly journal digest. Each source keeps its own section: Muscle &
+ *  Nerve indexes roughly ten times as many papers a month as the JAMA journals
+ *  do on neuromuscular topics, so one date-sorted list would be all one
+ *  journal. */
+function InterestingReads({ groups, loading }: { groups: PubGroup[]; loading: boolean }) {
+  return (
+    <Card>
+      <CardHeader
+        title="Interesting reads"
+        sub="Published in the last month. Titles open the full text through the U of T library — sign in with your UTORid when prompted."
+      />
+      {loading ? (
+        <p className="px-5 py-4 text-sm text-muted">Checking for new publications…</p>
+      ) : groups.length === 0 ? (
+        <p className="px-5 py-4 text-sm text-muted">No publications to show right now.</p>
+      ) : (
+        groups.map((g) => (
+          <div key={g.key} className="border-b border-line last:border-b-0">
+            <p className="px-5 pt-4 text-xs font-semibold uppercase tracking-wider text-muted">{g.label}</p>
+            {g.publications.length === 0 ? (
+              <p className="px-5 pb-4 pt-1 text-sm text-muted">Nothing new this month.</p>
+            ) : (
+              <ul className="divide-y divide-line">
+                {g.publications.map((p, i) => {
+                  const href = accessUrl(p)
+                  return (
+                    <li key={i} className="px-5 py-3 text-sm">
+                      {href ? (
+                        <a href={href} target="_blank" rel="noreferrer" className="font-medium text-ink hover:text-accent hover:underline">
+                          {p.title}
+                        </a>
+                      ) : (
+                        <span className="font-medium text-ink">{p.title}</span>
+                      )}
+                      <p className="mt-0.5 text-muted">
+                        {[p.authors, p.journal, p.published_on ? shortDate(p.published_on) : null].filter(Boolean).join(' · ')}
+                      </p>
+                      {p.url && (
+                        <a href={p.url} target="_blank" rel="noreferrer" className="text-xs font-medium text-accent hover:underline">
+                          Abstract on PubMed
+                        </a>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+        ))
+      )}
+    </Card>
   )
 }
 
