@@ -472,9 +472,12 @@ function ProviderClinicsList({ providerId, onError }: { providerId: string; onEr
     return out
   }, [rows, thisMonth])
 
-  // Keep the selection inside the range once the data arrives.
+  // Keep the selection inside the range — it can fall outside it when an
+  // assistant switches to a provider whose schedule covers different months.
+  // Land on the current month, which is always in the list, rather than on the
+  // oldest month of that provider's history.
   useEffect(() => {
-    if (monthOptions.length > 0 && !monthOptions.includes(month)) setMonth(monthOptions[0])
+    if (!monthOptions.includes(month)) setMonth(thisMonth)
   }, [monthOptions]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // date -> the clinics running that day (capacity can put two fellows in one)

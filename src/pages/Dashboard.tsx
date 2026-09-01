@@ -21,7 +21,19 @@ interface Rotation {
 }
 interface Session { id: string; session_date: string; start_time: string; topic: string | null; provider_name: string | null; zoom_link: string | null; status: string }
 interface Notification { id: string; title: string; body: string | null; link: string | null; created_at: string }
-interface Publication { title: string; journal: string | null; authors: string | null; published_on: string | null; url: string | null; doi: string | null }
+interface Publication {
+  pubmed_id: string
+  title: string
+  journal: string | null
+  authors: string | null
+  published_on: string | null
+  url: string | null
+  doi: string | null
+}
+/** A paper the reader has kept. Saved rows copy the article details rather
+ *  than pointing at `publications`, which is a rolling 30-day window whose rows
+ *  are deleted as they age out. */
+interface SavedPublication extends Publication { id: string; saved_at: string }
 
 // U of T Libraries' my.access proxy. Sending the reader through it means the
 // publisher sees a subscribed institution, so paywalled full text opens after
@@ -72,6 +84,7 @@ export default function Dashboard() {
   const [rotations, setRotations] = useState<Rotation[]>([])
   const [sessions, setSessions] = useState<Session[]>([])
   const [pubs, setPubs] = useState<Publication[]>([])
+  const [saved, setSaved] = useState<SavedPublication[]>([])
   const [pubsLoading, setPubsLoading] = useState(true)
   const [pendingVacations, setPendingVacations] = useState(0)
 
@@ -118,6 +131,13 @@ export default function Dashboard() {
       .order('session_date')
       .then(({ data }) => setSessions((data as Session[]) ?? []))
 
+    supabase
+      .from('saved_publications')
+      .select('id, pubmed_id, title, journal, authors, published_on, url, doi, saved_at')
+      .eq('user_id', profile.id)
+      .order('saved_at', { ascending: false })
+      .then(({ data }) => setSaved((data as SavedPublication[]) ?? []))
+
     supabase.functions.invoke('pubmed-digest').then(({ data }) => {
       setPubs((data?.publications as Publication[]) ?? [])
       setPubsLoading(false)
@@ -156,6 +176,31 @@ export default function Dashboard() {
     () => (viewerProviderId ? rotations.filter((r) => r.supervisor_id === viewerProviderId && r.status !== 'cancelled').length : 0),
     [rotations, viewerProviderId]
   )
+
+  const savedIds = useMemo(() => new Set(saved.map((s) => s.pubmed_id)), [saved])
+
+  // Optimistic on both sides: the row is cheap to re-fetch and a failed write
+  // simply leaves the star as it was on the next load.
+  async function savePublication(p: Publication) {
+    if (!profile || savedIds.has(p.pubmed_id)) return
+    const { data } = await supabase.from('saved_publications').insert({
+      user_id: profile.id,
+      pubmed_id: p.pubmed_id,
+      title: p.title,
+      journal: p.journal,
+      authors: p.authors,
+      published_on: p.published_on,
+      url: p.url,
+      doi: p.doi,
+    }).select('id, pubmed_id, title, journal, authors, published_on, url, doi, saved_at').single()
+    if (data) setSaved([data as SavedPublication, ...saved])
+  }
+
+  async function unsavePublication(pubmedId: string) {
+    if (!profile) return
+    await supabase.from('saved_publications').delete().eq('user_id', profile.id).eq('pubmed_id', pubmedId)
+    setSaved(saved.filter((s) => s.pubmed_id !== pubmedId))
+  }
 
   async function acknowledge(n: Notification) {
     await supabase.from('notifications').update({ read_at: new Date().toISOString() }).eq('id', n.id)
@@ -274,7 +319,19 @@ export default function Dashboard() {
         <CalendarSubscribe userId={profile.id} />
       </div>
 
-      <InterestingReads publications={pubs} loading={pubsLoading} />
+      <ReadingList
+        userId={profile.id}
+        saved={saved}
+        onRemove={(pubmedId) => setSaved(saved.filter((s) => s.pubmed_id !== pubmedId))}
+      />
+
+      <InterestingReads
+        publications={pubs}
+        loading={pubsLoading}
+        savedIds={savedIds}
+        onSave={savePublication}
+        onUnsave={unsavePublication}
+      />
     </div>
   )
 }
@@ -364,15 +421,112 @@ function ClinicCell({ r, mine }: { r: Rotation; mine: boolean }) {
   )
 }
 
-/** The reading list: all three journals pooled into one run of papers, newest
- *  first. The journal name sits in each entry's byline, which is what tells
- *  them apart now that they are no longer in separate sections. */
-function InterestingReads({ publications, loading }: { publications: Publication[]; loading: boolean }) {
+/** The star that keeps a paper. Filled means it is on the reader's list. */
+function SaveStar({ saved, onClick }: { saved: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={saved}
+      title={saved ? 'On your reading list — click to remove' : 'Save to your reading list'}
+      className={`shrink-0 rounded-md px-2 py-1 text-base leading-none transition-colors ${
+        saved ? 'text-accent hover:bg-accent-soft' : 'text-muted hover:bg-paper hover:text-accent'
+      }`}
+    >
+      {saved ? '★' : '☆'}
+      <span className="sr-only">{saved ? 'Remove from reading list' : 'Save to reading list'}</span>
+    </button>
+  )
+}
+
+/** Title, byline and the PubMed link — shared by the digest and the saved list
+ *  so a paper reads the same in both places. */
+function PublicationBody({ p }: { p: Publication }) {
+  const href = accessUrl(p)
+  return (
+    <div className="min-w-0">
+      {href ? (
+        <a href={href} target="_blank" rel="noreferrer" className="font-medium text-ink hover:text-accent hover:underline">
+          {p.title}
+        </a>
+      ) : (
+        <span className="font-medium text-ink">{p.title}</span>
+      )}
+      <p className="mt-0.5 text-muted">
+        {[p.authors, p.journal, p.published_on ? shortDate(p.published_on) : null].filter(Boolean).join(' · ')}
+      </p>
+      {p.url && (
+        <a href={p.url} target="_blank" rel="noreferrer" className="text-xs font-medium text-accent hover:underline">
+          Abstract on PubMed
+        </a>
+      )}
+    </div>
+  )
+}
+
+/** Papers this reader has kept. Private to them, and they outlive the digest:
+ *  the article details were copied when saved, so a paper stays here after it
+ *  has aged off Interesting Reads. */
+function ReadingList({ userId, saved, onRemove }: {
+  userId: string
+  saved: SavedPublication[]
+  onRemove: (pubmedId: string) => void
+}) {
+  const [busy, setBusy] = useState<string | null>(null)
+
+  async function remove(pubmedId: string) {
+    setBusy(pubmedId)
+    await supabase.from('saved_publications').delete().eq('user_id', userId).eq('pubmed_id', pubmedId)
+    setBusy(null)
+    onRemove(pubmedId)
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        title="My reading list"
+        sub={saved.length === 0
+          ? 'Star a paper below to keep it here. Saved papers stay after they drop off Interesting Reads, and only you can see them.'
+          : `${saved.length} saved paper${saved.length === 1 ? '' : 's'} — only you can see this list.`}
+      />
+      {saved.length === 0 ? (
+        <p className="px-5 py-4 text-sm text-muted">Nothing saved yet.</p>
+      ) : (
+        <ul className="divide-y divide-line">
+          {saved.map((p) => (
+            <li key={p.id} className="flex items-start justify-between gap-3 px-5 py-3 text-sm">
+              <PublicationBody p={p} />
+              <button
+                type="button"
+                onClick={() => remove(p.pubmed_id)}
+                disabled={busy === p.pubmed_id}
+                className="shrink-0 text-xs font-medium text-muted hover:text-red-600 disabled:opacity-50"
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  )
+}
+
+/** The digest: all three journals pooled into one run of papers, newest first.
+ *  The journal name sits in each entry's byline, which is what tells them apart
+ *  now that they are no longer in separate sections. */
+function InterestingReads({ publications, loading, savedIds, onSave, onUnsave }: {
+  publications: Publication[]
+  loading: boolean
+  savedIds: Set<string>
+  onSave: (p: Publication) => void
+  onUnsave: (pubmedId: string) => void
+}) {
   return (
     <Card>
       <CardHeader
         title="Interesting reads"
-        sub="Muscle & Nerve, the Journal of Neuromuscular Diseases and the JAMA journals — checked weekly, each paper stays for a month. Titles open the full text through the U of T library; sign in with your UTORid when prompted."
+        sub="Muscle & Nerve, the Journal of Neuromuscular Diseases and the JAMA journals — checked weekly, each paper stays for a month. Titles open the full text through the U of T library; star a paper to keep it on your reading list."
       />
       {loading ? (
         <p className="px-5 py-4 text-sm text-muted">Checking for new publications…</p>
@@ -380,25 +534,12 @@ function InterestingReads({ publications, loading }: { publications: Publication
         <p className="px-5 py-4 text-sm text-muted">Nothing new in the last month.</p>
       ) : (
         <ul className="divide-y divide-line">
-          {publications.map((p, i) => {
-            const href = accessUrl(p)
+          {publications.map((p) => {
+            const isSaved = savedIds.has(p.pubmed_id)
             return (
-              <li key={i} className="px-5 py-3 text-sm">
-                {href ? (
-                  <a href={href} target="_blank" rel="noreferrer" className="font-medium text-ink hover:text-accent hover:underline">
-                    {p.title}
-                  </a>
-                ) : (
-                  <span className="font-medium text-ink">{p.title}</span>
-                )}
-                <p className="mt-0.5 text-muted">
-                  {[p.authors, p.journal, p.published_on ? shortDate(p.published_on) : null].filter(Boolean).join(' · ')}
-                </p>
-                {p.url && (
-                  <a href={p.url} target="_blank" rel="noreferrer" className="text-xs font-medium text-accent hover:underline">
-                    Abstract on PubMed
-                  </a>
-                )}
+              <li key={p.pubmed_id} className="flex items-start justify-between gap-3 px-5 py-3 text-sm">
+                <PublicationBody p={p} />
+                <SaveStar saved={isSaved} onClick={() => (isSaved ? onUnsave(p.pubmed_id) : onSave(p))} />
               </li>
             )
           })}
