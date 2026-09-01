@@ -35,6 +35,7 @@ const SECTIONS: NavSection[] = [
       { to: '/calculators', label: 'EMG/NCS calculators', allow: ['fellow', 'supervisor', 'director'] },
       { to: '/study', label: 'Test your anatomy knowledge', allow: ['fellow', 'supervisor', 'director'] },
       { to: '/atlas-3d', label: '3D atlas', allow: ['fellow', 'supervisor', 'director'] },
+      { to: '/test-directory', label: 'Diagnostic test directory', allow: ['fellow', 'supervisor', 'director'] },
     ],
   },
   {
