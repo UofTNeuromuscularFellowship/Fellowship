@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
+import { ReadingList, useSavedPublications } from '../components/ReadingList'
 
 // pdf.js is a big dependency and most visits to this page are a download, not a
 // read. Loaded only when someone actually opens a document.
@@ -67,6 +68,8 @@ export default function Library() {
   const [query, setQuery] = useState('')
   const [reading, setReading] = useState<{ doc: LibraryDoc; url: string } | null>(null)
   const [opening, setOpening] = useState<string | null>(null)
+  // The reader's own saved papers, the same list the dashboard shows.
+  const { saved, unsave, loading: savedLoading } = useSavedPublications(profile?.id)
 
   async function load() {
     setLoading(true)
@@ -146,8 +149,9 @@ export default function Library() {
       <div>
         <h1 className="font-display text-2xl font-bold text-ink">Library</h1>
         <p className="mt-1 text-sm text-muted">
-          Reference texts and documents for the fellowship. Files are private to the portal — downloads use temporary
-          links and nothing here is reachable from the public internet.
+          Reference texts and documents for the fellowship, and the papers you have kept from Interesting Reads.
+          Files are private to the portal — downloads use temporary links and nothing here is reachable from the
+          public internet.
         </p>
       </div>
 
@@ -259,6 +263,13 @@ export default function Library() {
           </div>
         )}
       </Card>
+
+      <ReadingList
+        saved={saved}
+        loading={savedLoading}
+        onRemove={unsave}
+        emptyHint="Star a paper on the dashboard, under Interesting reads, and it will be kept here as well."
+      />
 
       {reading && (
         <Suspense
