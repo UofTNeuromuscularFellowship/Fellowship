@@ -33,9 +33,27 @@ interface DirectoryTest {
 /** Search synonyms: official gene names from mygene.info, plus curated
  *  antibody and biomarker nomenclature. Lets "spastin" find SPAST and
  *  "acetylcholine receptor" find AChR. */
-interface GeneTerm { symbol: string; full_name: string | null; aliases: string[] }
+interface GeneTerm {
+  symbol: string
+  full_name: string | null
+  aliases: string[]
+  /** Conditions the source directory itself states, from tests naming exactly
+   *  one condition. Attributable to them. */
+  condition_terms: string[]
+  /** Pairings the fellowship added where the source is silent — the bundled
+   *  requisitions list many diseases against many antibodies without saying
+   *  which pairs with which. Shown with a marker. */
+  added_conditions: string[]
+}
+
+/** Gene -> neuromuscular disease, from the Gene Table of Neuromuscular
+ *  Disorders. Cached in the portal and joined to the directory's symbols. */
+interface GenePhenotypes { symbol: string; gene_table_gene: string; phenotypes: string[]; source_version: string | null }
 
 const SOURCE_URL = 'https://canadian-neuro-lab-directory-5sln.vercel.app'
+const GENE_TABLE_URL = 'https://www.musclegenetable.fr'
+/** How many disease names to show per gene before collapsing the rest. */
+const SHOWN_DISEASES = 3
 
 export default function TestDirectory() {
   const [tests, setTests] = useState<DirectoryTest[]>([])
@@ -47,6 +65,8 @@ export default function TestDirectory() {
   const [lab, setLab] = useState('')
   const [openId, setOpenId] = useState<string | null>(null)
   const [terms, setTerms] = useState<Map<string, GeneTerm>>(new Map())
+  const [phenotypes, setPhenotypes] = useState<Map<string, GenePhenotypes>>(new Map())
+  const [geneTableVersion, setGeneTableVersion] = useState<string | null>(null)
 
   useEffect(() => {
     supabase
@@ -63,8 +83,17 @@ export default function TestDirectory() {
 
     supabase
       .from('gene_search_terms')
-      .select('symbol, full_name, aliases')
+      .select('symbol, full_name, aliases, condition_terms, added_conditions')
       .then(({ data }) => setTerms(new Map(((data as GeneTerm[]) ?? []).map((t) => [t.symbol, t]))))
+
+    supabase
+      .from('directory_gene_phenotypes')
+      .select('symbol, gene_table_gene, phenotypes, source_version')
+      .then(({ data }) => {
+        const rows = (data as GenePhenotypes[]) ?? []
+        setPhenotypes(new Map(rows.map((r) => [r.symbol, r])))
+        setGeneTableVersion(rows[0]?.source_version ?? null)
+      })
   }, [])
 
   const sections = useMemo(
@@ -76,12 +105,44 @@ export default function TestDirectory() {
     [tests]
   )
 
+  // Every word must appear somewhere, in any order. Plain substring matching
+  // fails on the way disease names are written: the Gene Table has "Myasthenic
+  // syndrome, fast-channel congenital", so a reader typing "congenital
+  // myasthenic" would get nothing.
+  const words = useMemo(
+    () => q.trim().toLowerCase().split(/\s+/).filter(Boolean),
+    [q]
+  )
+  const matches = (hay: string) => {
+    if (words.length === 0) return true
+    const h = hay.toLowerCase()
+    return words.every((w) => h.includes(w))
+  }
   const needle = q.trim().toLowerCase()
 
-  /** A symbol's own searchable text: symbol, official name, aliases. */
+  /** Disease names for a symbol, split by whether they can be attributed.
+   *  `sourced` merges the testing directory's own conditions with the Gene
+   *  Table's phenotypes; `added` is what the fellowship supplied. */
+  function diseases(symbol: string): { sourced: string[]; added: string[] } {
+    const key = symbol.trim()
+    const t = terms.get(key)
+    const merged = [...(t?.condition_terms ?? []), ...(phenotypes.get(key)?.phenotypes ?? [])]
+    const seen = new Set<string>()
+    const sourced = merged.filter((d) => {
+      const k = d.toLowerCase()
+      if (seen.has(k)) return false
+      seen.add(k); return true
+    })
+    return { sourced, added: t?.added_conditions ?? [] }
+  }
+
+  /** Everything a symbol can be found by in its own right: the symbol, its
+   *  official name, nomenclature aliases, and every disease term. */
   function termText(symbol: string): string {
     const t = terms.get(symbol.trim())
-    return [symbol, t?.full_name, ...(t?.aliases ?? [])].filter(Boolean).join(' ')
+    const d = diseases(symbol)
+    return [symbol, t?.full_name, ...(t?.aliases ?? []), ...d.sourced, ...d.added]
+      .filter(Boolean).join(' ')
   }
 
   // A test matches on anything a reader might reasonably type: the test name,
@@ -90,10 +151,9 @@ export default function TestDirectory() {
     if (section && t.primary_section !== section) return false
     if (lab && t.lab_name !== lab) return false
     if (!needle) return true
-    const hay = [t.test_name, t.subsection, t.test_type, t.lab_name, t.lab_city_province,
-      ...t.conditions, ...t.genes_or_antibodies.map(termText)].filter(Boolean).join(' ').toLowerCase()
-    return hay.includes(needle)
-  }), [tests, section, lab, needle])
+    return matches([t.test_name, t.subsection, t.test_type, t.lab_name, t.lab_city_province,
+      ...t.conditions, ...t.genes_or_antibodies.map(termText)].filter(Boolean).join(' '))
+  }), [tests, section, lab, words, terms, phenotypes])
 
   const grouped = useMemo(() => {
     const m = new Map<string, DirectoryTest[]>()
@@ -129,13 +189,13 @@ export default function TestDirectory() {
 
     const out: { gene: string; ts: DirectoryTest[]; direct: boolean }[] = []
     for (const [gene, ts] of entries) {
-      if (termText(gene).toLowerCase().includes(needle)) { out.push({ gene, ts, direct: true }); continue }
+      if (matches(termText(gene))) { out.push({ gene, ts, direct: true }); continue }
       const context = ts.flatMap((t) => [t.test_name, t.lab_name, t.subsection, ...t.conditions])
-        .filter(Boolean).join(' ').toLowerCase()
-      if (context.includes(needle)) out.push({ gene, ts, direct: false })
+        .filter(Boolean).join(' ')
+      if (matches(context)) out.push({ gene, ts, direct: false })
     }
     return [...out.filter((e) => e.direct), ...out.filter((e) => !e.direct)]
-  }, [tests, section, lab, needle, terms])
+  }, [tests, section, lab, words, terms, phenotypes])
 
   const directCount = geneIndex.filter((e) => e.direct).length
 
@@ -229,6 +289,7 @@ export default function TestDirectory() {
                 {terms.get(gene.trim())?.full_name && (
                   <span className="ml-2 text-muted">{terms.get(gene.trim())!.full_name}</span>
                 )}
+                <GeneConditions {...diseases(gene)} />
                 <ul className="mt-0.5 space-y-0.5">
                   {ts.map((t) => (
                     <li key={t.id} className="text-muted">
@@ -247,11 +308,55 @@ export default function TestDirectory() {
         )}
       </Card>
 
+      {view === 'genes' && (
+        <p className="text-xs text-muted">
+          Disease names for genes come from the{' '}
+          <a href={GENE_TABLE_URL} target="_blank" rel="noreferrer" className="font-medium text-accent hover:underline">
+            Gene Table of Neuromuscular Disorders
+          </a>{geneTableVersion ? ` (${geneTableVersion})` : ''} — Bonne, Rivier &amp; Hamroun, Sorbonne Université /
+          Institut de Myologie and CHU de Montpellier — alongside the conditions the testing directory itself states.
+        </p>
+      )}
+
+      {view === 'genes' && geneIndex.some(({ gene }) => (terms.get(gene.trim())?.added_conditions ?? []).length > 0) && (
+        <p className="text-xs text-muted">
+          <span className="font-medium text-ink">†</span> Antibody–disease pairing added by the fellowship as a
+          search aid. The source directory lists conditions per requisition, not per antibody, so these
+          associations are ours rather than theirs. Unmarked conditions are the directory's own words.
+        </p>
+      )}
+
       <p className="text-xs text-muted">
         This is a convenience copy of a public directory the fellowship does not maintain. Confirm eligibility,
         cost and current requisition versions with the performing laboratory before sending a sample.
       </p>
     </div>
+  )
+}
+
+/** Disease names under a gene, separated by who says so. Sourced names — the
+ *  testing directory's own conditions and the Gene Table's phenotypes — are
+ *  shown plainly; pairings the fellowship supplied carry a † explained in the
+ *  footnote. */
+function GeneConditions({ sourced, added }: { sourced: string[]; added: string[] }) {
+  const [expanded, setExpanded] = useState(false)
+  if (sourced.length === 0 && added.length === 0) return null
+  const shown = expanded ? sourced : sourced.slice(0, SHOWN_DISEASES)
+  const hidden = sourced.length - shown.length
+  return (
+    <span className="ml-2 text-xs text-muted">
+      {shown.join(' · ')}
+      {hidden > 0 && (
+        <button type="button" onClick={() => setExpanded(true)}
+          className="ml-1 font-medium text-accent hover:underline">+{hidden} more</button>
+      )}
+      {shown.length > 0 && added.length > 0 && ' · '}
+      {added.length > 0 && (
+        <span title="Added by the fellowship — not stated by either source">
+          {added.join(' · ')}<span className="ml-0.5 font-medium text-ink">†</span>
+        </span>
+      )}
+    </span>
   )
 }
 
