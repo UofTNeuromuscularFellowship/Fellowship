@@ -30,6 +30,11 @@ interface DirectoryTest {
   sort_order: number
 }
 
+/** Search synonyms: official gene names from mygene.info, plus curated
+ *  antibody and biomarker nomenclature. Lets "spastin" find SPAST and
+ *  "acetylcholine receptor" find AChR. */
+interface GeneTerm { symbol: string; full_name: string | null; aliases: string[] }
+
 const SOURCE_URL = 'https://canadian-neuro-lab-directory-5sln.vercel.app'
 
 export default function TestDirectory() {
@@ -41,6 +46,7 @@ export default function TestDirectory() {
   const [section, setSection] = useState('')
   const [lab, setLab] = useState('')
   const [openId, setOpenId] = useState<string | null>(null)
+  const [terms, setTerms] = useState<Map<string, GeneTerm>>(new Map())
 
   useEffect(() => {
     supabase
@@ -54,6 +60,11 @@ export default function TestDirectory() {
         setSyncedAt((data as { synced_at?: string }[] | null)?.[0]?.synced_at ?? null)
         setLoading(false)
       })
+
+    supabase
+      .from('gene_search_terms')
+      .select('symbol, full_name, aliases')
+      .then(({ data }) => setTerms(new Map(((data as GeneTerm[]) ?? []).map((t) => [t.symbol, t]))))
   }, [])
 
   const sections = useMemo(
@@ -67,6 +78,12 @@ export default function TestDirectory() {
 
   const needle = q.trim().toLowerCase()
 
+  /** A symbol's own searchable text: symbol, official name, aliases. */
+  function termText(symbol: string): string {
+    const t = terms.get(symbol.trim())
+    return [symbol, t?.full_name, ...(t?.aliases ?? [])].filter(Boolean).join(' ')
+  }
+
   // A test matches on anything a reader might reasonably type: the test name,
   // the condition, a gene symbol, the lab.
   const filteredTests = useMemo(() => tests.filter((t) => {
@@ -74,7 +91,7 @@ export default function TestDirectory() {
     if (lab && t.lab_name !== lab) return false
     if (!needle) return true
     const hay = [t.test_name, t.subsection, t.test_type, t.lab_name, t.lab_city_province,
-      ...t.conditions, ...t.genes_or_antibodies].filter(Boolean).join(' ').toLowerCase()
+      ...t.conditions, ...t.genes_or_antibodies.map(termText)].filter(Boolean).join(' ').toLowerCase()
     return hay.includes(needle)
   }), [tests, section, lab, needle])
 
@@ -89,6 +106,12 @@ export default function TestDirectory() {
 
   // gene/antibody -> the tests that name it. Built from the same rows, so the
   // index can never drift out of step with the test list.
+  //
+  // Two grades of match, kept apart on purpose. A "direct" hit is the symbol,
+  // its official name or an alias. A "context" hit is a symbol that merely sits
+  // on a requisition covering the disease you typed — several labs bundle
+  // unrelated antibodies onto one form, so searching "myasthenia gravis" would
+  // otherwise return NMDAR and cN1A as though they were MG antibodies.
   const geneIndex = useMemo(() => {
     const m = new Map<string, DirectoryTest[]>()
     for (const t of tests) {
@@ -100,13 +123,21 @@ export default function TestDirectory() {
         m.set(key, [...(m.get(key) ?? []), t])
       }
     }
-    return Array.from(m.entries())
-      .filter(([g, ts]) => !needle
-        || g.toLowerCase().includes(needle)
-        || ts.some((t) => (t.lab_name ?? '').toLowerCase().includes(needle))
-        || ts.some((t) => t.test_name.toLowerCase().includes(needle)))
+    const entries = Array.from(m.entries())
       .sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }))
-  }, [tests, section, lab, needle])
+    if (!needle) return entries.map(([gene, ts]) => ({ gene, ts, direct: true }))
+
+    const out: { gene: string; ts: DirectoryTest[]; direct: boolean }[] = []
+    for (const [gene, ts] of entries) {
+      if (termText(gene).toLowerCase().includes(needle)) { out.push({ gene, ts, direct: true }); continue }
+      const context = ts.flatMap((t) => [t.test_name, t.lab_name, t.subsection, ...t.conditions])
+        .filter(Boolean).join(' ').toLowerCase()
+      if (context.includes(needle)) out.push({ gene, ts, direct: false })
+    }
+    return [...out.filter((e) => e.direct), ...out.filter((e) => !e.direct)]
+  }, [tests, section, lab, needle, terms])
+
+  const directCount = geneIndex.filter((e) => e.direct).length
 
   return (
     <div className="space-y-6">
@@ -137,7 +168,7 @@ export default function TestDirectory() {
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search gene, antibody, condition, test or lab…"
+            placeholder="Search by symbol, full name, condition, test or lab — e.g. AChR, acetylcholine receptor, myasthenia gravis"
             className="min-w-[15rem] flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink"
           />
           <select value={section} onChange={(e) => setSection(e.target.value)}
@@ -186,11 +217,20 @@ export default function TestDirectory() {
           <p className="px-5 py-4 text-sm text-muted">No genes or antibodies match that search.</p>
         ) : (
           <ul className="divide-y divide-line">
-            {geneIndex.map(([gene, rows]) => (
+            {geneIndex.map(({ gene, ts }, i) => (
               <li key={gene} className="px-5 py-2.5 text-sm">
+                {i === directCount && needle && (
+                  <p className="-mx-5 mb-2.5 border-y border-line bg-paper px-5 py-1.5 text-xs text-muted">
+                    Also on requisitions that cover “{q.trim()}” — these are not themselves
+                    {' '}“{q.trim()}” tests
+                  </p>
+                )}
                 <span className="font-mono font-medium text-ink">{gene}</span>
+                {terms.get(gene.trim())?.full_name && (
+                  <span className="ml-2 text-muted">{terms.get(gene.trim())!.full_name}</span>
+                )}
                 <ul className="mt-0.5 space-y-0.5">
-                  {rows.map((t) => (
+                  {ts.map((t) => (
                     <li key={t.id} className="text-muted">
                       {t.lab_name}
                       {t.requisition_pdf_url && (
