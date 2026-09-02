@@ -771,6 +771,31 @@ function ProviderClinicCatalog({ onError }: { onError: (m: string) => void }) {
     load()
   }
 
+  // Capacity is set when a clinic is added, but it changes over the year — a
+  // second room opens, a provider takes on a resident. Without this the only
+  // way to change it is to delete the clinic and add it back, which throws
+  // away every assignment already made against it.
+  async function updateCapacity(row: ClinicCat, next: number) {
+    if (!next || next < 1 || next === row.fellow_capacity) return
+    const { error } = await supabase.from('clinic_template').update({ fellow_capacity: next }).eq('id', row.id)
+    if (error) { onError(error.message); return }
+    load()
+  }
+
+  function CapacityPicker({ row }: { row: ClinicCat }) {
+    return (
+      <select
+        value={row.fellow_capacity}
+        onChange={(e) => updateCapacity(row, parseInt(e.target.value, 10))}
+        title="Maximum fellows the schedule generator will place in this clinic on one day"
+        className="ml-2 rounded-md border border-line bg-surface px-1.5 py-0.5 text-xs text-muted hover:text-ink">
+        {[1, 2, 3, 4].map((n) => (
+          <option key={n} value={n}>up to {n} fellow{n === 1 ? '' : 's'}</option>
+        ))}
+      </select>
+    )
+  }
+
   function addDate() {
     if (!dateDraft) return
     if (!dates.includes(dateDraft)) setDates([...dates, dateDraft].sort())
@@ -795,8 +820,8 @@ function ProviderClinicCatalog({ onError }: { onError: (m: string) => void }) {
             <ul className="divide-y divide-line">
               {byDay.get(wd)!.map((r) => (
                 <li key={r.id} className="flex items-center justify-between py-2 text-sm">
-                  <span className="text-ink">{r.provider_name} · {r.site_code}
-                    <span className="ml-2 text-muted">{r.fellow_capacity} fellow{r.fellow_capacity === 1 ? '' : 's'}</span>
+                  <span className="flex items-center text-ink">{r.provider_name} · {r.site_code}
+                    <CapacityPicker row={r} />
                   </span>
                   <button onClick={() => remove(r.id)} className="text-xs font-medium text-muted hover:text-ink">Remove</button>
                 </li>
@@ -811,8 +836,8 @@ function ProviderClinicCatalog({ onError }: { onError: (m: string) => void }) {
               {dateRows.map((r) => (
                 <li key={r.id} className="py-2 text-sm">
                   <div className="flex items-center justify-between">
-                    <span className="text-ink">{r.provider_name} · {r.site_code}
-                      <span className="ml-2 text-muted">{r.fellow_capacity} fellow{r.fellow_capacity === 1 ? '' : 's'}</span>
+                    <span className="flex items-center text-ink">{r.provider_name} · {r.site_code}
+                      <CapacityPicker row={r} />
                     </span>
                     <button onClick={() => remove(r.id)} className="text-xs font-medium text-muted hover:text-ink">Remove</button>
                   </div>
