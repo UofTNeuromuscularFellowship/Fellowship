@@ -86,6 +86,27 @@ export function useSavedPublications(userId: string | undefined) {
   return { saved, savedIds, save, unsave, loading }
 }
 
+/** The rolling digest itself. Both the dashboard and the Library show it, so
+ *  the edge-function call lives here rather than being written out twice. */
+export function usePublicationDigest() {
+  const [publications, setPublications] = useState<Publication[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    supabase.functions.invoke('pubmed-digest')
+      .then(({ data }) => {
+        if (cancelled) return
+        setPublications((data?.publications as Publication[]) ?? [])
+        setLoading(false)
+      })
+      .catch(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [])
+
+  return { publications, loading }
+}
+
 /** The star that keeps a paper. Filled means it is on the reader's list. */
 export function SaveStar({ saved, onClick }: { saved: boolean; onClick: () => void }) {
   return (
@@ -126,6 +147,43 @@ export function PublicationBody({ p }: { p: Publication }) {
         </a>
       )}
     </div>
+  )
+}
+
+/** The digest: all three journals pooled into one run of papers, newest first.
+ *  The journal name sits in each entry's byline, which is what tells them apart
+ *  now that they are no longer in separate sections. */
+export function InterestingReads({ publications, loading, savedIds, onSave, onUnsave }: {
+  publications: Publication[]
+  loading: boolean
+  savedIds: Set<string>
+  onSave: (p: Publication) => void
+  onUnsave: (pubmedId: string) => void
+}) {
+  return (
+    <Card>
+      <CardHeader
+        title="Interesting reads"
+        sub="Muscle & Nerve, the Journal of Neuromuscular Diseases and the JAMA journals — checked weekly, each paper stays for a month. Titles open the full text through the U of T library; star a paper to keep it on your reading list."
+      />
+      {loading ? (
+        <p className="px-5 py-4 text-sm text-muted">Checking for new publications…</p>
+      ) : publications.length === 0 ? (
+        <p className="px-5 py-4 text-sm text-muted">Nothing new in the last month.</p>
+      ) : (
+        <ul className="divide-y divide-line">
+          {publications.map((p) => {
+            const isSaved = savedIds.has(p.pubmed_id)
+            return (
+              <li key={p.pubmed_id} className="flex items-start justify-between gap-3 px-5 py-3 text-sm">
+                <PublicationBody p={p} />
+                <SaveStar saved={isSaved} onClick={() => (isSaved ? onUnsave(p.pubmed_id) : onSave(p))} />
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </Card>
   )
 }
 
