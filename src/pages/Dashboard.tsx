@@ -6,9 +6,8 @@ import { Card, CardHeader } from '../components/ui/Card'
 import { shortDate, localToday } from '../lib/format'
 import { useActingProvider } from '../components/ActingFor'
 import {
-  ReadingList, SaveStar, PublicationBody, useSavedPublications,
+  ReadingList, InterestingReads, useSavedPublications, usePublicationDigest,
 } from '../components/ReadingList'
-import type { Publication } from '../components/ReadingList'
 
 interface Rotation {
   id: string
@@ -72,9 +71,8 @@ export default function Dashboard() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [rotations, setRotations] = useState<Rotation[]>([])
   const [sessions, setSessions] = useState<Session[]>([])
-  const [pubs, setPubs] = useState<Publication[]>([])
   const { saved, savedIds, save: savePublication, unsave: unsavePublication } = useSavedPublications(profile?.id)
-  const [pubsLoading, setPubsLoading] = useState(true)
+  const { publications: pubs, loading: pubsLoading } = usePublicationDigest()
   const [pendingVacations, setPendingVacations] = useState(0)
 
   const { from: weekFrom, to: weekTo } = useMemo(() => weekRange(), [])
@@ -119,11 +117,6 @@ export default function Dashboard() {
       .eq('is_break', false)
       .order('session_date')
       .then(({ data }) => setSessions((data as Session[]) ?? []))
-
-    supabase.functions.invoke('pubmed-digest').then(({ data }) => {
-      setPubs((data?.publications as Publication[]) ?? [])
-      setPubsLoading(false)
-    }).catch(() => setPubsLoading(false))
 
     if (isDirector) {
       supabase.from('vacation_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending')
@@ -375,43 +368,6 @@ function ClinicCell({ r, mine }: { r: Rotation; mine: boolean }) {
         <span className="mt-0.5 block text-[10px] font-semibold uppercase tracking-wide text-accent">With you</span>
       )}
     </div>
-  )
-}
-
-/** The digest: all three journals pooled into one run of papers, newest first.
- *  The journal name sits in each entry's byline, which is what tells them apart
- *  now that they are no longer in separate sections. */
-function InterestingReads({ publications, loading, savedIds, onSave, onUnsave }: {
-  publications: Publication[]
-  loading: boolean
-  savedIds: Set<string>
-  onSave: (p: Publication) => void
-  onUnsave: (pubmedId: string) => void
-}) {
-  return (
-    <Card>
-      <CardHeader
-        title="Interesting reads"
-        sub="Muscle & Nerve, the Journal of Neuromuscular Diseases and the JAMA journals — checked weekly, each paper stays for a month. Titles open the full text through the U of T library; star a paper to keep it on your reading list."
-      />
-      {loading ? (
-        <p className="px-5 py-4 text-sm text-muted">Checking for new publications…</p>
-      ) : publications.length === 0 ? (
-        <p className="px-5 py-4 text-sm text-muted">Nothing new in the last month.</p>
-      ) : (
-        <ul className="divide-y divide-line">
-          {publications.map((p) => {
-            const isSaved = savedIds.has(p.pubmed_id)
-            return (
-              <li key={p.pubmed_id} className="flex items-start justify-between gap-3 px-5 py-3 text-sm">
-                <PublicationBody p={p} />
-                <SaveStar saved={isSaved} onClick={() => (isSaved ? onUnsave(p.pubmed_id) : onSave(p))} />
-              </li>
-            )
-          })}
-        </ul>
-      )}
-    </Card>
   )
 }
 
