@@ -27,6 +27,16 @@ interface Session { id: string; session_date: string; start_time: string; topic:
 interface Notification { id: string; title: string; body: string | null; link: string | null; created_at: string }
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
+// The places people go looking for something mid-clinic. Same order as the
+// EMG Toolkit nav, with the Handbook last since it is the slowest read.
+const QUICK_LINKS = [
+  { to: '/test-directory', label: 'Diagnostic test directory', blurb: 'Where to send genetic and antibody testing, with requisitions.' },
+  { to: '/atlas-3d', label: '3D atlas', blurb: 'Muscles, nerves and needle insertion points.' },
+  { to: '/library', label: 'Library', blurb: 'Reference texts, guidelines and your reading list.' },
+  { to: '/calculators', label: 'EMG/NCS calculators', blurb: 'Reference values and common calculations.' },
+  { to: '/handbook', label: 'Fellowship handbook', blurb: 'Housekeeping, EMG reporting, and site-by-site guides.' },
+]
+
 /** Local-calendar YYYY-MM-DD. Not toISOString() — that is the UTC date, which
  *  in Toronto rolls over to tomorrow at 20:00 and shifts the whole week. */
 function isoLocal(d: Date): string {
@@ -254,11 +264,15 @@ export default function Dashboard() {
       <div className="grid gap-6 lg:grid-cols-2">
         <JotNotes userId={profile.id} />
         <Card>
-          <CardHeader title="Handbook" />
-          <div className="px-5 py-4 text-sm">
-            <Link to="/handbook" className="font-medium text-accent hover:underline">Open the Fellowship Handbook →</Link>
-            <p className="mt-1 text-muted">Housekeeping, EMG reporting, and site-by-site guides.</p>
-          </div>
+          <CardHeader title="Quick links" />
+          <ul className="divide-y divide-line">
+            {QUICK_LINKS.map((l) => (
+              <li key={l.to} className="px-5 py-2.5 text-sm">
+                <Link to={l.to} className="font-medium text-accent hover:underline">{l.label} →</Link>
+                <p className="mt-0.5 text-muted">{l.blurb}</p>
+              </li>
+            ))}
+          </ul>
         </Card>
       </div>
 
@@ -440,6 +454,9 @@ function JotNotes({ userId }: { userId: string }) {
 }
 
 function CalendarSubscribe({ userId }: { userId: string }) {
+  // Collapsed by default: this is a once-per-fellowship setup task sitting on a
+  // page people open every day.
+  const [open, setOpen] = useState(false)
   const [links, setLinks] = useState<{ all: string; teaching: string; clinic: string } | null>(null)
   const [choice, setChoice] = useState<'all' | 'teaching' | 'clinic'>('all')
   const [copied, setCopied] = useState(false)
@@ -459,7 +476,9 @@ function CalendarSubscribe({ userId }: { userId: string }) {
     setLoading(false)
   }
 
-  useEffect(() => { ensureLinks() }, [userId]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Minting the calendar token is a write, so it waits for intent rather than
+  // happening on every dashboard load.
+  useEffect(() => { if (open && !links) ensureLinks() }, [open, userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const currentLink = links ? links[choice] : ''
 
@@ -471,11 +490,24 @@ function CalendarSubscribe({ userId }: { userId: string }) {
 
   return (
     <Card>
-      <CardHeader
-        title="Sync your schedule to your calendar"
-        sub="Add your own fellowship schedule — your clinics and teaching sessions — to Apple Calendar, Google Calendar, or Outlook. It updates automatically whenever the schedule changes; the portal remains the master calendar for everyone's schedule."
-      />
-      <div className="space-y-4 px-5 py-4">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="flex w-full items-start justify-between gap-4 px-5 py-4 text-left"
+      >
+        <div>
+          <h2 className="font-display text-base font-semibold text-ink">Sync your schedule to your calendar</h2>
+          <p className="mt-0.5 text-sm text-muted">
+            Add your clinics and teaching sessions to Apple Calendar, Google Calendar or Outlook. Set it up once and
+            it keeps itself up to date.
+          </p>
+        </div>
+        <span className="shrink-0 text-sm font-medium text-accent">{open ? 'Hide' : 'Set up'}</span>
+      </button>
+
+      {open && (
+      <div className="space-y-4 border-t border-line px-5 py-4">
         <div>
           <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted">1. Choose what to include</p>
           <div className="flex flex-wrap gap-2">
@@ -519,6 +551,7 @@ function CalendarSubscribe({ userId }: { userId: string }) {
           </p>
         </div>
       </div>
+      )}
     </Card>
   )
 }

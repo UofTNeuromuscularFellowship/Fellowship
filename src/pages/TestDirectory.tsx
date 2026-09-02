@@ -28,6 +28,9 @@ interface DirectoryTest {
   lab_page_url: string | null
   notes: string | null
   sort_order: number
+  /** 'antibody' | 'genetic' | 'other', derived by the database from the
+   *  source's own test_type wording. */
+  modality: string | null
 }
 
 /** Search synonyms: official gene names from mygene.info, plus curated
@@ -44,6 +47,8 @@ interface GeneTerm {
    *  requisitions list many diseases against many antibodies without saying
    *  which pairs with which. Shown with a marker. */
   added_conditions: string[]
+  /** 'curated' marks the antibody and biomarker entries. */
+  source: string | null
 }
 
 /** Gene -> neuromuscular disease, from the Gene Table of Neuromuscular
@@ -64,6 +69,7 @@ export default function TestDirectory() {
   const [section, setSection] = useState('')
   const [lab, setLab] = useState('')
   const [openId, setOpenId] = useState<string | null>(null)
+  const [showGenetic, setShowGenetic] = useState(false)
   const [terms, setTerms] = useState<Map<string, GeneTerm>>(new Map())
   const [phenotypes, setPhenotypes] = useState<Map<string, GenePhenotypes>>(new Map())
   const [geneTableVersion, setGeneTableVersion] = useState<string | null>(null)
@@ -83,7 +89,7 @@ export default function TestDirectory() {
 
     supabase
       .from('gene_search_terms')
-      .select('symbol, full_name, aliases, condition_terms, added_conditions')
+      .select('symbol, full_name, aliases, condition_terms, added_conditions, source')
       .then(({ data }) => setTerms(new Map(((data as GeneTerm[]) ?? []).map((t) => [t.symbol, t]))))
 
     supabase
@@ -120,6 +126,29 @@ export default function TestDirectory() {
   }
   const needle = q.trim().toLowerCase()
 
+  // Is this search about antibody testing? True when the query names an
+  // antibody entry — its symbol, full name or an alias — or one of the
+  // autoimmune conditions attached to those entries. Both lists are the
+  // curated antibody set, so this is derived from data rather than a hardcoded
+  // list of diseases.
+  //
+  // It exists because an autoimmune search was returning genetics panels:
+  // "MuSK" also names a gene, and the Gene Table still records CHAT's
+  // phenotypes as "Myasthenia gravis, familial infantile".
+  const antibodyIntent = useMemo(() => {
+    if (words.length === 0) return false
+    for (const t of terms.values()) {
+      if (t.source !== 'curated') continue
+      const hay = [t.symbol, t.full_name, ...(t.aliases ?? []), ...(t.added_conditions ?? [])]
+        .filter(Boolean).join(' ').toLowerCase()
+      if (words.every((w) => hay.includes(w))) return true
+    }
+    return false
+  }, [terms, words])
+
+  /** Genetics is hidden while an antibody search is in play, unless asked for. */
+  const hideGenetic = antibodyIntent && !showGenetic
+
   /** Disease names for a symbol, split by whether they can be attributed.
    *  `sourced` merges the testing directory's own conditions with the Gene
    *  Table's phenotypes; `added` is what the fellowship supplied. */
@@ -150,10 +179,11 @@ export default function TestDirectory() {
   const filteredTests = useMemo(() => tests.filter((t) => {
     if (section && t.primary_section !== section) return false
     if (lab && t.lab_name !== lab) return false
+    if (hideGenetic && t.modality === 'genetic') return false
     if (!needle) return true
     return matches([t.test_name, t.subsection, t.test_type, t.lab_name, t.lab_city_province,
       ...t.conditions, ...t.genes_or_antibodies.map(termText)].filter(Boolean).join(' '))
-  }), [tests, section, lab, words, terms, phenotypes])
+  }), [tests, section, lab, words, terms, phenotypes, hideGenetic])
 
   const grouped = useMemo(() => {
     const m = new Map<string, DirectoryTest[]>()
@@ -177,6 +207,7 @@ export default function TestDirectory() {
     for (const t of tests) {
       if (section && t.primary_section !== section) continue
       if (lab && t.lab_name !== lab) continue
+      if (hideGenetic && t.modality === 'genetic') continue
       for (const g of t.genes_or_antibodies) {
         const key = g.trim()
         if (!key) continue
@@ -195,9 +226,21 @@ export default function TestDirectory() {
       if (matches(context)) out.push({ gene, ts, direct: false })
     }
     return [...out.filter((e) => e.direct), ...out.filter((e) => !e.direct)]
-  }, [tests, section, lab, words, terms, phenotypes])
+  }, [tests, section, lab, words, terms, phenotypes, hideGenetic])
 
   const directCount = geneIndex.filter((e) => e.direct).length
+
+  // What the suppression is holding back, so the notice can say how much.
+  const hiddenGeneticTests = useMemo(() => {
+    if (!antibodyIntent) return 0
+    return tests.filter((t) => {
+      if (t.modality !== 'genetic') return false
+      if (section && t.primary_section !== section) return false
+      if (lab && t.lab_name !== lab) return false
+      return matches([t.test_name, t.subsection, t.test_type, t.lab_name, t.lab_city_province,
+        ...t.conditions, ...t.genes_or_antibodies.map(termText)].filter(Boolean).join(' '))
+    }).length
+  }, [antibodyIntent, tests, section, lab, words, terms, phenotypes])
 
   return (
     <div className="space-y-6">
@@ -242,10 +285,30 @@ export default function TestDirectory() {
             {labs.map((l) => <option key={l} value={l}>{l}</option>)}
           </select>
           {(q || section || lab) && (
-            <button type="button" onClick={() => { setQ(''); setSection(''); setLab('') }}
+            <button type="button" onClick={() => { setQ(''); setSection(''); setLab(''); setShowGenetic(false) }}
               className="text-sm font-medium text-accent hover:underline">Clear</button>
           )}
         </div>
+
+        {antibodyIntent && (hiddenGeneticTests > 0 || showGenetic) && (
+          <p className="border-b border-line bg-accent-soft/40 px-5 py-2.5 text-xs text-ink">
+            {showGenetic ? (
+              <>
+                Showing genetic tests alongside antibody testing for “{q.trim()}”.{' '}
+                <button type="button" onClick={() => setShowGenetic(false)}
+                  className="font-medium text-accent hover:underline">Hide them</button>
+              </>
+            ) : (
+              <>
+                “{q.trim()}” is antibody testing, so {hiddenGeneticTests} genetic
+                {hiddenGeneticTests === 1 ? ' test is' : ' tests are'} hidden — a gene of the same name, or an
+                inherited condition with a similar name, is a different investigation.{' '}
+                <button type="button" onClick={() => setShowGenetic(true)}
+                  className="font-medium text-accent hover:underline">Show them anyway</button>
+              </>
+            )}
+          </p>
+        )}
 
         {loading ? (
           <p className="px-5 py-4 text-sm text-muted">Loading the directory…</p>
@@ -262,6 +325,12 @@ export default function TestDirectory() {
                       <button type="button" onClick={() => setOpenId(openId === t.id ? null : t.id)}
                         className="w-full text-left">
                         <span className="font-medium text-ink">{t.test_name}</span>
+                        {t.modality === 'antibody' && (
+                          <span className="ml-2 rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">Antibody</span>
+                        )}
+                        {t.modality === 'genetic' && (
+                          <span className="ml-2 rounded-full bg-paper px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted">Genetic</span>
+                        )}
                         <span className="mt-0.5 block text-muted">
                           {[t.lab_name, t.lab_city_province].filter(Boolean).join(' · ')}
                         </span>
