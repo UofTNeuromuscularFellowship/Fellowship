@@ -39,6 +39,10 @@ interface DirectoryTest {
   added_by: string | null
   /** Storage path of an uploaded requisition, when one was attached here. */
   requisition_path: string | null
+  /** Set when the program has taken a mirrored entry out of the directory.
+   *  The row keeps refreshing from the source; it is simply not shown. */
+  hidden_at: string | null
+  hidden_reason: string | null
 }
 
 /** Search synonyms: official gene names from mygene.info, plus curated
@@ -108,9 +112,15 @@ export default function TestDirectory() {
   // Supervisors and the director keep the directory current between refreshes
   // of the public site; everyone else reads it.
   const canAdd = profile?.role === 'supervisor' || profile?.role === 'director' || profile?.role === 'admin'
-  const [tests, setTests] = useState<DirectoryTest[]>([])
+  // Hiding a mirrored entry changes what every reader sees, so it sits with
+  // program direction rather than with everyone who may add a test.
+  const canCurate = profile?.role === 'director' || profile?.role === 'admin'
+  const [allTests, setAllTests] = useState<DirectoryTest[]>([])
   const [adding, setAdding] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
+  // The director's view of what has been taken out of the directory, so a
+  // hidden entry can be reviewed and put back.
+  const [reviewHidden, setReviewHidden] = useState(false)
   const [loading, setLoading] = useState(true)
   const [syncedAt, setSyncedAt] = useState<string | null>(null)
   const [q, setQ] = useState('')
@@ -137,7 +147,7 @@ export default function TestDirectory() {
       .order('sort_order')
       .then(({ data }) => {
         const rows = (data as DirectoryTest[]) ?? []
-        setTests(rows)
+        setAllTests(rows)
         setSyncedAt((data as { synced_at?: string }[] | null)?.[0]?.synced_at ?? null)
         setLoading(false)
       })
@@ -161,6 +171,12 @@ export default function TestDirectory() {
       })
   }, [])
 
+  // Everything below works off the visible rows. A hidden entry is out of the
+  // directory entirely — searches, the gene and antibody lists, the type-ahead
+  // — and is reachable only through the review panel.
+  const hiddenTests = useMemo(() => allTests.filter((t) => t.hidden_at), [allTests])
+  const tests = useMemo(() => allTests.filter((t) => !t.hidden_at), [allTests])
+
   const sections = useMemo(
     () => Array.from(new Set(tests.map((t) => t.primary_section).filter(Boolean) as string[])).sort(),
     [tests]
@@ -169,6 +185,18 @@ export default function TestDirectory() {
     () => Array.from(new Set(tests.map((t) => t.lab_name).filter(Boolean) as string[])).sort(),
     [tests]
   )
+
+  async function setHidden(t: DirectoryTest, hidden: boolean) {
+    if (hidden && !window.confirm(
+      `Take “${t.test_name}” out of the directory? It stays in the database and can be put back.`)) return
+    const { error } = await supabase.from('neuro_test_directory').update(
+      hidden
+        ? { hidden_at: new Date().toISOString(), hidden_by: profile?.id ?? null }
+        : { hidden_at: null, hidden_by: null, hidden_reason: null }
+    ).eq('id', t.id)
+    if (error) { setMsg(error.message); return }
+    loadTests()
+  }
 
   // Every word must appear somewhere, in any order. Plain substring matching
   // fails on the way disease names are written: the Gene Table has "Myasthenic
@@ -541,13 +569,48 @@ export default function TestDirectory() {
             </p>
           )}
 
-          {canAdd && !adding && (
-            <button type="button" onClick={() => { setAdding(true); setMsg(null) }}
-              className="mt-3 rounded-md bg-accent px-3 py-2 text-sm font-semibold text-white hover:opacity-90">
-              Add a test
-            </button>
-          )}
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            {canAdd && !adding && (
+              <button type="button" onClick={() => { setAdding(true); setMsg(null) }}
+                className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-white hover:opacity-90">
+                Add a test
+              </button>
+            )}
+            {canCurate && hiddenTests.length > 0 && (
+              <button type="button" onClick={() => setReviewHidden(!reviewHidden)}
+                className="text-sm font-medium text-muted hover:text-ink">
+                {reviewHidden ? 'Close' : `${hiddenTests.length} entr${hiddenTests.length === 1 ? 'y' : 'ies'} hidden`}
+              </button>
+            )}
+          </div>
         </div>
+
+        {reviewHidden && canCurate && (
+          <div className="border-t border-line px-5 py-4">
+            <p className="text-sm text-muted">
+              Taken out of the directory. These rows are still mirrored from the public site each week — they
+              are not shown, searched, or counted in the gene and antibody lists. Deleting one instead would not
+              hold: it is on the source site, so the next refresh would bring it back.
+            </p>
+            <ul className="mt-3 divide-y divide-line">
+              {hiddenTests.map((t) => (
+                <li key={t.id} className="flex items-start justify-between gap-4 py-2 text-sm">
+                  <div className="min-w-0">
+                    <p className="font-medium text-ink">{t.test_name}</p>
+                    <p className="text-muted">
+                      {[t.lab_name, `${t.genes_or_antibodies.length} genes or antibodies`].filter(Boolean).join(' · ')}
+                    </p>
+                    {t.hidden_reason && <p className="mt-0.5 text-xs text-muted">{t.hidden_reason}</p>}
+                  </div>
+                  <button type="button" onClick={() => setHidden(t, false)}
+                    className="shrink-0 text-sm font-medium text-accent hover:underline">
+                    Show again
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {msg && (
           <p className="border-t border-line bg-accent-soft/40 px-5 py-2.5 text-sm text-ink">
@@ -590,18 +653,7 @@ export default function TestDirectory() {
                   <span className="ml-2 text-muted">{terms.get(gene.trim())!.full_name}</span>
                 )}
                 <GeneConditions {...diseases(gene)} />
-                <ul className="mt-0.5 space-y-0.5">
-                  {ts.map((t) => (
-                    <li key={t.id} className="text-muted">
-                      {t.lab_name}
-                      {t.requisition_pdf_url && (
-                        <a href={t.requisition_pdf_url} target="_blank" rel="noreferrer"
-                          className="ml-2 text-xs font-medium text-accent hover:underline">Requisition</a>
-                      )}
-                      <span className="block text-xs">{t.test_name}</span>
-                    </li>
-                  ))}
-                </ul>
+                <GeneLabs tests={ts} />
               </li>
             ))}
           </ul>
@@ -641,6 +693,7 @@ export default function TestDirectory() {
                     {openId === t.id && (
                       <TestDetail
                         t={t}
+                        onHide={canCurate && t.origin !== 'local' ? () => setHidden(t, true) : undefined}
                         canRemove={Boolean(canAdd && t.origin === 'local' &&
                           (t.added_by === profile?.id || profile?.role === 'director' || profile?.role === 'admin'))}
                         onRemove={async () => {
@@ -720,10 +773,53 @@ function GeneConditions({ sourced, added }: { sourced: string[]; added: string[]
   )
 }
 
-function TestDetail({ t, canRemove, onRemove }: {
+/** Where a gene can be sent, grouped by laboratory.
+ *
+ *  A single lab often runs the same gene on several overlapping panels — one
+ *  broad panel, one disease-specific — and listing each separately made the
+ *  same lab appear three or four times under one gene, which reads as
+ *  duplication. The lab is named once, with its panels beneath it. */
+function GeneLabs({ tests }: { tests: DirectoryTest[] }) {
+  const byLab = new Map<string, DirectoryTest[]>()
+  for (const t of tests) {
+    const key = t.lab_name ?? 'Laboratory not stated'
+    byLab.set(key, [...(byLab.get(key) ?? []), t])
+  }
+  return (
+    <ul className="mt-0.5 space-y-1">
+      {Array.from(byLab.entries()).map(([labName, rows]) => (
+        <li key={labName} className="text-muted">
+          {labName}
+          {rows.length > 1 && (
+            <span className="ml-1.5 text-xs">
+              · {rows.length} panels
+            </span>
+          )}
+          <ul className="ml-3 space-y-0.5 border-l border-line pl-2">
+            {rows.map((t) => (
+              <li key={t.id} className="text-xs">
+                {t.test_name}
+                {t.requisition_pdf_url && (
+                  <a href={t.requisition_pdf_url} target="_blank" rel="noreferrer"
+                    className="ml-2 font-medium text-accent hover:underline">Requisition</a>
+                )}
+              </li>
+            ))}
+          </ul>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function TestDetail({ t, canRemove, onRemove, onHide }: {
   t: DirectoryTest
   canRemove?: boolean
   onRemove?: () => void
+  /** Present for program direction, on mirrored entries only: a row that came
+   *  from the public site cannot be deleted, because the next sync would bring
+   *  it back. Hiding it is what sticks. */
+  onHide?: () => void
 }) {
   const [opening, setOpening] = useState(false)
 
@@ -786,6 +882,11 @@ function TestDetail({ t, canRemove, onRemove }: {
         {canRemove && onRemove && (
           <button type="button" onClick={onRemove}
             className="ml-auto text-sm font-medium text-red-600 hover:underline">Remove</button>
+        )}
+        {onHide && (
+          <button type="button" onClick={onHide}
+            title="Take this out of the directory. It stays in the database and can be put back."
+            className="ml-auto text-sm font-medium text-muted hover:text-red-600">Hide from the directory</button>
         )}
       </div>
     </div>
