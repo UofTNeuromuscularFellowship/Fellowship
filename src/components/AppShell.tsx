@@ -25,7 +25,11 @@ const SECTIONS: NavSection[] = [
   {
     heading: 'Case logging',
     items: [
-      { to: '/cases', label: 'Case logger', allow: ['fellow', 'supervisor', 'director'] },
+      // The same page reads very differently by role: a fellow logs their own
+      // cases, a supervisor looks at their fellows'. One label cannot do both,
+      // and the filter below means only one of these ever renders.
+      { to: '/cases', label: 'Case logger', allow: ['fellow'] },
+      { to: '/cases', label: "Your Fellow's Case Log", allow: ['supervisor', 'director'] },
       { to: '/competency', label: 'Competency', allow: ['fellow', 'director', 'admin'] },
     ],
   },
@@ -35,6 +39,7 @@ const SECTIONS: NavSection[] = [
       { to: '/calculators', label: 'EMG/NCS calculators', allow: ['fellow', 'supervisor', 'director'] },
       { to: '/study', label: 'Test your anatomy knowledge', allow: ['fellow', 'supervisor', 'director'] },
       { to: '/atlas-3d', label: '3D atlas', allow: ['fellow', 'supervisor', 'director'] },
+      { to: '/test-directory', label: 'Diagnostic test directory', allow: ['fellow', 'supervisor', 'director'] },
     ],
   },
   {

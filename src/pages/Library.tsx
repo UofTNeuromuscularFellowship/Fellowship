@@ -2,6 +2,10 @@ import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
+import {
+  ReadingList, InterestingReads, useSavedPublications, usePublicationDigest,
+} from '../components/ReadingList'
+import { Carousel, CarouselTile, DocCover } from '../components/ShelfCarousel'
 
 // pdf.js is a big dependency and most visits to this page are a download, not a
 // read. Loaded only when someone actually opens a document.
@@ -50,6 +54,30 @@ interface LibraryDoc {
 const SELECT =
   'id, title, authors, category, edition, description, file_name, storage_path, mime_type, size_bytes, created_at'
 
+// Shelves run in this order, so the two the fellowship reaches for most are the
+// first thing on the page. Anything filed under a category not listed here
+// follows in the order the categories come back from the database.
+const SECTION_ORDER = [
+  'Textbook',
+  'Review articles',
+  'Atlas & reference',
+  'Guidelines',
+  'Program documents',
+  'Other',
+]
+
+// The stored category is singular because it labels one document; a shelf holds
+// several. Only the ones that read wrong in the plural are listed.
+const SECTION_TITLES: Record<string, string> = {
+  Textbook: 'Textbooks',
+  Guidelines: 'Guidelines',
+  'Review articles': 'Review articles',
+}
+
+function sectionTitle(category: string): string {
+  return SECTION_TITLES[category] ?? category
+}
+
 function humanSize(n: number | null): string {
   if (!n) return ''
   if (n < 1024) return `${n} B`
@@ -67,6 +95,13 @@ export default function Library() {
   const [query, setQuery] = useState('')
   const [reading, setReading] = useState<{ doc: LibraryDoc; url: string } | null>(null)
   const [opening, setOpening] = useState<string | null>(null)
+  // Signed read links, keyed by storage path — used by the covers only.
+  const [coverUrls, setCoverUrls] = useState<Map<string, string>>(new Map())
+  // The reader's own saved papers and the rolling journal digest — the same
+  // two the dashboard shows, sharing one hook each so a paper starred in
+  // either place is starred in both.
+  const { saved, savedIds, save, unsave, loading: savedLoading } = useSavedPublications(profile?.id)
+  const { publications, loading: pubsLoading } = usePublicationDigest()
 
   async function load() {
     setLoading(true)
@@ -85,6 +120,26 @@ export default function Library() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id])
 
+  // One batch of signed links for the covers. The tiles draw page 1 of each PDF
+  // themselves, and they need a readable URL to do it — minting them one at a
+  // time as tiles scroll into view would be a request per document.
+  useEffect(() => {
+    if (docs.length === 0) { setCoverUrls(new Map()); return }
+    let cancelled = false
+    supabase.storage
+      .from(BUCKET)
+      .createSignedUrls(docs.map((d) => d.storage_path), SIGNED_URL_TTL)
+      .then(({ data }) => {
+        if (cancelled || !data) return
+        const map = new Map<string, string>()
+        for (const row of data) {
+          if (row.path && row.signedUrl) map.set(row.path, row.signedUrl)
+        }
+        setCoverUrls(map)
+      })
+    return () => { cancelled = true }
+  }, [docs])
+
   const grouped = useMemo(() => {
     const q = query.trim().toLowerCase()
     const filtered = q
@@ -99,7 +154,13 @@ export default function Library() {
       const key = d.category?.trim() || 'Other'
       map.set(key, [...(map.get(key) ?? []), d])
     }
-    return Array.from(map.entries())
+    // Known shelves in their fixed order; anything filed under a category that
+    // is not one of ours keeps its place at the end rather than disappearing.
+    const rank = (c: string) => {
+      const i = SECTION_ORDER.indexOf(c)
+      return i === -1 ? SECTION_ORDER.length : i
+    }
+    return Array.from(map.entries()).sort((a, b) => rank(a[0]) - rank(b[0]))
   }, [docs, query])
 
   function isPdf(d: LibraryDoc) {
@@ -146,8 +207,10 @@ export default function Library() {
       <div>
         <h1 className="font-display text-2xl font-bold text-ink">Library</h1>
         <p className="mt-1 text-sm text-muted">
-          Reference texts and documents for the fellowship. Files are private to the portal — downloads use temporary
-          links and nothing here is reachable from the public internet.
+          Reference texts and documents for the fellowship, the latest papers from the journals we follow, and the
+          ones you have kept.
+          Files are private to the portal — downloads use temporary links and nothing here is reachable from the
+          public internet.
         </p>
       </div>
 
@@ -181,7 +244,7 @@ export default function Library() {
           </div>
         )}
 
-        <div className="border-b border-line px-5 py-3">
+        <div className="px-5 py-3">
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -189,76 +252,101 @@ export default function Library() {
             className="w-full max-w-md rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink"
           />
         </div>
+      </Card>
 
-        {loading ? (
-          <p className="px-5 py-4 text-sm text-muted">Loading…</p>
-        ) : grouped.length === 0 ? (
+      {loading ? (
+        <Card><p className="px-5 py-4 text-sm text-muted">Loading…</p></Card>
+      ) : grouped.length === 0 ? (
+        <Card>
           <p className="px-5 py-4 text-sm text-muted">
             {docs.length === 0
               ? canManage
-                ? 'Nothing on the shelf yet. Use “Add document” to upload the first PDF.'
+                ? 'Nothing on the shelf yet. Use \u201cAdd document\u201d to upload the first PDF.'
                 : 'Nothing on the shelf yet.'
               : 'No documents match that search.'}
           </p>
-        ) : (
-          <div className="divide-y divide-line">
-            {grouped.map(([category, items]) => (
-              <div key={category} className="px-5 py-4">
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">{category}</p>
-                {/* The actions keep their own column and never wrap into the
-                    title. `flex-wrap` used to drop them under a long title,
-                    which put Read and Download in a different place on every
-                    row. */}
-                <ul className="divide-y divide-line">
-                  {items.map((d) => (
-                    <li key={d.id} className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-ink">{d.title}</p>
-                        {/* Authors and edition only. The stored file name is an
-                            upload artefact — URL-escaped, publisher-mangled and
-                            longer than the title — and nothing is done with it
-                            here that would need it shown. */}
-                        {(d.authors || d.edition) && (
-                          <p className="text-sm text-muted">
-                            {[d.authors, d.edition].filter(Boolean).join(' · ')}
-                          </p>
-                        )}
-                        {d.description && <p className="mt-0.5 text-sm text-muted">{d.description}</p>}
-                      </div>
-                      {/* Stacked on a phone, in a row from sm up — right-aligned
-                          either way. */}
-                      <div className="flex shrink-0 flex-col items-end gap-1 text-sm sm:flex-row sm:items-baseline sm:gap-4">
-                        {/* Size sits with the actions, where it answers "how big
-                            is this download?" rather than padding the subtitle. */}
-                        {d.size_bytes ? (
-                          <span className="whitespace-nowrap text-xs text-muted">{humanSize(d.size_bytes)}</span>
-                        ) : null}
-                        {isPdf(d) && (
-                          <button
-                            className="whitespace-nowrap font-medium text-accent hover:underline disabled:opacity-50"
-                            disabled={opening === d.id}
-                            onClick={() => read(d)}
-                          >
-                            {opening === d.id ? 'Opening…' : 'Read'}
-                          </button>
-                        )}
-                        <button className="whitespace-nowrap font-medium text-accent hover:underline" onClick={() => download(d)}>
-                          Download
-                        </button>
-                        {canManage && (
-                          <button className="whitespace-nowrap font-medium text-red-600 hover:underline" onClick={() => remove(d)}>
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
+        </Card>
+      ) : (
+        // One shelf per category, textbooks first and review articles next,
+        // each scrolling sideways through its covers.
+        grouped.map(([category, items]) => (
+          <Card key={category}>
+            <CardHeader
+              title={sectionTitle(category)}
+              sub={`${items.length} item${items.length === 1 ? '' : 's'}`}
+            />
+            <Carousel label={sectionTitle(category)}>
+              {items.map((d) => (
+                <CarouselTile key={d.id}>
+                  {isPdf(d) ? (
+                    <button
+                      type="button"
+                      onClick={() => read(d)}
+                      title={`Read ${d.title}`}
+                      className="rounded-md focus:outline-none focus:ring-2 focus:ring-accent"
+                    >
+                      <DocCover url={coverUrls.get(d.storage_path) ?? null} title={d.title} isPdf />
+                    </button>
+                  ) : (
+                    <DocCover url={null} title={d.title} isPdf={false} />
+                  )}
+
+                  <div className="min-h-[2.5rem]">
+                    <p className="line-clamp-2 text-xs font-medium leading-snug text-ink" title={d.title}>{d.title}</p>
+                    {(d.authors || d.edition) && (
+                      <p className="line-clamp-1 text-[11px] text-muted">
+                        {[d.authors, d.edition].filter(Boolean).join(' \u00b7 ')}
+                      </p>
+                    )}
+                  </div>
+
+                  {isPdf(d) && (
+                    <button
+                      onClick={() => read(d)}
+                      disabled={opening === d.id}
+                      className="rounded-md bg-accent px-2 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                    >
+                      {opening === d.id ? 'Opening\u2026' : 'Read online'}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => download(d)}
+                    className="rounded-md border border-accent px-2 py-1.5 text-xs font-semibold text-accent hover:bg-accent-soft"
+                  >
+                    Download
+                  </button>
+                  {d.size_bytes ? (
+                    <p className="text-center text-[11px] text-muted">{humanSize(d.size_bytes)}</p>
+                  ) : null}
+                  {canManage && (
+                    <button onClick={() => remove(d)} className="text-[11px] font-medium text-red-600 hover:underline">
+                      Remove
+                    </button>
+                  )}
+                </CarouselTile>
+              ))}
+            </Carousel>
+          </Card>
+        ))
+      )}
+
+      {/* The reader's own saved papers on the left, the rolling journal digest
+          on the right. They stack on a narrow screen, saved list first. */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <ReadingList
+          saved={saved}
+          loading={savedLoading}
+          onRemove={unsave}
+          emptyHint="Star a paper in Interesting reads \u2014 here or on the dashboard \u2014 and it will be kept here."
+        />
+        <InterestingReads
+          publications={publications}
+          loading={pubsLoading}
+          savedIds={savedIds}
+          onSave={save}
+          onUnsave={unsave}
+        />
+      </div>
 
       {reading && (
         <Suspense

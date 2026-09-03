@@ -21,6 +21,7 @@ import Vacation from './pages/Vacation'
 import Evaluations from './pages/Evaluations'
 import FeedbackReview from './pages/FeedbackReview'
 import Library from './pages/Library'
+import TestDirectory from './pages/TestDirectory'
 import Settings from './pages/Settings'
 import NotFound from './pages/NotFound'
 
@@ -87,6 +88,7 @@ export default function App() {
           RLS, not by this route). Library itself is a light import — the pdf.js
           reader inside it is lazily loaded when a document is opened. */}
       <Route path="/library" element={<Shell allow={['fellow', 'supervisor', 'director', 'admin']}><Library /></Shell>} />
+      <Route path="/test-directory" element={<Shell allow={['fellow', 'supervisor', 'director']}><TestDirectory /></Shell>} />
       <Route path="/settings" element={<Shell><Settings /></Shell>} />
       {/* Legacy path redirects */}
       <Route path="/home" element={<Navigate to="/dashboard" replace />} />

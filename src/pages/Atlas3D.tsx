@@ -171,6 +171,14 @@ export default function Atlas3D() {
   const [resetSignal, setResetSignal] = useState(0)
   const [centreSignal, setCentreSignal] = useState(0)
   const [zoomCommand, setZoomCommand] = useState({ seq: 0, factor: 1 })
+  /**
+   * Target we have been asked to centre on as soon as the viewer reports where
+   * it is. Picking from a list gives no clue where on the model the muscle is,
+   * so the view goes to it; clicking the model does NOT arm this, because there
+   * the muscle is already under the pointer and moving the view would yank it
+   * away from the click.
+   */
+  const [pendingCentre, setPendingCentre] = useState<string | null>(null)
 
   const { profile } = useAuth()
   const mayAuthor = canAuthorMarkers(profile?.role)
@@ -368,6 +376,23 @@ export default function Atlas3D() {
     () => visibleMarkers.find((m) => m.status === 'approved') ?? null,
     [visibleMarkers],
   )
+
+  const targetKey = `${mode}:${mode === 'emg' ? selectedId : studyId}`
+
+  // The viewer reports the selection's centre a frame or two after the
+  // selection changes, so the centring waits for it rather than firing on the
+  // click. A muscle with no mesh never reports one; the request is dropped when
+  // the selection moves on.
+  useEffect(() => {
+    if (!pendingCentre) return
+    if (pendingCentre !== targetKey) {
+      setPendingCentre(null)
+      return
+    }
+    if (selectionCentre === null) return
+    setCentreSignal((n) => n + 1)
+    setPendingCentre(null)
+  }, [pendingCentre, targetKey, selectionCentre])
 
   // Moving to a different muscle or study lands on an approach that target
   // actually has, rather than carrying the last one over and showing an empty
@@ -938,6 +963,7 @@ export default function Atlas3D() {
                               onClick={() => {
                                 setStudyId(st.id)
                                 setPlacing(null)
+                                setPendingCentre(`ncs:${st.id}`)
                               }}
                               className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm ${
                                 active ? 'bg-accent-soft text-accent' : 'text-ink hover:bg-paper'
@@ -1005,6 +1031,7 @@ export default function Atlas3D() {
                       onClick={() => {
                         setSelectedId(m.id)
                         setQuery('')
+                        setPendingCentre(`emg:${m.id}`)
                       }}
                       className="block w-full px-3 py-1.5 text-left text-sm text-ink hover:bg-accent-soft/40"
                     >
@@ -1027,7 +1054,10 @@ export default function Atlas3D() {
                   return (
                     <button
                       key={m.id}
-                      onClick={() => setSelectedId(m.id)}
+                      onClick={() => {
+                        setSelectedId(m.id)
+                        setPendingCentre(`emg:${m.id}`)
+                      }}
                       className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm ${
                         active ? 'bg-accent-soft text-accent' : 'text-ink hover:bg-paper'
                       }`}
