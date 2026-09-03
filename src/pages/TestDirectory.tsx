@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../context/AuthContext'
 import { Card } from '../components/ui/Card'
+import { AddDirectoryTest } from '../components/AddDirectoryTest'
 
 // A mirror of the public Canadian Neuro Diagnostic Testing Directory. The rows
 // are refreshed weekly by the neuro-directory-sync edge function; this page
@@ -31,6 +33,12 @@ interface DirectoryTest {
   /** 'antibody' | 'genetic' | 'other', derived by the database from the
    *  source's own test_type wording. */
   modality: string | null
+  /** 'mirror' for a row copied from the public directory, 'local' for one added
+   *  in the portal. The weekly sync only ever rewrites the mirrored ones. */
+  origin: string | null
+  added_by: string | null
+  /** Storage path of an uploaded requisition, when one was attached here. */
+  requisition_path: string | null
 }
 
 /** Search synonyms: official gene names from mygene.info, plus curated
@@ -60,22 +68,69 @@ const GENE_TABLE_URL = 'https://www.musclegenetable.fr'
 /** How many disease names to show per gene before collapsing the rest. */
 const SHOWN_DISEASES = 3
 
+
+/** One row of the type-ahead. `search` is everything the entry can be found
+ *  by; `label` is what lands in the search box when it is chosen. */
+interface Suggestion {
+  kind: 'gene' | 'antibody' | 'disease' | 'test'
+  label: string
+  sub?: string | null
+  search: string
+}
+
+const KIND_LABEL: Record<Suggestion['kind'], string> = {
+  gene: 'Gene',
+  antibody: 'Antibody',
+  disease: 'Condition',
+  test: 'Test',
+}
+
+/** How many type-ahead rows to offer. */
+const MAX_SUGGESTIONS = 10
+
+/** Several requisitions list a placeholder where the symbols would go —
+ *  "Multiple (see requisition)", "Varies by assay (see BCNI directory)". They
+ *  are real entries in the source and stay on the test's own detail, but they
+ *  are not genes and do not belong in a list of genes to browse or a type-ahead
+ *  of things to search for. A single-word entry is always a symbol; a
+ *  multi-word one only counts if it starts with a symbol-shaped token, which
+ *  keeps "ATN1 (DRPLA)" and drops "others per requisition". */
+function isSymbol(raw: string): boolean {
+  const s = raw.trim()
+  if (!s) return false
+  const [first, ...rest] = s.split(/\s+/)
+  if (rest.length === 0) return true
+  return /^[A-Z0-9][A-Z0-9-]*$/.test(first)
+}
+
 export default function TestDirectory() {
+  const { profile } = useAuth()
+  // Supervisors and the director keep the directory current between refreshes
+  // of the public site; everyone else reads it.
+  const canAdd = profile?.role === 'supervisor' || profile?.role === 'director' || profile?.role === 'admin'
   const [tests, setTests] = useState<DirectoryTest[]>([])
+  const [adding, setAdding] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [syncedAt, setSyncedAt] = useState<string | null>(null)
-  const [view, setView] = useState<'tests' | 'genes'>('tests')
   const [q, setQ] = useState('')
+  // Which full list is open. Null, with an empty query, means the page shows
+  // nothing but the search box and the three buttons — 478 symbols and 33 tests
+  // are not a useful thing to land on.
+  const [browse, setBrowse] = useState<'genes' | 'antibodies' | 'tests' | null>(null)
   const [section, setSection] = useState('')
   const [lab, setLab] = useState('')
   const [openId, setOpenId] = useState<string | null>(null)
-  const [showGenetic, setShowGenetic] = useState(false)
   const [terms, setTerms] = useState<Map<string, GeneTerm>>(new Map())
   const [phenotypes, setPhenotypes] = useState<Map<string, GenePhenotypes>>(new Map())
   const [geneTableVersion, setGeneTableVersion] = useState<string | null>(null)
+  // Type-ahead: open while the box has focus and something has been typed.
+  const [suggestOpen, setSuggestOpen] = useState(false)
+  const [cursor, setCursor] = useState(0)
+  const inputRef = useRef<HTMLInputElement | null>(null)
 
-  useEffect(() => {
-    supabase
+  function loadTests() {
+    return supabase
       .from('neuro_test_directory')
       .select('*')
       .order('primary_section')
@@ -86,6 +141,10 @@ export default function TestDirectory() {
         setSyncedAt((data as { synced_at?: string }[] | null)?.[0]?.synced_at ?? null)
         setLoading(false)
       })
+  }
+
+  useEffect(() => {
+    loadTests()
 
     supabase
       .from('gene_search_terms')
@@ -134,7 +193,9 @@ export default function TestDirectory() {
   //
   // It exists because an autoimmune search was returning genetics panels:
   // "MuSK" also names a gene, and the Gene Table still records CHAT's
-  // phenotypes as "Myasthenia gravis, familial infantile".
+  // phenotypes as "Myasthenia gravis, familial infantile". The suppression is
+  // silent — there is no notice and no override, so a search for an autoimmune
+  // condition simply does not return inherited-disease panels.
   const antibodyIntent = useMemo(() => {
     if (words.length === 0) return false
     for (const t of terms.values()) {
@@ -146,8 +207,7 @@ export default function TestDirectory() {
     return false
   }, [terms, words])
 
-  /** Genetics is hidden while an antibody search is in play, unless asked for. */
-  const hideGenetic = antibodyIntent && !showGenetic
+  const hideGenetic = antibodyIntent
 
   /** Disease names for a symbol, split by whether they can be attributed.
    *  `sourced` merges the testing directory's own conditions with the Gene
@@ -174,16 +234,132 @@ export default function TestDirectory() {
       .filter(Boolean).join(' ')
   }
 
+  const testHay = (t: DirectoryTest) =>
+    [t.test_name, t.subsection, t.test_type, t.lab_name, t.lab_city_province,
+      ...t.conditions, ...t.genes_or_antibodies.map(termText)].filter(Boolean).join(' ')
+
+  // Which symbols are antibodies and which are genes, taken from the modality
+  // of the tests that name them rather than from a list of our own. A symbol
+  // can be both: contactin 1 is assayed as an antibody and sequenced as a gene,
+  // and it belongs under both buttons.
+  const symbolKinds = useMemo(() => {
+    const m = new Map<string, { antibody: boolean; genetic: boolean }>()
+    for (const t of tests) {
+      for (const g of t.genes_or_antibodies) {
+        const key = g.trim()
+        if (!key || !isSymbol(key)) continue
+        const e = m.get(key) ?? { antibody: false, genetic: false }
+        if (t.modality === 'antibody') e.antibody = true
+        if (t.modality === 'genetic') e.genetic = true
+        m.set(key, e)
+      }
+    }
+    return m
+  }, [tests])
+
+  const geneTotal = useMemo(
+    () => Array.from(symbolKinds.values()).filter((k) => k.genetic).length,
+    [symbolKinds]
+  )
+  const antibodyTotal = useMemo(
+    () => Array.from(symbolKinds.values()).filter((k) => k.antibody).length,
+    [symbolKinds]
+  )
+
+  // Everything the type-ahead can offer: symbols, the conditions attached to
+  // them, and the test names. Built once from the loaded rows.
+  const catalog = useMemo(() => {
+    const out: Suggestion[] = []
+
+    for (const [symbol, kind] of symbolKinds) {
+      const t = terms.get(symbol)
+      const d = diseases(symbol)
+      out.push({
+        // A symbol assayed both ways is offered as an antibody, which is the
+        // narrower and more often intended reading of a name like MuSK.
+        kind: kind.antibody ? 'antibody' : 'gene',
+        label: symbol,
+        sub: t?.full_name ?? null,
+        search: [symbol, t?.full_name, ...(t?.aliases ?? []), ...d.sourced, ...d.added]
+          .filter(Boolean).join(' '),
+      })
+    }
+
+    // Conditions, from every place one is written down, deduplicated on case.
+    const seen = new Map<string, string>()
+    const addCondition = (raw: string) => {
+      const name = raw.trim()
+      if (name.length < 3) return
+      const k = name.toLowerCase()
+      if (!seen.has(k)) seen.set(k, name)
+    }
+    for (const t of tests) t.conditions.forEach(addCondition)
+    for (const t of terms.values()) {
+      t.condition_terms?.forEach(addCondition)
+      t.added_conditions?.forEach(addCondition)
+    }
+    for (const p of phenotypes.values()) p.phenotypes?.forEach(addCondition)
+    for (const name of seen.values()) out.push({ kind: 'disease', label: name, search: name })
+
+    for (const t of tests) {
+      out.push({
+        kind: 'test',
+        label: t.test_name,
+        sub: t.lab_name,
+        search: [t.test_name, t.lab_name, t.subsection].filter(Boolean).join(' '),
+      })
+    }
+
+    return out
+  }, [tests, terms, phenotypes, symbolKinds])
+
+  // What to offer for what has been typed. A name that starts with the query
+  // comes before one that merely contains it, so typing "ach" offers AChR
+  // before every panel that happens to mention acetylcholine.
+  const suggestions = useMemo(() => {
+    if (needle.length < 2) return []
+    const starts: Suggestion[] = []
+    const contains: Suggestion[] = []
+    for (const s of catalog) {
+      if (s.label.toLowerCase() === needle) continue
+      const hay = s.search.toLowerCase()
+      if (!words.every((w) => hay.includes(w))) continue
+      if (s.label.toLowerCase().startsWith(needle)) starts.push(s)
+      else contains.push(s)
+      if (starts.length >= MAX_SUGGESTIONS) break
+    }
+    return [...starts, ...contains].slice(0, MAX_SUGGESTIONS)
+  }, [catalog, needle, words])
+
+  useEffect(() => { setCursor(0) }, [needle])
+
+  function choose(s: Suggestion) {
+    setQ(s.label)
+    setBrowse(null)
+    setSuggestOpen(false)
+    inputRef.current?.blur()
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!suggestOpen || suggestions.length === 0) return
+    if (e.key === 'ArrowDown') { e.preventDefault(); setCursor((c) => (c + 1) % suggestions.length) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setCursor((c) => (c - 1 + suggestions.length) % suggestions.length) }
+    else if (e.key === 'Enter') { e.preventDefault(); choose(suggestions[cursor]) }
+    else if (e.key === 'Escape') { setSuggestOpen(false) }
+  }
+
   // A test matches on anything a reader might reasonably type: the test name,
   // the condition, a gene symbol, the lab.
-  const filteredTests = useMemo(() => tests.filter((t) => {
-    if (section && t.primary_section !== section) return false
-    if (lab && t.lab_name !== lab) return false
-    if (hideGenetic && t.modality === 'genetic') return false
-    if (!needle) return true
-    return matches([t.test_name, t.subsection, t.test_type, t.lab_name, t.lab_city_province,
-      ...t.conditions, ...t.genes_or_antibodies.map(termText)].filter(Boolean).join(' '))
-  }), [tests, section, lab, words, terms, phenotypes, hideGenetic])
+  const filteredTests = useMemo(() => {
+    if (!needle && browse !== 'tests') return []
+    return tests.filter((t) => {
+      if (section && t.primary_section !== section) return false
+      if (lab && t.lab_name !== lab) return false
+      if (hideGenetic && t.modality === 'genetic') return false
+      if (!needle) return true
+      return matches(testHay(t))
+    })
+  }, [tests, section, lab, words, terms, phenotypes, hideGenetic, browse, needle])
 
   const grouped = useMemo(() => {
     const m = new Map<string, DirectoryTest[]>()
@@ -203,6 +379,7 @@ export default function TestDirectory() {
   // unrelated antibodies onto one form, so searching "myasthenia gravis" would
   // otherwise return NMDAR and cN1A as though they were MG antibodies.
   const geneIndex = useMemo(() => {
+    if (!needle && browse !== 'genes' && browse !== 'antibodies') return []
     const m = new Map<string, DirectoryTest[]>()
     for (const t of tests) {
       if (section && t.primary_section !== section) continue
@@ -210,7 +387,11 @@ export default function TestDirectory() {
       if (hideGenetic && t.modality === 'genetic') continue
       for (const g of t.genes_or_antibodies) {
         const key = g.trim()
-        if (!key) continue
+        if (!key || !isSymbol(key)) continue
+        // Browsing one kind shows only that kind; a search shows both.
+        const kind = symbolKinds.get(key)
+        if (browse === 'genes' && !kind?.genetic) continue
+        if (browse === 'antibodies' && !kind?.antibody) continue
         m.set(key, [...(m.get(key) ?? []), t])
       }
     }
@@ -226,21 +407,36 @@ export default function TestDirectory() {
       if (matches(context)) out.push({ gene, ts, direct: false })
     }
     return [...out.filter((e) => e.direct), ...out.filter((e) => !e.direct)]
-  }, [tests, section, lab, words, terms, phenotypes, hideGenetic])
+  }, [tests, section, lab, words, terms, phenotypes, hideGenetic, browse, needle, symbolKinds])
 
   const directCount = geneIndex.filter((e) => e.direct).length
 
-  // What the suppression is holding back, so the notice can say how much.
-  const hiddenGeneticTests = useMemo(() => {
-    if (!antibodyIntent) return 0
-    return tests.filter((t) => {
-      if (t.modality !== 'genetic') return false
-      if (section && t.primary_section !== section) return false
-      if (lab && t.lab_name !== lab) return false
-      return matches([t.test_name, t.subsection, t.test_type, t.lab_name, t.lab_city_province,
-        ...t.conditions, ...t.genes_or_antibodies.map(termText)].filter(Boolean).join(' '))
-    }).length
-  }, [antibodyIntent, tests, section, lab, words, terms, phenotypes])
+  const searching = needle.length > 0
+  const showGeneList = searching ? geneIndex.length > 0 : browse === 'genes' || browse === 'antibodies'
+  const showTestList = searching ? grouped.length > 0 : browse === 'tests'
+  const nothingYet = !searching && !browse
+
+  function pick(next: 'genes' | 'antibodies' | 'tests') {
+    setBrowse(browse === next ? null : next)
+    setQ('')
+    setSuggestOpen(false)
+  }
+
+  const browseBtn = (key: 'genes' | 'antibodies' | 'tests', label: string, n: number) => (
+    <button
+      key={key}
+      type="button"
+      onClick={() => pick(key)}
+      aria-pressed={browse === key}
+      className={`rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+        browse === key
+          ? 'border-accent bg-accent-soft text-accent'
+          : 'border-line text-ink hover:border-accent hover:text-accent'
+      }`}
+    >
+      {label} <span className="text-muted">({n})</span>
+    </button>
+  )
 
   return (
     <div className="space-y-6">
@@ -257,94 +453,129 @@ export default function TestDirectory() {
       </div>
 
       <Card>
-        <div className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-3">
-          <div className="flex rounded-md border border-line p-0.5">
-            {([['tests', `Tests (${tests.length})`], ['genes', `Gene / antibody index (${geneIndex.length})`]] as const).map(([v, label]) => (
-              <button key={v} type="button" onClick={() => setView(v)}
-                className={`rounded px-3 py-1.5 text-sm font-medium transition-colors ${
-                  view === v ? 'bg-accent-soft text-accent' : 'text-muted hover:text-ink'
-                }`}>
-                {label}
-              </button>
-            ))}
+        <div className="px-5 py-4">
+          {/* The search box owns the top of the page. The type-ahead floats
+              over whatever is below it rather than pushing the page around as
+              the list of matches changes length. */}
+          <div className="relative">
+            <input
+              ref={inputRef}
+              value={q}
+              onChange={(e) => { setQ(e.target.value); setBrowse(null); setSuggestOpen(true) }}
+              onFocus={() => setSuggestOpen(true)}
+              onBlur={() => setSuggestOpen(false)}
+              onKeyDown={onKeyDown}
+              role="combobox"
+              aria-expanded={suggestOpen && suggestions.length > 0}
+              aria-autocomplete="list"
+              aria-controls="directory-suggestions"
+              placeholder="Search a gene, antibody, condition, test or lab — e.g. SMN1, AChR, myasthenia gravis"
+              className="w-full rounded-md border border-line bg-surface px-4 py-3 text-base text-ink shadow-sm focus:border-accent focus:outline-none"
+            />
+
+            {suggestOpen && suggestions.length > 0 && (
+              <ul
+                id="directory-suggestions"
+                role="listbox"
+                // The box loses focus the instant the mouse goes down on an
+                // option, which would close this list before the click landed.
+                onMouseDown={(e) => e.preventDefault()}
+                className="absolute z-20 mt-1 max-h-80 w-full overflow-y-auto rounded-md border border-line bg-surface py-1 shadow-lg"
+              >
+                {suggestions.map((s, i) => (
+                  <li key={`${s.kind}-${s.label}`} role="option" aria-selected={i === cursor}>
+                    <button
+                      type="button"
+                      onClick={() => choose(s)}
+                      onMouseEnter={() => setCursor(i)}
+                      className={`flex w-full items-baseline gap-2 px-4 py-2 text-left text-sm ${
+                        i === cursor ? 'bg-accent-soft' : ''
+                      }`}
+                    >
+                      <span className={`w-20 shrink-0 text-[11px] font-semibold uppercase tracking-wide ${
+                        s.kind === 'antibody' ? 'text-accent' : 'text-muted'
+                      }`}>
+                        {KIND_LABEL[s.kind]}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className={`text-ink ${s.kind === 'gene' || s.kind === 'antibody' ? 'font-mono font-medium' : ''}`}>
+                          {s.label}
+                        </span>
+                        {s.sub && <span className="ml-2 text-muted">{s.sub}</span>}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search by symbol, full name, condition, test or lab — e.g. AChR, acetylcholine receptor, myasthenia gravis"
-            className="min-w-[15rem] flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink"
-          />
-          <select value={section} onChange={(e) => setSection(e.target.value)}
-            className="max-w-[13rem] truncate rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink">
-            <option value="">All sections</option>
-            {sections.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <select value={lab} onChange={(e) => setLab(e.target.value)}
-            className="max-w-[13rem] truncate rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink">
-            <option value="">All labs</option>
-            {labs.map((l) => <option key={l} value={l}>{l}</option>)}
-          </select>
-          {(q || section || lab) && (
-            <button type="button" onClick={() => { setQ(''); setSection(''); setLab(''); setShowGenetic(false) }}
-              className="text-sm font-medium text-accent hover:underline">Clear</button>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {browseBtn('genes', 'Search by gene', geneTotal)}
+            {browseBtn('antibodies', 'Search by antibody', antibodyTotal)}
+            {browseBtn('tests', 'Search by test', tests.length)}
+
+            {(searching || browse) && (
+              <>
+                <select value={section} onChange={(e) => setSection(e.target.value)}
+                  className="ml-auto max-w-[13rem] truncate rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink">
+                  <option value="">All sections</option>
+                  {sections.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <select value={lab} onChange={(e) => setLab(e.target.value)}
+                  className="max-w-[13rem] truncate rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink">
+                  <option value="">All labs</option>
+                  {labs.map((l) => <option key={l} value={l}>{l}</option>)}
+                </select>
+                <button type="button" onClick={() => { setQ(''); setBrowse(null); setSection(''); setLab('') }}
+                  className="text-sm font-medium text-accent hover:underline">Clear</button>
+              </>
+            )}
+          </div>
+
+          {nothingYet && (
+            <p className="mt-3 text-sm text-muted">
+              {loading
+                ? 'Loading the directory…'
+                : 'Start typing to search, or open one of the lists above.'}
+            </p>
+          )}
+
+          {canAdd && !adding && (
+            <button type="button" onClick={() => { setAdding(true); setMsg(null) }}
+              className="mt-3 rounded-md bg-accent px-3 py-2 text-sm font-semibold text-white hover:opacity-90">
+              Add a test
+            </button>
           )}
         </div>
 
-        {antibodyIntent && (hiddenGeneticTests > 0 || showGenetic) && (
-          <p className="border-b border-line bg-accent-soft/40 px-5 py-2.5 text-xs text-ink">
-            {showGenetic ? (
-              <>
-                Showing genetic tests alongside antibody testing for “{q.trim()}”.{' '}
-                <button type="button" onClick={() => setShowGenetic(false)}
-                  className="font-medium text-accent hover:underline">Hide them</button>
-              </>
-            ) : (
-              <>
-                “{q.trim()}” is antibody testing, so {hiddenGeneticTests} genetic
-                {hiddenGeneticTests === 1 ? ' test is' : ' tests are'} hidden — a gene of the same name, or an
-                inherited condition with a similar name, is a different investigation.{' '}
-                <button type="button" onClick={() => setShowGenetic(true)}
-                  className="font-medium text-accent hover:underline">Show them anyway</button>
-              </>
-            )}
+        {msg && (
+          <p className="border-t border-line bg-accent-soft/40 px-5 py-2.5 text-sm text-ink">
+            {msg} <button className="ml-2 font-medium text-accent" onClick={() => setMsg(null)}>dismiss</button>
           </p>
         )}
 
-        {loading ? (
-          <p className="px-5 py-4 text-sm text-muted">Loading the directory…</p>
-        ) : view === 'tests' ? (
-          grouped.length === 0 ? (
-            <p className="px-5 py-4 text-sm text-muted">No tests match that search.</p>
-          ) : (
-            grouped.map(([sectionName, rows]) => (
-              <div key={sectionName} className="border-b border-line last:border-b-0">
-                <p className="px-5 pt-4 text-xs font-semibold uppercase tracking-wider text-muted">{sectionName}</p>
-                <ul className="divide-y divide-line">
-                  {rows.map((t) => (
-                    <li key={t.id} className="px-5 py-3 text-sm">
-                      <button type="button" onClick={() => setOpenId(openId === t.id ? null : t.id)}
-                        className="w-full text-left">
-                        <span className="font-medium text-ink">{t.test_name}</span>
-                        {t.modality === 'antibody' && (
-                          <span className="ml-2 rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">Antibody</span>
-                        )}
-                        {t.modality === 'genetic' && (
-                          <span className="ml-2 rounded-full bg-paper px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted">Genetic</span>
-                        )}
-                        <span className="mt-0.5 block text-muted">
-                          {[t.lab_name, t.lab_city_province].filter(Boolean).join(' · ')}
-                        </span>
-                      </button>
-                      {openId === t.id && <TestDetail t={t} />}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))
-          )
-        ) : geneIndex.length === 0 ? (
-          <p className="px-5 py-4 text-sm text-muted">No genes or antibodies match that search.</p>
-        ) : (
+        {adding && canAdd && profile && (
+          <AddDirectoryTest
+            userId={profile.id}
+            sections={sections}
+            onError={setMsg}
+            onCancel={() => setAdding(false)}
+            onDone={() => {
+              setAdding(false)
+              setMsg('Added. It is in the directory now and the weekly refresh will leave it alone.')
+              loadTests()
+            }}
+          />
+        )}
+      </Card>
+
+      {showGeneList && (
+        <Card>
+          <p className="border-b border-line px-5 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted">
+            {browse === 'antibodies' ? 'Antibodies' : browse === 'genes' ? 'Genes' : 'Genes and antibodies'}
+            {' '}({geneIndex.length})
+          </p>
           <ul className="divide-y divide-line">
             {geneIndex.map(({ gene, ts }, i) => (
               <li key={gene} className="px-5 py-2.5 text-sm">
@@ -374,10 +605,70 @@ export default function TestDirectory() {
               </li>
             ))}
           </ul>
-        )}
-      </Card>
+        </Card>
+      )}
 
-      {view === 'genes' && (
+      {showTestList && (
+        <Card>
+          <p className="border-b border-line px-5 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted">
+            Tests ({filteredTests.length})
+          </p>
+          {grouped.map(([sectionName, rows]) => (
+            <div key={sectionName} className="border-b border-line last:border-b-0">
+              <p className="px-5 pt-4 text-xs font-semibold uppercase tracking-wider text-muted">{sectionName}</p>
+              <ul className="divide-y divide-line">
+                {rows.map((t) => (
+                  <li key={t.id} className="px-5 py-3 text-sm">
+                    <button type="button" onClick={() => setOpenId(openId === t.id ? null : t.id)}
+                      className="w-full text-left">
+                      <span className="font-medium text-ink">{t.test_name}</span>
+                      {t.modality === 'antibody' && (
+                        <span className="ml-2 rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">Antibody</span>
+                      )}
+                      {t.modality === 'genetic' && (
+                        <span className="ml-2 rounded-full bg-paper px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted">Genetic</span>
+                      )}
+                      {t.origin === 'local' && (
+                        <span className="ml-2 rounded-full border border-line px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted"
+                          title="Added by the fellowship — not from the public directory">
+                          Added here
+                        </span>
+                      )}
+                      <span className="mt-0.5 block text-muted">
+                        {[t.lab_name, t.lab_city_province].filter(Boolean).join(' · ')}
+                      </span>
+                    </button>
+                    {openId === t.id && (
+                      <TestDetail
+                        t={t}
+                        canRemove={Boolean(canAdd && t.origin === 'local' &&
+                          (t.added_by === profile?.id || profile?.role === 'director' || profile?.role === 'admin'))}
+                        onRemove={async () => {
+                          if (!window.confirm(`Remove “${t.test_name}” from the directory?`)) return
+                          if (t.requisition_path) {
+                            await supabase.storage.from('requisitions').remove([t.requisition_path])
+                          }
+                          const { error } = await supabase.from('neuro_test_directory').delete().eq('id', t.id)
+                          if (error) { setMsg(error.message); return }
+                          loadTests()
+                        }}
+                      />
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {searching && !loading && !showGeneList && !showTestList && (
+        <Card>
+          <p className="px-5 py-4 text-sm text-muted">Nothing in the directory matches “{q.trim()}”.</p>
+        </Card>
+      )}
+
+      {showGeneList && (
         <p className="text-xs text-muted">
           Disease names for genes come from the{' '}
           <a href={GENE_TABLE_URL} target="_blank" rel="noreferrer" className="font-medium text-accent hover:underline">
@@ -387,7 +678,7 @@ export default function TestDirectory() {
         </p>
       )}
 
-      {view === 'genes' && geneIndex.some(({ gene }) => (terms.get(gene.trim())?.added_conditions ?? []).length > 0) && (
+      {showGeneList && geneIndex.some(({ gene }) => (terms.get(gene.trim())?.added_conditions ?? []).length > 0) && (
         <p className="text-xs text-muted">
           <span className="font-medium text-ink">†</span> Antibody–disease pairing added by the fellowship as a
           search aid. The source directory lists conditions per requisition, not per antibody, so these
@@ -429,7 +720,26 @@ function GeneConditions({ sourced, added }: { sourced: string[]; added: string[]
   )
 }
 
-function TestDetail({ t }: { t: DirectoryTest }) {
+function TestDetail({ t, canRemove, onRemove }: {
+  t: DirectoryTest
+  canRemove?: boolean
+  onRemove?: () => void
+}) {
+  const [opening, setOpening] = useState(false)
+
+  // An uploaded requisition lives in a private bucket, so it is opened through
+  // a link minted for this reader and good for an hour — the same treatment
+  // library documents get.
+  async function openUpload() {
+    if (!t.requisition_path) return
+    setOpening(true)
+    const { data, error } = await supabase.storage
+      .from('requisitions').createSignedUrl(t.requisition_path, 3600)
+    setOpening(false)
+    if (error || !data?.signedUrl) return
+    window.open(data.signedUrl, '_blank', 'noopener')
+  }
+
   const rows: [string, string | null][] = [
     ['Test type', t.test_type],
     ['Conditions', t.conditions.join(' · ') || null],
@@ -456,14 +766,26 @@ function TestDetail({ t }: { t: DirectoryTest }) {
           <p className="mt-0.5 break-words font-mono text-xs text-ink">{t.genes_or_antibodies.join(', ')}</p>
         </div>
       )}
-      <div className="mt-2 flex flex-wrap gap-3">
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        {t.requisition_path && (
+          <button type="button" onClick={openUpload} disabled={opening}
+            className="text-sm font-medium text-accent hover:underline disabled:opacity-50">
+            {opening ? 'Opening…' : 'Requisition PDF →'}
+          </button>
+        )}
         {t.requisition_pdf_url && (
           <a href={t.requisition_pdf_url} target="_blank" rel="noreferrer"
-            className="text-sm font-medium text-accent hover:underline">Requisition PDF →</a>
+            className="text-sm font-medium text-accent hover:underline">
+            {t.requisition_path ? 'Requisition on the lab’s site →' : 'Requisition PDF →'}
+          </a>
         )}
         {t.lab_page_url && (
           <a href={t.lab_page_url} target="_blank" rel="noreferrer"
             className="text-sm font-medium text-accent hover:underline">Lab website →</a>
+        )}
+        {canRemove && onRemove && (
+          <button type="button" onClick={onRemove}
+            className="ml-auto text-sm font-medium text-red-600 hover:underline">Remove</button>
         )}
       </div>
     </div>
