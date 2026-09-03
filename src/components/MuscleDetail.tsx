@@ -29,6 +29,7 @@ export function MuscleDetail({
   showDiagram = true,
   showIdentity = true,
   showPitfalls = true,
+  showLocalization = true,
 }: {
   muscle: EmgMuscle
   /**
@@ -49,6 +50,12 @@ export function MuscleDetail({
    * where to go in. The text atlas keeps the card.
    */
   showPitfalls?: boolean
+  /**
+   * The 3D Atlas turns this off too: position, insertion and activation are all
+   * in the summary strip above the model there, so the card repeated them a
+   * screen further down. The text atlas keeps it.
+   */
+  showLocalization?: boolean
 }) {
   const chain = chainParts(muscle)
   return (
@@ -80,7 +87,7 @@ export function MuscleDetail({
       </Card>
       )}
 
-      {(muscle.position || muscle.localization || muscle.maneuver) && (
+      {showLocalization && (muscle.position || muscle.localization || muscle.maneuver) && (
         <Card>
           <CardHeader title="Needle localization" sub="Verify landmarks against a primary source" />
           <div className="px-5 py-4">

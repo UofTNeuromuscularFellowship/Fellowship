@@ -1150,8 +1150,10 @@ export default function Atlas3D() {
             muscle={current}
             showDiagram={false}
             showIdentity={false}
-            /* Pitfalls moved up into the summary strip, beside the insertion line. */
+            /* Action, position, insertion, activation and pitfalls are all in
+               the summary strip above the model now. */
             showPitfalls={false}
+            showLocalization={false}
           />
 
 

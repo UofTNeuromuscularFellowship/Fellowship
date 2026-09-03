@@ -25,12 +25,7 @@ const SECTIONS: NavSection[] = [
   {
     heading: 'Case logging',
     items: [
-      // The same page reads very differently by role: a fellow logs their own
-      // cases, a supervisor looks at their fellows'. One label cannot do both,
-      // and the filter below means only one of these ever renders.
-      { to: '/cases', label: 'Case logger', allow: ['fellow'] },
-      { to: '/cases', label: "Your Fellow's Case Log", allow: ['supervisor', 'director'] },
-      { to: '/teaching-cases', label: 'Teaching cases', allow: ['supervisor', 'director'] },
+      { to: '/cases', label: 'Case logger', allow: ['fellow', 'supervisor', 'director'] },
       { to: '/competency', label: 'Competency', allow: ['fellow', 'director', 'admin'] },
     ],
   },
@@ -40,14 +35,13 @@ const SECTIONS: NavSection[] = [
       { to: '/calculators', label: 'EMG/NCS calculators', allow: ['fellow', 'supervisor', 'director'] },
       { to: '/study', label: 'Test your anatomy knowledge', allow: ['fellow', 'supervisor', 'director'] },
       { to: '/atlas-3d', label: '3D atlas', allow: ['fellow', 'supervisor', 'director'] },
-      { to: '/test-directory', label: 'Diagnostic test directory', allow: ['fellow', 'supervisor', 'director'] },
-      { to: '/library', label: 'Library', allow: ['fellow', 'supervisor', 'director', 'admin'] },
     ],
   },
   {
     heading: 'Teaching',
     items: [
       { to: '/my-teaching', label: 'Teaching Assignments', allow: ['fellow', 'supervisor', 'director', 'assistant'] },
+      { to: '/teaching-cases', label: 'Teaching cases', allow: ['supervisor', 'director'] },
       { to: '/rate-teaching', label: 'Rate Teaching', allow: ['fellow'] },
       { to: '/evaluations', label: 'Evaluations', allow: ['fellow', 'supervisor', 'director'] },
       { to: '/feedback-review', label: 'Feedback review', allow: ['director', 'admin'] },
@@ -57,6 +51,7 @@ const SECTIONS: NavSection[] = [
     heading: 'Program',
     items: [
       { to: '/handbook', label: 'Handbook' },
+      { to: '/library', label: 'Library', allow: ['fellow', 'supervisor', 'director', 'admin'] },
       { to: '/people', label: 'People', allow: ['director', 'admin'] },
       { to: '/settings', label: 'Settings' },
     ],

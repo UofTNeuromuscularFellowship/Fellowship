@@ -19,18 +19,30 @@ build output showing as untracked.
 
 WHAT IS IN IT
 
-1. Viewer control bar (new)
-   - Rotate | Pan (one either/or pair, the live one highlighted), Zoom in,
-     Zoom out, Centre, Reset — icons with labels, in one row above the model.
-   - A hint line that follows the mode: "Drag to rotate · right-drag or two
-     fingers to pan · scroll to zoom".
+1. The muscle title box, rebuilt (new)
 
-2. Needle depth removed from EMG authoring (new)
+     Triceps Brachii   Arm
+     Roots: C7-C8-T1
+     Plexus: Posterior > Middle and Lower > Posterior
+     Nerve: Radial
+     Primary Action: Chief elbow extensor; the long head also aids...
+     ----------------------------------------------------
+     POSITION    Prone with the arm abducted; lateral head sampled...
+     INSERTION   Three heads share a common olecranon tendon...
+     ACTIVATION  Extend the elbow.
+     PITFALLS    Too anterior or proximal on the lateral head hits deltoid...
+
+   The "Needle localization" card under the model is gone — the strip carries
+   all of it. POSITION is included because that card was its only home and it
+   is reviewed clinical text; say the word and I will drop it.
+   Only Clinical pearls remains below the model.
+
+2. Viewer control bar
+   - Rotate | Pan (the live one highlighted), Zoom in, Zoom out, Centre, Reset.
+   - Hint line that follows the mode.
+
+3. Needle depth removed from EMG authoring
    - No depth field, no Save depth. Depth stays in the written technique.
-
-3. Pitfalls & cautions moved (new)
-   - Now an amber line directly under INSERTION in the title box at the top.
-     The separate card lower down is gone.
 
 4. Renaming an approach
    - "Rename" beside "New approach" — every marker in that approach moves to

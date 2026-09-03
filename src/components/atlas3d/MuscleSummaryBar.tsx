@@ -2,15 +2,15 @@
 // One-line identity strip for the selected muscle, shown under the layer
 // legend and above the model.
 //
-// It carries the facts you want in view WHILE looking at the anatomy — name,
-// roots, plexus chain, nerve, action — laid out horizontally so it costs one
-// or two lines instead of a card, plus the insertion line underneath — the
-// sentence a fellow is actually reading when they aim a needle — and the
-// pitfalls for that muscle directly beneath it.
+// Two blocks separated by a rule:
 //
-// Because this exists, the identity card that used to sit under the model is
-// switched off there (MuscleDetail's `showIdentity`), and the needle
-// localization card moves to the top.
+//   above  what this muscle IS — roots, plexus, nerve, primary action
+//   below  what you DO — position, insertion, activation, pitfalls
+//
+// The lower block is the entire content of MuscleDetail's "Needle localization"
+// card, which is why the atlas switches that card (and the identity card, and
+// the pitfalls card) off: everything a fellow reads while aiming a needle is in
+// view beside the anatomy instead of scrolled past below it.
 // ---------------------------------------------------------------------------
 
 import type { EmgMuscle } from '../../data/emgAtlas'
@@ -34,17 +34,30 @@ export function SummaryBar({
   name,
   sub,
   parts,
+  partsLayout = 'inline',
   footer,
   footers,
 }: {
   name: string
   sub?: string | null
   parts: Array<{ label: string; value?: string | null }>
+  /**
+   * 'inline' wraps the details across as few lines as possible — right for a
+   * nerve conduction montage, where the six electrode fields are short.
+   * 'stacked' gives each its own line, which is what the muscle strip needs:
+   * roots, plexus, nerve and action are read one at a time, not scanned as a
+   * row.
+   */
+  partsLayout?: 'inline' | 'stacked'
   /** Full-width lines under the details, in order. Empty values are dropped. */
   footer?: { label: string; value: string } | null
   footers?: Array<{ label: string; value?: string | null; tone?: 'ink' | 'caution' }>
 }) {
   const shown = parts.filter((p) => p.value)
+  const lines = [
+    ...(footer ? [{ label: footer.label, value: footer.value, tone: 'ink' as const }] : []),
+    ...(footers ?? []),
+  ].filter((f) => f.value)
   return (
     <div className="border-b border-line bg-accent-soft/25 px-5 py-3">
       <div className="flex flex-wrap items-baseline gap-x-3">
@@ -56,39 +69,55 @@ export function SummaryBar({
           leading divider, a row that wraps starts the new line with a dangling
           "|"; trailing it leaves the divider at the end of the previous line,
           where it reads as a continuation. */}
-      {shown.length > 0 && (
-        <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-          {shown.map((p, i) => (
-            <span key={p.label} className="flex items-baseline gap-2">
-              <Part label={p.label} value={p.value} />
-              {i < shown.length - 1 && (
-                <span aria-hidden="true" className="text-line">
-                  |
-                </span>
-              )}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {[...(footer ? [{ label: footer.label, value: footer.value, tone: 'ink' as const }] : []),
-        ...(footers ?? [])]
-        .filter((f) => f.value)
-        .map((f) => (
-          <p
-            key={f.label}
-            className={`mt-1.5 text-sm ${f.tone === 'caution' ? 'text-amber-800' : 'text-ink'}`}
-          >
-            <span
-              className={`text-xs font-semibold uppercase tracking-wide ${
-                f.tone === 'caution' ? 'text-amber-700' : 'text-muted'
-              }`}
-            >
-              {f.label}{' '}
-            </span>
-            {f.value}
-          </p>
+      {shown.length > 0 &&
+        (partsLayout === 'stacked' ? (
+          <div className="mt-1 space-y-0.5">
+            {shown.map((p) => (
+              <p key={p.label}>
+                <Part label={p.label} value={p.value} />
+              </p>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            {shown.map((p, i) => (
+              <span key={p.label} className="flex items-baseline gap-2">
+                <Part label={p.label} value={p.value} />
+                {i < shown.length - 1 && (
+                  <span aria-hidden="true" className="text-line">
+                    |
+                  </span>
+                )}
+              </span>
+            ))}
+          </div>
         ))}
+
+      {/* A rule separates WHAT THIS MUSCLE IS (roots, plexus, nerve, primary
+          action) from WHAT YOU DO (position, insertion, activation) — two
+          different kinds of fact that were previously running together. */}
+      {lines.length > 0 && (
+        <>
+          <hr className="mt-2.5 border-t border-line" />
+          <div className="mt-2 space-y-1.5">
+            {lines.map((f) => (
+              <p
+                key={f.label}
+                className={`text-sm ${f.tone === 'caution' ? 'text-amber-800' : 'text-ink'}`}
+              >
+                <span
+                  className={`text-xs font-semibold uppercase tracking-wide ${
+                    f.tone === 'caution' ? 'text-amber-700' : 'text-muted'
+                  }`}
+                >
+                  {f.label}{' '}
+                </span>
+                {f.value}
+              </p>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -101,17 +130,27 @@ export function MuscleSummaryBar({ muscle }: { muscle: EmgMuscle }) {
     <SummaryBar
       name={muscle.name}
       sub={muscle.region}
+      // What this muscle is, one fact per line. Primary action belongs here
+      // rather than below the rule: it is a property of the muscle, not a step
+      // in the procedure — and it is what confirms you are on the right muscle
+      // when the needle is in.
       parts={[
         { label: 'Roots', value: muscle.roots },
         { label: 'Plexus', value: plexus },
         { label: 'Nerve', value: muscle.nerve },
-        { label: 'Action', value: muscle.action },
+        { label: 'Primary Action', value: muscle.action },
       ]}
-      footer={muscle.localization ? { label: 'Insertion', value: muscle.localization } : null}
-      // Pitfalls sit directly under the insertion line: what to avoid belongs
-      // beside where to go in, not in a card further down the page that a
-      // reader has already scrolled past by the time they aim the needle.
-      footers={[{ label: 'Pitfalls', value: muscle.pitfalls, tone: 'caution' }]}
+      partsLayout="stacked"
+      // Below the rule: everything you do at the bedside, in the order you do
+      // it. This is the whole of the old "Needle localization" card, which is
+      // why that card is switched off in the 3D Atlas — Position included, so
+      // removing the card drops nothing.
+      footers={[
+        { label: 'Position', value: muscle.position },
+        { label: 'Insertion', value: muscle.localization },
+        { label: 'Activation', value: muscle.maneuver },
+        { label: 'Pitfalls', value: muscle.pitfalls, tone: 'caution' },
+      ]}
     />
   )
 }
