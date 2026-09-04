@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Annotation, ShapeKind } from '../../lib/caseMedia'
+import { DRAW_SURFACE_STYLE, useDrawGestures } from '../../lib/drawGesture'
 
 // ---------------------------------------------------------------------------
 // Annotation layer.
@@ -274,79 +275,76 @@ export function AnnotationEditor({
     return () => ro.disconnect()
   }, [measure])
 
-  /** Pointer position as 0..1 of the media box, clamped to it. */
-  function pointAt(e: React.PointerEvent): [number, number] {
+  /** Client coordinates as 0..1 of the media box, clamped to it. */
+  function pointAt(clientX: number, clientY: number): [number, number] {
     const el = hostRef.current
     if (!el) return [0, 0]
     const r = el.getBoundingClientRect()
     return [
-      Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)),
-      Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)),
+      Math.min(1, Math.max(0, (clientX - r.left) / r.width)),
+      Math.min(1, Math.max(0, (clientY - r.top) / r.height)),
     ]
   }
 
-  function handleDown(e: React.PointerEvent) {
-    if (e.button !== 0) return
-    // A second finger arriving mid-stroke is a pinch, not a drawing. Ignoring it
-    // keeps the shape anchored to the finger that started it.
-    if (draft) return
-    measure()
-    // Capture on the host, not e.target: the pointer goes down on the <img>
-    // child, and a capture there is lost the moment the finger leaves it.
-    hostRef.current?.setPointerCapture?.(e.pointerId)
-    const p = pointAt(e)
-    setDraft({
-      id: crypto.randomUUID(),
-      kind: tool,
-      colour,
-      label: '',
-      points: [p, p],
-    })
-  }
+  // The gesture layer subscribes once; everything it needs that changes between
+  // renders is read through refs, so a stroke is never interrupted by a
+  // re-render tearing the listeners down.
+  const live = useRef({ tool, colour, annotations, onChange, onActive })
+  live.current = { tool, colour, annotations, onChange, onActive }
 
-  function handleMove(e: React.PointerEvent) {
-    if (!draft) return
-    const p = pointAt(e)
-    setDraft((d) => {
-      if (!d) return d
-      if (d.kind === 'freehand') {
-        // Sample rather than record every event: a 500-point squiggle is not
-        // more accurate than a 60-point one, and it has to fit in a jsonb row.
-        const last = d.points[d.points.length - 1]
-        const far = Math.hypot(p[0] - last[0], p[1] - last[1]) > 0.004
-        return far ? { ...d, points: [...d.points, p] } : d
-      }
-      return { ...d, points: [d.points[0], p] }
-    })
-  }
-
-  function handleUp() {
-    if (!draft) return
-    const d = draft
-    setDraft(null)
-    // A click without a drag is not a shape. Without this every stray click
-    // adds an invisible zero-length arrow to the legend.
-    const [a, b] = [d.points[0], d.points[d.points.length - 1]]
-    const moved = Math.hypot(b[0] - a[0], b[1] - a[1]) > 0.01
-    if (!moved) return
-    onChange([...annotations, d])
-    onActive(d.id)
-  }
+  useDrawGestures(hostRef, {
+    onStart(cx, cy) {
+      measure()
+      const p = pointAt(cx, cy)
+      setDraft({
+        id: crypto.randomUUID(),
+        kind: live.current.tool,
+        colour: live.current.colour,
+        label: '',
+        points: [p, p],
+      })
+    },
+    onMove(cx, cy) {
+      const p = pointAt(cx, cy)
+      setDraft((d) => {
+        if (!d) return d
+        if (d.kind === 'freehand') {
+          // Sample rather than record every event: a 500-point squiggle is not
+          // more accurate than a 60-point one, and it has to fit in a jsonb row.
+          const last = d.points[d.points.length - 1]
+          const far = Math.hypot(p[0] - last[0], p[1] - last[1]) > 0.004
+          return far ? { ...d, points: [...d.points, p] } : d
+        }
+        return { ...d, points: [d.points[0], p] }
+      })
+    },
+    onEnd() {
+      setDraft((d) => {
+        if (!d) return null
+        // A tap without a drag is not a shape. Without this every stray tap
+        // adds an invisible zero-length arrow to the legend.
+        const [a, b] = [d.points[0], d.points[d.points.length - 1]]
+        const moved = Math.hypot(b[0] - a[0], b[1] - a[1]) > 0.01
+        if (moved) {
+          live.current.onChange([...live.current.annotations, d])
+          live.current.onActive(d.id)
+        }
+        return null
+      })
+    },
+  })
 
   const shown = useMemo(() => (draft ? [...annotations, draft] : annotations), [annotations, draft])
 
   return (
     <div
       ref={hostRef}
-      onPointerDown={handleDown}
-      onPointerMove={handleMove}
-      onPointerUp={handleUp}
-      onPointerCancel={handleUp}
       onLoad={measure}
-      // WebkitTouchCallout: iOS pops its "Save Image / Copy" sheet on a long
-      // press, which is exactly what drawing a slow freehand outline looks like.
-      style={{ WebkitTouchCallout: 'none' }}
-      className="relative cursor-crosshair touch-none select-none overflow-hidden rounded-md border border-line bg-black"
+      // Inline rather than utility classes: these four are what stop iOS
+      // turning a slow freehand stroke into a scroll, a text selection or the
+      // "Save Image" callout, and they must not be purgeable or overridable.
+      style={DRAW_SURFACE_STYLE}
+      className="relative cursor-crosshair overflow-hidden rounded-md border border-line bg-black"
     >
       {children}
       <AnnotationLayer annotations={shown} box={box} activeId={activeId} />

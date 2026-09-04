@@ -34,7 +34,53 @@ export const SOURCES = {
   settings: 'https://nysora.com/pocus/machine-settings/',
   diaphragm:
     'https://nysora.com/education-news/case-study-assessing-diaphragmatic-function-using-ultrasound/',
+  // The artefacts section is not NYSORA. It is written from Radiopaedia's
+  // reference articles, listed individually in ARTEFACT_REFERENCES below.
+  artefacts: 'https://radiopaedia.org/articles/ultrasound-artifacts-3?lang=us',
 } as const
+
+/**
+ * The four Radiopaedia articles the artefacts section is written from.
+ *
+ * Named individually rather than hidden behind one "Source" button: the section
+ * is a rewrite in this primer's own voice, not a reproduction, and a reader who
+ * wants the full account — or the references behind it — should be able to get
+ * to the right article in one click. Radiopaedia articles are revised, so each
+ * entry records the revision this was written from.
+ */
+export interface ArtefactReference {
+  title: string
+  author: string
+  revised: string
+  url: string
+}
+
+export const ARTEFACT_REFERENCES: ArtefactReference[] = [
+  {
+    title: 'Anisotropy',
+    author: 'Andrew Murphy',
+    revised: '23 Mar 2023',
+    url: 'https://radiopaedia.org/articles/anisotropy?lang=us',
+  },
+  {
+    title: 'Acoustic enhancement',
+    author: 'Shruti Balasubramanian',
+    revised: '3 Feb 2026',
+    url: 'https://radiopaedia.org/articles/acoustic-enhancement?lang=us',
+  },
+  {
+    title: 'Reverberation artifact',
+    author: 'Siang Ching Raymond Chieng',
+    revised: '24 Dec 2023',
+    url: 'https://radiopaedia.org/articles/reverberation-artifact?lang=us',
+  },
+  {
+    title: 'Acoustic shadowing',
+    author: 'Han Xin Lau',
+    revised: '11 Aug 2025',
+    url: 'https://radiopaedia.org/articles/acoustic-shadowing?lang=us',
+  },
+]
 
 export const FIGURES: Record<string, PrimerFigure> = {
   // ---- Physics ------------------------------------------------------------

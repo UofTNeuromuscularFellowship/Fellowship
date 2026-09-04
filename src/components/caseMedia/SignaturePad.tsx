@@ -1,11 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
+import { DRAW_SURFACE_STYLE, useDrawGestures } from '../../lib/drawGesture'
 
 // ---------------------------------------------------------------------------
 // Signature pad.
 //
-// The patient signs with a finger on a tablet or a mouse on a laptop. Strokes
-// are drawn straight onto a canvas at device resolution, so the PNG that comes
-// out is what was actually signed rather than a smoothed reconstruction.
+// The patient — or the person signing for them — signs with a finger on a
+// phone or tablet, or a mouse on a laptop. Strokes are drawn straight onto a
+// canvas at device resolution, so the PNG that comes out is what was actually
+// signed rather than a smoothed reconstruction.
+//
+// Input goes through useDrawGestures, which listens to touch events directly
+// with a non-passive listener rather than relying on pointer events alone.
+// Signing with a finger did not work on iOS with pointer events, and the
+// reasons it can fail there are documented in lib/drawGesture.ts.
 // ---------------------------------------------------------------------------
 
 export function SignaturePad({
@@ -20,6 +27,11 @@ export function SignaturePad({
   const drawing = useRef(false)
   const [hasInk, setHasInk] = useState(false)
 
+  // The gesture layer fires at pointer rate and must not re-subscribe on every
+  // render, so it reads the live callbacks through a ref.
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
+
   // Size the backing store to the device pixel ratio once laid out, or the
   // signature is a blurry upscale of a small bitmap.
   //
@@ -27,8 +39,8 @@ export function SignaturePad({
   // width, and setting canvas.width wipes the bitmap — so whatever has been
   // signed so far is copied across rather than lost.
   useEffect(() => {
-    const c = canvasRef.current
-    if (!c) return
+    const el = canvasRef.current
+    if (!el) return
 
     let lastW = 0
     function size() {
@@ -52,7 +64,7 @@ export function SignaturePad({
       ctx.scale(dpr, dpr)
       ctx.fillStyle = '#FFFFFF'
       ctx.fillRect(0, 0, w, height)
-      ctx.lineWidth = 2
+      ctx.lineWidth = 2.2
       ctx.lineCap = 'round'
       ctx.lineJoin = 'round'
       ctx.strokeStyle = '#111827'
@@ -64,47 +76,52 @@ export function SignaturePad({
     size()
     if (typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(size)
-    ro.observe(c)
+    ro.observe(el)
     return () => ro.disconnect()
   }, [height])
 
-  function pos(e: React.PointerEvent) {
-    const c = canvasRef.current!
+  /** Client coordinates to canvas coordinates. */
+  function at(clientX: number, clientY: number) {
+    const c = canvasRef.current
+    if (!c) return { x: 0, y: 0 }
     const r = c.getBoundingClientRect()
-    return { x: e.clientX - r.left, y: e.clientY - r.top }
+    return { x: clientX - r.left, y: clientY - r.top }
   }
 
   function emit() {
     const c = canvasRef.current
     if (!c) return
-    c.toBlob((b) => onChange(b), 'image/png')
+    c.toBlob((blob) => onChangeRef.current(blob), 'image/png')
   }
 
-  function down(e: React.PointerEvent) {
-    const ctx = canvasRef.current?.getContext('2d')
-    if (!ctx) return
-    ;(e.target as Element).setPointerCapture?.(e.pointerId)
-    drawing.current = true
-    const p = pos(e)
-    ctx.beginPath()
-    ctx.moveTo(p.x, p.y)
-  }
-
-  function move(e: React.PointerEvent) {
-    if (!drawing.current) return
-    const ctx = canvasRef.current?.getContext('2d')
-    if (!ctx) return
-    const p = pos(e)
-    ctx.lineTo(p.x, p.y)
-    ctx.stroke()
-    if (!hasInk) setHasInk(true)
-  }
-
-  function up() {
-    if (!drawing.current) return
-    drawing.current = false
-    emit()
-  }
+  useDrawGestures(canvasRef, {
+    onStart(cx, cy) {
+      const ctx = canvasRef.current?.getContext('2d')
+      if (!ctx) return
+      drawing.current = true
+      const p = at(cx, cy)
+      ctx.beginPath()
+      ctx.moveTo(p.x, p.y)
+      // A single tap is a dot, and a dot is ink. Without this, signing a name
+      // that starts with a press reads as an empty pad.
+      ctx.lineTo(p.x + 0.01, p.y)
+      ctx.stroke()
+      setHasInk(true)
+    },
+    onMove(cx, cy) {
+      if (!drawing.current) return
+      const ctx = canvasRef.current?.getContext('2d')
+      if (!ctx) return
+      const p = at(cx, cy)
+      ctx.lineTo(p.x, p.y)
+      ctx.stroke()
+    },
+    onEnd() {
+      if (!drawing.current) return
+      drawing.current = false
+      emit()
+    },
+  })
 
   function clear() {
     const c = canvasRef.current
@@ -113,22 +130,15 @@ export function SignaturePad({
     ctx.fillStyle = '#FFFFFF'
     ctx.fillRect(0, 0, c.clientWidth, height)
     setHasInk(false)
-    onChange(null)
+    onChangeRef.current(null)
   }
 
   return (
     <div>
       <canvas
         ref={canvasRef}
-        // touch-none stops the page scrolling under the finger mid-signature;
-        // WebkitTouchCallout stops iOS offering to save the canvas as an image
-        // when a slow stroke reads as a long press.
-        style={{ height, WebkitTouchCallout: 'none' }}
-        onPointerDown={down}
-        onPointerMove={move}
-        onPointerUp={up}
-        onPointerCancel={up}
-        className="w-full touch-none rounded-md border border-line bg-white"
+        style={{ height, ...DRAW_SURFACE_STYLE }}
+        className="w-full rounded-md border border-line bg-white"
       />
       <div className="mt-1 flex items-center justify-between">
         <p className="text-xs text-muted">

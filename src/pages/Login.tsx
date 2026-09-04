@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { Waveform } from '../components/ui/Waveform'
@@ -7,6 +7,17 @@ import { Waveform } from '../components/ui/Waveform'
 export default function Login() {
   const { signIn } = useAuth()
   const navigate = useNavigate()
+  // Where the visitor was actually trying to go, handed over by ProtectedRoute.
+  // Opening the home-screen app at /waveforms with no session used to sign you
+  // in and then land you on the dashboard, which looks like the shortcut was
+  // ignored. Only same-site paths are honoured — a "from" that is not a plain
+  // path is discarded rather than followed.
+  const location = useLocation()
+  const rawFrom = (location.state as { from?: unknown } | null)?.from
+  const from =
+    typeof rawFrom === 'string' && rawFrom.startsWith('/') && !rawFrom.startsWith('//')
+      ? rawFrom
+      : null
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -44,7 +55,7 @@ export default function Login() {
       mustChange = Boolean(row?.must_change_password)
     }
     setBusy(false)
-    navigate(mustChange ? '/change-password' : '/dashboard')
+    navigate(mustChange ? '/change-password' : (from ?? '/dashboard'))
   }
 
   return (

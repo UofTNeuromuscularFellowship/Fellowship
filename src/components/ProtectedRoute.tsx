@@ -1,4 +1,4 @@
-import { Navigate } from 'react-router-dom'
+import { Navigate, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { useAuth } from '../context/AuthContext'
 
@@ -10,6 +10,7 @@ interface Props {
 
 export function ProtectedRoute({ children, allow, skipPasswordGate }: Props) {
   const { session, profile, loading } = useAuth()
+  const location = useLocation()
 
   if (loading) {
     return (
@@ -19,7 +20,20 @@ export function ProtectedRoute({ children, allow, skipPasswordGate }: Props) {
     )
   }
 
-  if (!session) return <Navigate to="/login" replace />
+  // Carry the destination to the login page. Without this, opening the
+  // home-screen app straight at /waveforms — or following any deep link with an
+  // expired session — signs you in and then drops you on the dashboard, which
+  // reads as the link having been ignored. search is kept too, because
+  // /waveforms?add=1 is what the "Add a teaching image" shortcut opens.
+  if (!session) {
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{ from: `${location.pathname}${location.search}` }}
+      />
+    )
+  }
 
   if (!skipPasswordGate && profile?.must_change_password) {
     return <Navigate to="/change-password" replace />

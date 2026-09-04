@@ -1,38 +1,35 @@
-MRI TAG + MOBILE IMAGE LIBRARY
-==============================
+FIXES + ULTRASOUND ARTEFACTS SECTION
+====================================
 
-The database change is already applied to the live project. Nothing to run.
-This zip is the code side only.
+This replaces the "ultrasound-artefacts" zip — it contains those two files AND
+the three fixes. Upload this one; you do not need the other.
+
+No database change.
 
 HOW TO UPLOAD (GitHub web)
 --------------------------
 1. Open https://github.com/UofTNeuromuscularFellowship/Fellowship
 2. Add file -> Upload files
-3. Extract this zip, then DRAG THESE THREE FOLDERS onto the page:
-
-       src
-       public
-       supabase
-
-   DO NOT drag the folder that contains them, and do not drag
-   READ-ME-FIRST.txt. GitHub keeps the folder structure, so dragging "src"
-   puts the files back exactly where they belong.
-
+3. Extract this zip and DRAG THE "src" FOLDER onto the page.
+   Do not drag the folder that contains it, and do not drag this readme.
 4. Commit. Vercel redeploys on its own.
 
 WHAT IS IN IT
 -------------
-src/lib/caseMedia.ts                       MRI kind + the rewritten consent
-src/pages/CaseMedia.tsx                    phone layout, camera, MRI badge
-src/components/ui/Card.tsx                 card headers wrap on narrow screens
-src/components/caseMedia/Annotator.tsx     touch drawing, resize handling
-src/components/caseMedia/SignaturePad.tsx  survives rotation
-src/components/caseMedia/InstallImagesApp.tsx   NEW - home-screen app card
-public/manifest.webmanifest                "Add a teaching image" shortcut
-public/manifest-images.webmanifest         NEW - the image library as its own app
-public/icons/images-*.png                  NEW - four icons for that app
-supabase/migrations/0020_...sql            record of the MRI change (applied)
-supabase/migrations/0021_...sql            record of the consent change (applied)
+src/lib/drawGesture.ts             NEW - shared touch/pen/mouse drawing input
+src/components/caseMedia/
+      SignaturePad.tsx             signing with a finger on iOS
+      Annotator.tsx                same fix for the annotation canvas
+src/components/ProtectedRoute.tsx  remembers where you were going
+src/pages/Login.tsx                returns you there after signing in
+src/lib/caseMedia.ts               "pending review" note removed from consent
+src/pages/UltrasoundPrimer.tsx     artefacts section; anisotropy note removed
+src/data/ultrasoundPrimer.ts       the four Radiopaedia citations
 
-NOTHING ELSE IS TOUCHED. In particular public/ultrasound is not in this zip,
-so the primer images you uploaded stay exactly as they are.
+AFTER IT DEPLOYS
+----------------
+If the home-screen icon still opens the dashboard, delete the icon and add it
+again FROM the Waveforms & images page — an icon added earlier is still
+pointing at whatever page it was created from.
+
+public/ultrasound is untouched and is not in this zip.

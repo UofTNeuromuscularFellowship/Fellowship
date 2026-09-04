@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Card, CardHeader } from '../components/ui/Card'
-import { FIGURES, SOURCES, type PrimerFigure } from '../data/ultrasoundPrimer'
+import { ARTEFACT_REFERENCES, FIGURES, SOURCES, type PrimerFigure } from '../data/ultrasoundPrimer'
 
 // ---------------------------------------------------------------------------
 // Neuromuscular ultrasound primer.
@@ -20,13 +20,14 @@ import { FIGURES, SOURCES, type PrimerFigure } from '../data/ultrasoundPrimer'
 // data/ultrasoundPrimer.ts).
 // ---------------------------------------------------------------------------
 
-type SectionId = 'physics' | 'transducers' | 'modes' | 'settings' | 'diaphragm'
+type SectionId = 'physics' | 'transducers' | 'modes' | 'settings' | 'artefacts' | 'diaphragm'
 
 const SECTIONS: Array<{ id: SectionId; label: string; sub: string; source: string }> = [
   { id: 'physics', label: 'Physics', sub: 'What the picture is made of', source: SOURCES.physics },
   { id: 'transducers', label: 'Transducers', sub: 'Choosing and holding the probe', source: SOURCES.transducers },
   { id: 'modes', label: 'Scanning modes', sub: 'B, M and Doppler', source: SOURCES.scanning },
   { id: 'settings', label: 'Machine settings', sub: 'Depth, focus, gain', source: SOURCES.settings },
+  { id: 'artefacts', label: 'Artefacts', sub: 'What the machine gets wrong', source: SOURCES.artefacts },
   { id: 'diaphragm', label: 'Diaphragm', sub: 'A worked assessment', source: SOURCES.diaphragm },
 ]
 
@@ -166,9 +167,8 @@ function Physics() {
 
       <Gap>
         The source page does not separate axial from lateral resolution, and does not cover
-        refraction, scattering, or the named artefacts (shadowing, enhancement, reverberation,
-        anisotropy). Anisotropy in particular matters when scanning nerve and tendon — worth adding
-        from a primary source before this is used for teaching.
+        refraction or scattering. The named artefacts that follow from this physics — anisotropy,
+        shadowing, enhancement and reverberation — have their own section further on.
       </Gap>
     </>
   )
@@ -433,11 +433,371 @@ function Diaphragm() {
   )
 }
 
+// ---------------------------------------------------------------------------
+// Artefacts.
+//
+// Written from Radiopaedia's reference articles (ARTEFACT_REFERENCES), rewritten
+// in this primer's voice rather than reproduced, and illustrated with diagrams
+// drawn here rather than borrowed images — the mechanism is geometry, and a
+// clean drawing of the geometry teaches it better than a screen capture.
+//
+// The clinical framing is deliberately neuromuscular: the artefact that will
+// actually mislead a fellow in this lab is anisotropy on a nerve, not a
+// cholesterol crystal in a gallbladder.
+// ---------------------------------------------------------------------------
+
+/** Shared drawing tokens, so the three diagrams read as one set. */
+const D = {
+  probe: '#0E7C86',
+  beam: '#2F6FD0',
+  echo: '#1FA363',
+  lost: '#B91C1C',
+  tissue: '#E8EAEE',
+  ink: '#111827',
+  muted: '#6B7280',
+  line: '#C9CDD4',
+}
+
+function Diagram({
+  title,
+  caption,
+  children,
+  viewBox,
+}: {
+  title: string
+  caption: string
+  viewBox: string
+  children: React.ReactNode
+}) {
+  return (
+    <figure className="my-4 max-w-2xl">
+      <svg
+        viewBox={viewBox}
+        role="img"
+        aria-label={title}
+        className="w-full rounded-md border border-line bg-white"
+      >
+        <defs>
+          <marker id="ar-beam" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0 1 L9 5 L0 9 z" fill={D.beam} />
+          </marker>
+          <marker id="ar-echo" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0 1 L9 5 L0 9 z" fill={D.echo} />
+          </marker>
+          <marker id="ar-lost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0 1 L9 5 L0 9 z" fill={D.lost} />
+          </marker>
+        </defs>
+        {children}
+      </svg>
+      <figcaption className="mt-2 text-xs text-muted">{caption}</figcaption>
+    </figure>
+  )
+}
+
+/** The probe face, drawn the same way in every diagram. */
+function Probe({ x, y, w = 90 }: { x: number; y: number; w?: number }) {
+  return (
+    <g>
+      <rect x={x} y={y} width={w} height={16} rx={3} fill={D.probe} />
+      <rect x={x + 4} y={y + 16} width={w - 8} height={4} fill={D.probe} opacity={0.45} />
+    </g>
+  )
+}
+
+function Artefacts() {
+  return (
+    <>
+      <P>
+        Every artefact below is the machine reporting exactly what it measured, under an assumption
+        that has stopped being true. It assumes sound travelled in a straight line, at 1540 m/s, out
+        and back once. Where that assumption breaks, the picture is wrong in a way that is
+        reproducible — which is what makes these worth learning rather than merely tolerating.
+      </P>
+
+      <H>Anisotropy — the one that will fool you</H>
+      <P>
+        A tendon, a ligament and a peripheral nerve are all built from fibrils running in parallel.
+        Structures like that reflect sound the way a mirror reflects light, not the way a wall
+        scatters it: the echo goes off at the angle it arrived, and only a beam striking the fibres
+        squarely sends its echo back to the probe. Tilt off perpendicular and most of the beam
+        leaves in a direction the transducer is not listening in. The machine hears nothing back and
+        does the only thing it can — it paints that region dark.
+      </P>
+
+      <Diagram
+        title="Anisotropy: a fibrillar structure appears bright only when the beam strikes it squarely"
+        viewBox="0 0 540 250"
+        caption="Left: beam perpendicular, echoes return, the tendon reads bright. Right: the same tendon, the probe tilted a few degrees — the echoes leave at an angle the probe cannot hear and the structure reads falsely dark."
+      >
+        {/* ---- left panel: perpendicular ---- */}
+        <rect x={10} y={40} width={240} height={175} fill={D.tissue} />
+        <Probe x={80} y={20} />
+        {[100, 125, 150].map((x) => (
+          <line key={`b${x}`} x1={x} y1={44} x2={x} y2={140} stroke={D.beam} strokeWidth={2} markerEnd="url(#ar-beam)" />
+        ))}
+        {/* fibrillar band */}
+        <rect x={40} y={150} width={190} height={22} rx={4} fill="#FFFFFF" stroke={D.line} />
+        {[0, 1, 2, 3, 4].map((i) => (
+          <line key={`f${i}`} x1={46} y1={155 + i * 4} x2={224} y2={155 + i * 4} stroke={D.line} strokeWidth={1.4} />
+        ))}
+        {[100, 125, 150].map((x) => (
+          <line key={`e${x}`} x1={x + 8} y1={148} x2={x + 8} y2={52} stroke={D.echo} strokeWidth={2} markerEnd="url(#ar-echo)" />
+        ))}
+        <text x={130} y={196} textAnchor="middle" fontSize={12} fontWeight={700} fill={D.ink}>
+          90° — bright
+        </text>
+        <text x={130} y={211} textAnchor="middle" fontSize={11} fill={D.muted}>
+          echoes return to the probe
+        </text>
+
+        {/* ---- right panel: off-perpendicular ---- */}
+        <rect x={290} y={40} width={240} height={175} fill={D.tissue} />
+        <Probe x={360} y={20} />
+        {[380, 405, 430].map((x) => (
+          <line key={`b2${x}`} x1={x} y1={44} x2={x} y2={132} stroke={D.beam} strokeWidth={2} markerEnd="url(#ar-beam)" />
+        ))}
+        {/* Clipped to the panel: rotating a full-width band pushes its corners
+            outside the tissue rectangle, and a tendon hanging in the margin
+            reads as a drawing error rather than as anatomy. */}
+        <clipPath id="ar-panel-right">
+          <rect x={290} y={40} width={240} height={175} />
+        </clipPath>
+        <g clipPath="url(#ar-panel-right)">
+          <g transform="rotate(-14 410 161)">
+            <rect x={318} y={150} width={184} height={22} rx={4} fill="#FFFFFF" stroke={D.line} />
+            {[0, 1, 2, 3, 4].map((i) => (
+              <line key={`f2${i}`} x1={324} y1={155 + i * 4} x2={496} y2={155 + i * 4} stroke={D.line} strokeWidth={1.4} />
+            ))}
+          </g>
+        </g>
+        {[380, 405, 430].map((x, i) => (
+          <line
+            key={`e2${x}`}
+            x1={x + 4}
+            y1={138 - i * 6}
+            x2={x + 72}
+            y2={78 - i * 6}
+            stroke={D.lost}
+            strokeWidth={2}
+            markerEnd="url(#ar-lost)"
+          />
+        ))}
+        <text x={410} y={196} textAnchor="middle" fontSize={12} fontWeight={700} fill={D.ink}>
+          off-perpendicular — falsely dark
+        </text>
+        <text x={410} y={211} textAnchor="middle" fontSize={11} fill={D.muted}>
+          echoes deflect away from the probe
+        </text>
+      </Diagram>
+
+      <P>
+        In musculoskeletal scanning this is the artefact that produces wrong diagnoses: a normal
+        tendon rendered hypoechoic by a few degrees of probe tilt looks like tendinosis, or like a
+        tear. The fix is mechanical, not electronic — heel-and-toe the probe through the angle and
+        watch the structure brighten and darken. Anything that brightens when you square up to it
+        was never hypoechoic; real pathology stays dark at every angle.
+      </P>
+      <Key>
+        Anisotropy is reversible and pathology is not. Before you call a nerve or tendon hypoechoic,
+        rock the probe. If it lights up, you were looking at the artefact.
+      </Key>
+      <P>
+        It can also be turned to use. A tendon running through hyperechoic fat can be hard to
+        delineate when both are bright; deliberately angling off perpendicular darkens the tendon
+        alone and separates it from its surroundings.
+      </P>
+
+      <H>Acoustic shadowing</H>
+      <P>
+        Where an interface reflects or absorbs essentially the whole beam, nothing is left to travel
+        deeper and nothing returns from beyond it. The result is a dark band extending to the bottom
+        of the image. It happens at a very dense or calcified structure — bone, a calcified stone —
+        and at any interface with a large impedance mismatch, of which soft tissue against air is
+        the extreme case.
+      </P>
+      <P>
+        Shadow intensity is not fixed: bringing the focal zone closer to the shadowing object
+        deepens the shadow. And the artefact is diagnostically useful in its own right, which is how
+        gallstones are identified. In a limb it is how you know where you are — the bright line and
+        black shadow of the fibular head or the medial epicondyle is a landmark, not a problem.
+      </P>
+
+      <H>Acoustic enhancement</H>
+      <P>
+        The mirror image of shadowing, and also called posterior enhancement or enhanced through
+        transmission. Fluid attenuates sound far less than tissue does — for a 1 MHz beam the
+        attenuation coefficient of water is roughly two thousand times lower than that of soft
+        tissue. The beam therefore arrives at the far side of a cyst having lost almost nothing,
+        while the time gain compensation is still applying the amplification it would need had it
+        crossed the same depth of tissue. Over-amplified, the tissue behind the cyst is painted too
+        bright.
+      </P>
+
+      <Diagram
+        title="Acoustic shadowing and acoustic enhancement compared"
+        viewBox="0 0 540 250"
+        caption="The same mechanism read two ways. A near-total reflector leaves nothing to return from deeper tissue (dark); a fluid structure lets almost everything through while the gain compensation still assumes tissue (bright)."
+      >
+        <rect x={10} y={40} width={240} height={185} fill={D.tissue} />
+        <Probe x={80} y={20} />
+        {/* calcified reflector */}
+        <path d="M92 120 A38 38 0 0 1 168 120 Z" fill="#FFFFFF" stroke={D.ink} strokeWidth={3} />
+        <rect x={92} y={122} width={76} height={103} fill="#4B5563" opacity={0.85} />
+        {[110, 130, 150].map((x) => (
+          <line key={`sb${x}`} x1={x} y1={44} x2={x} y2={104} stroke={D.beam} strokeWidth={2} markerEnd="url(#ar-beam)" />
+        ))}
+        <text x={130} y={200} textAnchor="middle" fontSize={12} fontWeight={700} fill="#FFFFFF">
+          shadow
+        </text>
+        <text x={130} y={243} textAnchor="middle" fontSize={11} fill={D.muted}>
+          bone, calcification, air
+        </text>
+
+        <rect x={290} y={40} width={240} height={185} fill={D.tissue} />
+        <Probe x={360} y={20} />
+        {/* fluid structure */}
+        <circle cx={410} cy={122} r={40} fill="#1F2937" opacity={0.9} />
+        <rect x={372} y={162} width={76} height={63} fill="#FFFFFF" />
+        {[392, 410, 428].map((x) => (
+          <line key={`eb${x}`} x1={x} y1={44} x2={x} y2={78} stroke={D.beam} strokeWidth={2} markerEnd="url(#ar-beam)" />
+        ))}
+        {[392, 410, 428].map((x) => (
+          <line key={`ec${x}`} x1={x} y1={166} x2={x} y2={214} stroke={D.beam} strokeWidth={2} markerEnd="url(#ar-beam)" />
+        ))}
+        <text x={410} y={128} textAnchor="middle" fontSize={12} fontWeight={700} fill="#FFFFFF">
+          fluid
+        </text>
+        <text x={410} y={243} textAnchor="middle" fontSize={11} fill={D.muted}>
+          enhancement behind it
+        </text>
+      </Diagram>
+
+      <P>
+        Enhancement is what identifies a cystic structure — a ganglion, say — but it is not proof of
+        one: some solid masses, lymphoma in particular, can enhance posteriorly too.
+      </P>
+
+      <H>Reverberation</H>
+      <P>
+        When the beam meets two strong reflectors lying parallel to each other, it does not simply
+        return once. It bounces between them and comes back in instalments. The machine has no way
+        to know it made the trip more than once, so it converts the extra travel time into extra
+        depth and draws a ladder of copies at regular intervals, each fainter than the last. As with
+        anisotropy, the fix is to change the angle of insonation so the two surfaces are no longer
+        parallel to the beam.
+      </P>
+
+      <Diagram
+        title="Reverberation: repeated round trips between two parallel reflectors are drawn as deeper copies"
+        viewBox="0 0 540 250"
+        caption="The beam bounces between two parallel reflectors. Each extra round trip takes longer, and the machine reads longer as deeper — so the pair is redrawn at equal intervals, fading with depth."
+      >
+        <rect x={10} y={40} width={520} height={185} fill={D.tissue} />
+        <Probe x={40} y={20} w={70} />
+        <line x1={75} y1={44} x2={75} y2={68} stroke={D.beam} strokeWidth={2} markerEnd="url(#ar-beam)" />
+
+        {/* An evenly stepped ladder, because that is what the artefact looks
+            like: the two real reflectors, then a repeat at the SAME interval
+            for every extra round trip, each weaker than the one above it. */}
+        {[
+          { y: 76, real: true, o: 1 },
+          { y: 106, real: true, o: 1 },
+          { y: 136, real: false, o: 0.6 },
+          { y: 166, real: false, o: 0.38 },
+          { y: 196, real: false, o: 0.2 },
+        ].map((r) => (
+          <line
+            key={r.y}
+            x1={30}
+            y1={r.y}
+            x2={330}
+            y2={r.y}
+            stroke={D.ink}
+            strokeWidth={r.real ? 3.5 : 3}
+            opacity={r.o}
+          />
+        ))}
+        <text x={344} y={80} fontSize={11} fontWeight={700} fill={D.ink}>real</text>
+        <text x={344} y={110} fontSize={11} fontWeight={700} fill={D.ink}>real</text>
+        <text x={344} y={140} fontSize={11} fill={D.muted}>1st repeat</text>
+        <text x={344} y={170} fontSize={11} fill={D.muted}>2nd</text>
+        <text x={344} y={200} fontSize={11} fill={D.muted}>3rd, fading</text>
+
+        {/* the beam bouncing between the two real surfaces */}
+        <path
+          d="M150 76 L180 106 L210 76 L240 106"
+          fill="none"
+          stroke={D.lost}
+          strokeWidth={2}
+          strokeDasharray="5 4"
+        />
+
+        {/* interval bracket: every step is the same depth apart */}
+        {[76, 106, 136, 166].map((y) => (
+          <g key={`br${y}`}>
+            <line x1={438} y1={y} x2={438} y2={y + 30} stroke={D.muted} strokeWidth={1} />
+            <line x1={434} y1={y} x2={442} y2={y} stroke={D.muted} strokeWidth={1} />
+            <line x1={434} y1={y + 30} x2={442} y2={y + 30} stroke={D.muted} strokeWidth={1} />
+          </g>
+        ))}
+        <text x={448} y={124} fontSize={11} fill={D.muted}>equal</text>
+        <text x={448} y={138} fontSize={11} fill={D.muted}>intervals</text>
+      </Diagram>
+
+      <P>
+        <span className="font-semibold">Comet tail</span> is a form of reverberation, arising from a
+        small echogenic focus that contains strongly reflecting parallel surfaces within itself. The
+        separation between them can be less than half the spatial pulse length, so the individual
+        echoes are not resolved as separate lines; they render as a short tapering train, narrowing
+        with depth because each successive echo is weaker.
+      </P>
+      <Key>
+        Reverberation is the artefact to expect around a needle. Two parallel metal surfaces in the
+        beam is precisely the geometry that produces it — angling the probe, rather than turning the
+        gain down, is what clears it.
+      </Key>
+      <Gap>
+        Ring-down artefact looks similar to reverberation and is often grouped with it, but it does
+        not arise from the same mechanism and is treated as a separate entity in the source. It is
+        not described here.
+      </Gap>
+
+      <H>Where this came from</H>
+      <P>
+        This section is not from the NYSORA series the rest of the primer follows. It is written
+        from four Radiopaedia reference articles, rewritten here rather than reproduced, and the
+        diagrams above are drawn for this page. Radiopaedia articles are revised over time, so the
+        revision each was written from is recorded.
+      </P>
+      <ul className="mt-2 space-y-1">
+        {ARTEFACT_REFERENCES.map((r) => (
+          <li key={r.url} className="text-sm text-ink">
+            <a
+              href={r.url}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="font-medium text-accent hover:underline"
+            >
+              {r.title}
+            </a>
+            <span className="text-muted">
+              {' '}
+              — Radiopaedia, last revised by {r.author} on {r.revised}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </>
+  )
+}
+
 const BODIES: Record<SectionId, () => JSX.Element> = {
   physics: Physics,
   transducers: Transducers,
   modes: Modes,
   settings: Settings,
+  artefacts: Artefacts,
   diaphragm: Diaphragm,
 }
 

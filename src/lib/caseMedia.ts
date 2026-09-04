@@ -14,10 +14,12 @@ export const BUCKET = 'case-media'
 export const CONSENT_BUCKET = 'case-consent'
 
 /**
- * Default consent wording. NOT legal text — it is a starting point that the
- * fellowship must have reviewed against its hospitals' own consent process
- * before it is used with a patient, and it is stored WITH each signature so
- * changing it later cannot alter what someone already agreed to.
+ * Default consent wording.
+ *
+ * The "pending review" marker that used to close this text was removed at the
+ * fellowship's request on 2026-09-04. It is still editable per upload, and it
+ * is stored WITH each signature rather than referenced, so changing the default
+ * later cannot alter what somebody has already agreed to.
  *
  * Structured after the Figure 1 authorization the program supplied, but written
  * for THIS system, and three of that form's clauses are deliberately absent:
@@ -72,8 +74,6 @@ export const DEFAULT_CONSENT_WORDING = [
     'my treatment, my care, or any service or benefit I receive.',
 
   'I understand that I will receive no payment for allowing the Images to be taken or used.',
-
-  '[Wording pending review by the program and the hospitals\' privacy office.]',
 ].join('\n\n')
 
 /** Long enough to read a case and annotate it without the link dying mid-edit. */
