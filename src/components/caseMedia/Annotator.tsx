@@ -31,16 +31,61 @@ export const TOOLS: Array<{ id: ShapeKind; label: string; hint: string }> = [
   { id: 'freehand', label: 'Freehand', hint: 'Draw around anything' },
 ]
 
-/** Where the number badge sits for a given shape. */
-function anchorOf(a: Annotation): [number, number] {
-  if (a.kind === 'arrow') return a.points[1] ?? a.points[0] ?? [0.5, 0.5]
-  if (a.kind === 'ellipse') {
-    const [p, q] = a.points
-    if (!p || !q) return [0.5, 0.5]
-    // Top-right of the bounding box, just outside it.
-    return [Math.max(p[0], q[0]), Math.min(p[1], q[1])]
+/**
+ * Where the number badge sits, in SCREEN pixels.
+ *
+ * Never on the shape itself. The badge used to sit exactly on the anchor point,
+ * which for an arrow is the tip — so the number covered the one part of the
+ * annotation that carries the meaning. Each kind now offsets away from its own
+ * business end:
+ *
+ *   arrow     behind the TAIL, along the shaft, pointing away from the tip
+ *   ellipse   diagonally outside the top-right of the bounding box
+ *   freehand  up and left of where the stroke started
+ *
+ * The result is clamped into the image, and if the offset would push it out the
+ * badge flips to the other side rather than being cropped.
+ */
+const BADGE_R = 9
+const BADGE_GAP = 13
+
+function badgeAt(a: Annotation, box: { w: number; h: number }): [number, number] {
+  const W = box.w || 1
+  const H = box.h || 1
+  const px = (p: [number, number]): [number, number] => [p[0] * W, p[1] * H]
+
+  let x: number
+  let y: number
+
+  if (a.kind === 'arrow' && a.points.length >= 2) {
+    const [tail, head] = [px(a.points[0]), px(a.points[1])]
+    const dx = head[0] - tail[0]
+    const dy = head[1] - tail[1]
+    const len = Math.hypot(dx, dy) || 1
+    // Back along the shaft from the tail, so the badge trails the arrow.
+    x = tail[0] - (dx / len) * (BADGE_R + BADGE_GAP)
+    y = tail[1] - (dy / len) * (BADGE_R + BADGE_GAP)
+  } else if (a.kind === 'ellipse' && a.points.length >= 2) {
+    const [p, q] = [px(a.points[0]), px(a.points[1])]
+    const right = Math.max(p[0], q[0])
+    const top = Math.min(p[1], q[1])
+    const d = (BADGE_R + BADGE_GAP) / Math.SQRT2
+    x = right + d
+    y = top - d
+  } else {
+    const first = px(a.points[0] ?? [0.5, 0.5])
+    const d = (BADGE_R + BADGE_GAP) / Math.SQRT2
+    x = first[0] - d
+    y = first[1] - d
   }
-  return a.points[0] ?? [0.5, 0.5]
+
+  // Keep it on the image. Reflecting about the anchor rather than sliding keeps
+  // the badge next to its own shape instead of parked in a corner.
+  const pad = BADGE_R + 2
+  const origin = px(a.points[0] ?? [0.5, 0.5])
+  if (x < pad || x > W - pad) x = origin[0] - (x - origin[0])
+  if (y < pad || y > H - pad) y = origin[1] - (y - origin[1])
+  return [Math.min(W - pad, Math.max(pad, x)), Math.min(H - pad, Math.max(pad, y))]
 }
 
 function pathFor(a: Annotation): string {
@@ -68,13 +113,8 @@ export function AnnotationLayer({
   activeId?: string | null
   showNumbers?: boolean
 }) {
-  // A stroke of N screen pixels, expressed in each axis of the stretched
-  // viewBox. Drawn with a group transform we cannot use, so shapes that need an
-  // even stroke (ellipse) get vector-effect instead.
-  const sx = box.w > 0 ? 1000 / box.w : 1
-  const sy = box.h > 0 ? 1000 / box.h : 1
-
   return (
+    <>
     <svg
       viewBox="0 0 1000 1000"
       preserveAspectRatio="none"
@@ -99,10 +139,9 @@ export function AnnotationLayer({
         ))}
       </defs>
 
-      {annotations.map((a, i) => {
+      {annotations.map((a) => {
         const dim = activeId && activeId !== a.id
         const opacity = dim ? 0.45 : 1
-        const [ax, ay] = anchorOf(a)
         return (
           <g key={a.id} opacity={opacity}>
             {a.kind === 'arrow' && a.points.length >= 2 && (
@@ -143,38 +182,52 @@ export function AnnotationLayer({
               />
             )}
 
-            {showNumbers && (
-              <g>
-                {/* The badge is a circle in SCREEN space, so it must undo the
-                    viewBox stretch or it turns into an oval on a wide image. */}
-                <ellipse
-                  cx={ax * 1000}
-                  cy={ay * 1000}
-                  rx={11 * sx}
-                  ry={11 * sy}
-                  fill={a.colour}
-                  stroke="#FFFFFF"
-                  strokeWidth={1.5}
-                  vectorEffect="non-scaling-stroke"
-                />
-                <text
-                  x={ax * 1000}
-                  y={ay * 1000}
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  fontSize={13 * Math.min(sx, sy)}
-                  fontWeight="700"
-                  fill={a.colour === '#FFFFFF' ? '#111827' : '#FFFFFF'}
-                  style={{ transform: `scale(${sx / Math.min(sx, sy)}, ${sy / Math.min(sx, sy)})`, transformOrigin: `${ax * 1000}px ${ay * 1000}px` }}
-                >
-                  {i + 1}
-                </text>
-              </g>
-            )}
           </g>
         )
       })}
     </svg>
+
+    {/* Badges get their OWN svg in screen pixels. The shape layer is stretched
+        (preserveAspectRatio="none") so that normalised coordinates land
+        correctly, but a circle drawn in a stretched space is an oval and text
+        in it is distorted — which is why this used to need a scale correction
+        on every glyph. Two coordinate systems, no correction. */}
+    {showNumbers && box.w > 0 && box.h > 0 && (
+      <svg
+        viewBox={`0 0 ${box.w} ${box.h}`}
+        className="pointer-events-none absolute inset-0 h-full w-full"
+        aria-hidden="true"
+      >
+        {annotations.map((a, i) => {
+          const [bx, by] = badgeAt(a, box)
+          const dim = activeId && activeId !== a.id
+          return (
+            <g key={`b-${a.id}`} opacity={dim ? 0.45 : 1}>
+              <circle
+                cx={bx}
+                cy={by}
+                r={BADGE_R}
+                fill={a.colour}
+                stroke="#FFFFFF"
+                strokeWidth={1.5}
+              />
+              <text
+                x={bx}
+                y={by}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fontSize={11}
+                fontWeight="700"
+                fill={a.colour === '#FFFFFF' ? '#111827' : '#FFFFFF'}
+              >
+                {i + 1}
+              </text>
+            </g>
+          )
+        })}
+      </svg>
+    )}
+    </>
   )
 }
 

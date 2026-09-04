@@ -42,6 +42,7 @@ const SECTIONS: NavSection[] = [
       { to: '/test-directory', label: 'Diagnostic test directory', allow: ['fellow', 'supervisor', 'director'] },
       { to: '/ultrasound', label: 'Ultrasound primer', allow: ['fellow', 'supervisor', 'director'] },
       { to: '/waveforms', label: 'Waveforms & images', allow: ['fellow', 'supervisor', 'director'] },
+      { to: '/library', label: 'Library', allow: ['fellow', 'supervisor', 'director', 'admin'] },
     ],
   },
   {
@@ -58,7 +59,6 @@ const SECTIONS: NavSection[] = [
     heading: 'Program',
     items: [
       { to: '/handbook', label: 'Handbook' },
-      { to: '/library', label: 'Library', allow: ['fellow', 'supervisor', 'director', 'admin'] },
       { to: '/people', label: 'People', allow: ['director', 'admin'] },
       { to: '/settings', label: 'Settings' },
     ],
