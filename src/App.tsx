@@ -23,6 +23,7 @@ import FeedbackReview from './pages/FeedbackReview'
 import Library from './pages/Library'
 import TestDirectory from './pages/TestDirectory'
 import UltrasoundPrimer from './pages/UltrasoundPrimer'
+import CaseMediaLibrary from './pages/CaseMedia'
 import Settings from './pages/Settings'
 import NotFound from './pages/NotFound'
 
@@ -91,6 +92,7 @@ export default function App() {
       <Route path="/library" element={<Shell allow={['fellow', 'supervisor', 'director', 'admin']}><Library /></Shell>} />
       <Route path="/test-directory" element={<Shell allow={['fellow', 'supervisor', 'director']}><TestDirectory /></Shell>} />
       <Route path="/ultrasound" element={<Shell allow={['fellow', 'supervisor', 'director']}><UltrasoundPrimer /></Shell>} />
+      <Route path="/waveforms" element={<Shell allow={['fellow', 'supervisor', 'director']}><CaseMediaLibrary /></Shell>} />
       <Route path="/settings" element={<Shell><Settings /></Shell>} />
       {/* Legacy path redirects */}
       <Route path="/home" element={<Navigate to="/dashboard" replace />} />

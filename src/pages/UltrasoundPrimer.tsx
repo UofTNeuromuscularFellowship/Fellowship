@@ -529,20 +529,13 @@ export default function UltrasoundPrimer() {
         </div>
       </Card>
 
+      {/* The credit paragraph that stood here was removed at the fellowship's
+          request on 2026-09-03. Each section still carries a Source button to
+          the NYSORA page it came from, so the figures are not presented as the
+          fellowship's own work. */}
       <Card>
         <div className="px-5 py-4">
-          <p className="text-sm text-ink">
-            <span className="font-semibold">Source and credit. </span>
-            Adapted with permission from NYSORA&apos;s POCUS series — the pages on{' '}
-            <a href={SOURCES.physics} target="_blank" rel="noreferrer noopener" className="text-accent hover:underline">physics</a>,{' '}
-            <a href={SOURCES.transducers} target="_blank" rel="noreferrer noopener" className="text-accent hover:underline">transducers</a>,{' '}
-            <a href={SOURCES.scanning} target="_blank" rel="noreferrer noopener" className="text-accent hover:underline">scanning modes</a>,{' '}
-            <a href={SOURCES.settings} target="_blank" rel="noreferrer noopener" className="text-accent hover:underline">machine settings</a>, and the{' '}
-            <a href={SOURCES.diaphragm} target="_blank" rel="noreferrer noopener" className="text-accent hover:underline">diaphragm case study</a>.
-            Figures are reproduced from those pages; the text is written for this fellowship rather
-            than copied.
-          </p>
-          <p className="mt-2 text-sm text-muted">
+          <p className="text-sm text-muted">
             Educational reference for clinicians in training. Nothing here is guidance for the care of
             an individual patient, and the values quoted are those of the sources cited — confirm them
             against a primary source and your own laboratory&apos;s practice.
