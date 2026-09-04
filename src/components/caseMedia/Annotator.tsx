@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Annotation, ShapeKind } from '../../lib/caseMedia'
 
 // ---------------------------------------------------------------------------
@@ -260,8 +260,19 @@ export function AnnotationEditor({
 
   const measure = useCallback(() => {
     const el = hostRef.current
-    if (el) setBox({ w: el.clientWidth, h: el.clientHeight })
+    if (el) setBox((b) => (b.w === el.clientWidth && b.h === el.clientHeight ? b : { w: el.clientWidth, h: el.clientHeight }))
   }, [])
+
+  // Rotating a phone changes the box without any React state changing, and the
+  // badge layer is drawn in pixels — so it has to be re-measured or every number
+  // lands in the wrong place after a rotation.
+  useEffect(() => {
+    const el = hostRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [measure])
 
   /** Pointer position as 0..1 of the media box, clamped to it. */
   function pointAt(e: React.PointerEvent): [number, number] {
@@ -276,8 +287,13 @@ export function AnnotationEditor({
 
   function handleDown(e: React.PointerEvent) {
     if (e.button !== 0) return
+    // A second finger arriving mid-stroke is a pinch, not a drawing. Ignoring it
+    // keeps the shape anchored to the finger that started it.
+    if (draft) return
     measure()
-    ;(e.target as Element).setPointerCapture?.(e.pointerId)
+    // Capture on the host, not e.target: the pointer goes down on the <img>
+    // child, and a capture there is lost the moment the finger leaves it.
+    hostRef.current?.setPointerCapture?.(e.pointerId)
     const p = pointAt(e)
     setDraft({
       id: crypto.randomUUID(),
@@ -327,6 +343,9 @@ export function AnnotationEditor({
       onPointerUp={handleUp}
       onPointerCancel={handleUp}
       onLoad={measure}
+      // WebkitTouchCallout: iOS pops its "Save Image / Copy" sheet on a long
+      // press, which is exactly what drawing a slow freehand outline looks like.
+      style={{ WebkitTouchCallout: 'none' }}
       className="relative cursor-crosshair touch-none select-none overflow-hidden rounded-md border border-line bg-black"
     >
       {children}
@@ -348,17 +367,32 @@ export function AnnotatedMedia({
   activeId?: string | null
   children: React.ReactNode
 }) {
+  const hostRef = useRef<HTMLDivElement>(null)
   const [box, setBox] = useState({ w: 0, h: 0 })
+
+  // The box changes twice after mount without any prop changing: once when the
+  // image finishes loading and gives the div a height, and again whenever the
+  // phone is rotated. A ResizeObserver catches both; the ref callback alone
+  // caught only the first, and only by luck of a re-render.
+  useEffect(() => {
+    const el = hostRef.current
+    if (!el) return
+    const read = () =>
+      setBox((b) =>
+        b.w === el.clientWidth && b.h === el.clientHeight
+          ? b
+          : { w: el.clientWidth, h: el.clientHeight },
+      )
+    read()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(read)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   return (
     <div
-      // Measured through the ref callback rather than a layout effect: the
-      // image loads after mount, and its arrival is what changes the box.
-      ref={(el) => {
-        if (el && (el.clientWidth !== box.w || el.clientHeight !== box.h)) {
-          setBox({ w: el.clientWidth, h: el.clientHeight })
-        }
-      }}
+      ref={hostRef}
       className="relative overflow-hidden rounded-md border border-line bg-black"
     >
       {children}

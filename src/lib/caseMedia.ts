@@ -18,22 +18,73 @@ export const CONSENT_BUCKET = 'case-consent'
  * fellowship must have reviewed against its hospitals' own consent process
  * before it is used with a patient, and it is stored WITH each signature so
  * changing it later cannot alter what someone already agreed to.
+ *
+ * Structured after the Figure 1 authorization the program supplied, but written
+ * for THIS system, and three of that form's clauses are deliberately absent:
+ *
+ *   - "the de-identified Images will no longer constitute personal data and
+ *     will not be protected as such" — a legal conclusion, and not one this
+ *     program should assert to a patient on a hospital consent form.
+ *   - "may be used for additional purposes ... in connection with products and
+ *     services that may be developed in the future" — that is a commercial
+ *     licence. Nothing here is commercial.
+ *   - revocation being effective only "prior to the images being transferred".
+ *     Here withdrawal really is open-ended, because the case can be deleted
+ *     from the library at any time, so the text says so.
+ *
+ * The audience it names matches what the portal actually does: /waveforms is
+ * behind a login and the RLS on case_media only ever returns rows to an
+ * authenticated member. A patient signing this is agreeing to a closed teaching
+ * library, not to publication.
  */
-export const DEFAULT_CONSENT_WORDING =
-  'I agree that the photograph, image or video recording taken of me may be used for ' +
-  'medical teaching and education. I understand it will be shown to doctors and trainees ' +
-  'in the University of Toronto neuromuscular fellowship, that identifying details will be ' +
-  'removed, and that I may withdraw this permission at any time by contacting the ' +
-  'fellowship. [Wording pending review by the program and the hospitals\' privacy office.]'
+export const DEFAULT_CONSENT_WORDING = [
+  'I understand that the Citywide Neuromuscular Fellowship at the University of Toronto ' +
+    'keeps a teaching library of medical images, which is used by the doctors and trainees ' +
+    'of the fellowship to learn to recognise and diagnose neuromuscular conditions.',
+
+  'My physician or other healthcare professional has asked me, and I hereby agree, to allow ' +
+    'him or her to:',
+
+  '1. take photographs or video recordings of part of my body, and to include images and ' +
+    'recordings already made as part of my care — such as nerve conduction and EMG traces, ' +
+    'ultrasound images and video clips, MRI and other scans, and muscle biopsy slides ' +
+    '(together, the "Images");',
+
+  '2. remove any details that would allow someone to identify me from the Images; and',
+
+  '3. add the Images to the fellowship\'s teaching library for educational purposes.',
+
+  'I understand that the teaching library is on a password-protected website that is not open ' +
+    'to the public, that only the doctors and trainees of the fellowship can sign in to it, and ' +
+    'that my Images will not be published publicly, posted on social media, or given to any ' +
+    'other organisation.',
+
+  'I understand that photographs and video recordings of a person can be harder to de-identify ' +
+    'than a trace or a scan, and that a recording of my face, or of a distinguishing feature, ' +
+    'may make me recognisable to someone who knows me. Where that is a risk it will be ' +
+    'explained to me before I sign.',
+
+  'I understand that I may withdraw this permission at any time by contacting the fellowship, ' +
+    'including after the Images have been added, and that the Images will then be removed from ' +
+    'the library.',
+
+  'I understand that I am not required to sign this consent, and that refusing will not affect ' +
+    'my treatment, my care, or any service or benefit I receive.',
+
+  'I understand that I will receive no payment for allowing the Images to be taken or used.',
+
+  '[Wording pending review by the program and the hospitals\' privacy office.]',
+].join('\n\n')
 
 /** Long enough to read a case and annotate it without the link dying mid-edit. */
 export const MEDIA_URL_TTL = 4 * 3600
 
-export type MediaKind = 'waveform' | 'ultrasound' | 'biopsy' | 'exam'
+export type MediaKind = 'waveform' | 'ultrasound' | 'mri' | 'biopsy' | 'exam'
 
 export const MEDIA_KINDS: Array<{ id: MediaKind; label: string; hint: string }> = [
   { id: 'waveform', label: 'Waveform', hint: 'EMG or nerve conduction trace' },
   { id: 'ultrasound', label: 'Ultrasound', hint: 'Nerve, muscle or diaphragm imaging' },
+  { id: 'mri', label: 'MRI', hint: 'Muscle, nerve or neuraxis imaging' },
   { id: 'biopsy', label: 'Muscle biopsy', hint: 'Histology' },
   { id: 'exam', label: 'Examination finding', hint: 'Photograph or clip of a sign' },
 ]
@@ -170,12 +221,22 @@ export interface ConsentRecord {
   wording: string
   signedAt: string
   obtainedBy: string
+  /** True when a substitute decision-maker signed rather than the patient. */
+  signerIsRepresentative: boolean
+  /** The representative's name. Null when the patient signed themselves. */
+  signerName: string | null
+  /** Their relationship to the patient and authority to act. */
+  signerAuthority: string | null
 }
 
 export interface NewConsent {
   patientName: string
   wording: string
   signature: Blob
+  /** Set when someone signs on the patient's behalf. */
+  signerIsRepresentative?: boolean
+  signerName?: string
+  signerAuthority?: string
 }
 
 /**
@@ -199,6 +260,11 @@ export async function saveConsent(
   if (upErr) throw new Error(upErr.message)
 
   const signedAt = new Date().toISOString()
+  // The database CHECK insists a representative signature carries both a name
+  // and an authority, and a patient signature carries neither. Normalising here
+  // means a half-filled representative block is rejected rather than stored as
+  // an ambiguous record.
+  const byRep = input.signerIsRepresentative === true
   const { error } = await supabase.from('case_media_consent').upsert(
     {
       case_id: caseId,
@@ -207,6 +273,9 @@ export async function saveConsent(
       wording: input.wording,
       signed_at: signedAt,
       obtained_by: obtainedBy,
+      signer_is_representative: byRep,
+      signer_name: byRep ? (input.signerName ?? '').trim() || null : null,
+      signer_authority: byRep ? (input.signerAuthority ?? '').trim() || null : null,
     },
     { onConflict: 'case_id' },
   )
@@ -228,17 +297,26 @@ export async function saveConsent(
 export async function getConsent(caseId: string): Promise<ConsentRecord | null> {
   const { data, error } = await supabase
     .from('case_media_consent')
-    .select('case_id, patient_name, signature_path, wording, signed_at, obtained_by')
+    .select(
+      'case_id, patient_name, signature_path, wording, signed_at, obtained_by, ' +
+        'signer_is_representative, signer_name, signer_authority',
+    )
     .eq('case_id', caseId)
     .maybeSingle()
   if (error || !data) return null
-  const r = data as {
+  // `as unknown as` because the generated database types predate the
+  // representative columns; the select string is what actually decides the
+  // shape, and it is right above.
+  const r = data as unknown as {
     case_id: string
     patient_name: string
     signature_path: string
     wording: string
     signed_at: string
     obtained_by: string
+    signer_is_representative: boolean | null
+    signer_name: string | null
+    signer_authority: string | null
   }
   return {
     caseId: r.case_id,
@@ -247,6 +325,9 @@ export async function getConsent(caseId: string): Promise<ConsentRecord | null> 
     wording: r.wording,
     signedAt: r.signed_at,
     obtainedBy: r.obtained_by,
+    signerIsRepresentative: r.signer_is_representative === true,
+    signerName: r.signer_name,
+    signerAuthority: r.signer_authority,
   }
 }
 

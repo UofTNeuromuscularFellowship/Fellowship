@@ -22,22 +22,50 @@ export function SignaturePad({
 
   // Size the backing store to the device pixel ratio once laid out, or the
   // signature is a blurry upscale of a small bitmap.
+  //
+  // Re-run on resize as well: a phone rotated mid-signing changes the canvas
+  // width, and setting canvas.width wipes the bitmap — so whatever has been
+  // signed so far is copied across rather than lost.
   useEffect(() => {
     const c = canvasRef.current
     if (!c) return
-    const dpr = Math.min(window.devicePixelRatio || 1, 2)
-    const w = c.clientWidth
-    c.width = Math.round(w * dpr)
-    c.height = Math.round(height * dpr)
-    const ctx = c.getContext('2d')
-    if (!ctx) return
-    ctx.scale(dpr, dpr)
-    ctx.fillStyle = '#FFFFFF'
-    ctx.fillRect(0, 0, w, height)
-    ctx.lineWidth = 2
-    ctx.lineCap = 'round'
-    ctx.lineJoin = 'round'
-    ctx.strokeStyle = '#111827'
+
+    let lastW = 0
+    function size() {
+      const c = canvasRef.current
+      if (!c) return
+      const w = c.clientWidth
+      if (w === 0 || w === lastW) return
+      const prev = lastW > 0 ? document.createElement('canvas') : null
+      if (prev) {
+        prev.width = c.width
+        prev.height = c.height
+        prev.getContext('2d')?.drawImage(c, 0, 0)
+      }
+      lastW = w
+
+      const dpr = Math.min(window.devicePixelRatio || 1, 2)
+      c.width = Math.round(w * dpr)
+      c.height = Math.round(height * dpr)
+      const ctx = c.getContext('2d')
+      if (!ctx) return
+      ctx.scale(dpr, dpr)
+      ctx.fillStyle = '#FFFFFF'
+      ctx.fillRect(0, 0, w, height)
+      ctx.lineWidth = 2
+      ctx.lineCap = 'round'
+      ctx.lineJoin = 'round'
+      ctx.strokeStyle = '#111827'
+      // Stretched to the new width, which keeps the whole signature visible
+      // rather than cropping the end of a name off the right-hand side.
+      if (prev && prev.width > 0) ctx.drawImage(prev, 0, 0, w, height)
+    }
+
+    size()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(size)
+    ro.observe(c)
+    return () => ro.disconnect()
   }, [height])
 
   function pos(e: React.PointerEvent) {
@@ -92,7 +120,10 @@ export function SignaturePad({
     <div>
       <canvas
         ref={canvasRef}
-        style={{ height }}
+        // touch-none stops the page scrolling under the finger mid-signature;
+        // WebkitTouchCallout stops iOS offering to save the canvas as an image
+        // when a slow stroke reads as a long press.
+        style={{ height, WebkitTouchCallout: 'none' }}
         onPointerDown={down}
         onPointerMove={move}
         onPointerUp={up}
@@ -106,7 +137,7 @@ export function SignaturePad({
         <button
           onClick={clear}
           disabled={!hasInk}
-          className="text-xs font-semibold text-accent hover:underline disabled:text-muted/50 disabled:no-underline"
+          className="min-h-[36px] px-2 text-xs font-semibold text-accent hover:underline disabled:text-muted/50 disabled:no-underline"
         >
           Clear
         </button>

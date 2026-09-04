@@ -1,77 +1,38 @@
-UPLOAD THIS ONE — IT REPLACES EVERY EARLIER ZIP
-===============================================
+MRI TAG + MOBILE IMAGE LIBRARY
+==============================
 
-Everything outstanding, merged into one consistent set. It supersedes every zip
-I have sent before. Upload this and ignore those — mixing them would undo work,
-because they contain different versions of the same files.
+The database change is already applied to the live project. Nothing to run.
+This zip is the code side only.
 
-HOW TO UPLOAD
+HOW TO UPLOAD (GitHub web)
+--------------------------
+1. Open https://github.com/UofTNeuromuscularFellowship/Fellowship
+2. Add file -> Upload files
+3. Extract this zip, then DRAG THESE THREE FOLDERS onto the page:
 
-Unzip it. Open the folder you get. Drag the src, supabase and tools folders
-THAT ARE INSIDE IT into the GitHub uploader at the ROOT of the Fellowship repo
-(Add file -> Upload files).
+       src
+       public
+       supabase
 
-  DO drag:   src   supabase   tools
-  DO NOT drag the folder that contains them.
+   DO NOT drag the folder that contains them, and do not drag
+   READ-ME-FIRST.txt. GitHub keeps the folder structure, so dragging "src"
+   puts the files back exactly where they belong.
 
-.gitignore sits at the top level too. Optional — it stops node_modules and
-build output showing as untracked.
+4. Commit. Vercel redeploys on its own.
 
 WHAT IS IN IT
+-------------
+src/lib/caseMedia.ts                       MRI kind + the rewritten consent
+src/pages/CaseMedia.tsx                    phone layout, camera, MRI badge
+src/components/ui/Card.tsx                 card headers wrap on narrow screens
+src/components/caseMedia/Annotator.tsx     touch drawing, resize handling
+src/components/caseMedia/SignaturePad.tsx  survives rotation
+src/components/caseMedia/InstallImagesApp.tsx   NEW - home-screen app card
+public/manifest.webmanifest                "Add a teaching image" shortcut
+public/manifest-images.webmanifest         NEW - the image library as its own app
+public/icons/images-*.png                  NEW - four icons for that app
+supabase/migrations/0020_...sql            record of the MRI change (applied)
+supabase/migrations/0021_...sql            record of the consent change (applied)
 
-1. The muscle title box, rebuilt (new)
-
-     Triceps Brachii   Arm
-     Roots: C7-C8-T1
-     Plexus: Posterior > Middle and Lower > Posterior
-     Nerve: Radial
-     Primary Action: Chief elbow extensor; the long head also aids...
-     ----------------------------------------------------
-     POSITION    Prone with the arm abducted; lateral head sampled...
-     INSERTION   Three heads share a common olecranon tendon...
-     ACTIVATION  Extend the elbow.
-     PITFALLS    Too anterior or proximal on the lateral head hits deltoid...
-
-   The "Needle localization" card under the model is gone — the strip carries
-   all of it. POSITION is included because that card was its only home and it
-   is reviewed clinical text; say the word and I will drop it.
-   Only Clinical pearls remains below the model.
-
-2. Viewer control bar
-   - Rotate | Pan (the live one highlighted), Zoom in, Zoom out, Centre, Reset.
-   - Hint line that follows the mode.
-
-3. Needle depth removed from EMG authoring
-   - No depth field, no Save depth. Depth stays in the written technique.
-
-4. Renaming an approach
-   - "Rename" beside "New approach" — every marker in that approach moves to
-     the new name, so the triceps can read Lateral Head / Long Head / Medial
-     Head instead of leaving one under "Standard".
-
-5. Switching between approaches
-   - Approach chips under the title box, visible to everyone, not just faculty.
-     Each approach shows its own authored note.
-
-6. Library
-   - Read / Download / Remove keep their own right-hand column and never wrap
-     under the title. File name out of the subtitle; size beside the buttons.
-
-7. Supervisors can publish their own atlas markers
-   - Approve, edit and remove markers they placed — not anyone else's.
-
-8. Library and Feedback review restored to the nav
-
-9. The rest of the 3D atlas work
-   - NCS highlights the study's recording muscle instead of click-to-select;
-     study search and grouping by nerve; cathode degree readout and the
-     cathode-to-G1 distance feature both removed.
-
-DATABASE
-
-Already applied. Nothing for you to run. The migration file is here so the
-repo's history matches the database.
-
-AFTERWARDS
-
-Open the sidebar and check Library and Feedback review are both there.
+NOTHING ELSE IS TOUCHED. In particular public/ultrasound is not in this zip,
+so the primer images you uploaded stay exactly as they are.
