@@ -34,13 +34,13 @@ export const SOURCES = {
   settings: 'https://nysora.com/pocus/machine-settings/',
   diaphragm:
     'https://nysora.com/education-news/case-study-assessing-diaphragmatic-function-using-ultrasound/',
-  // The artefacts section is not NYSORA. It is written from Radiopaedia's
-  // reference articles, listed individually in ARTEFACT_REFERENCES below.
-  artefacts: 'https://radiopaedia.org/articles/ultrasound-artifacts-3?lang=us',
+  // The artifacts section is not NYSORA. It is written from Radiopaedia's
+  // reference articles, listed individually in ARTIFACT_REFERENCES below.
+  artifacts: 'https://radiopaedia.org/articles/ultrasound-artifacts-3?lang=us',
 } as const
 
 /**
- * The four Radiopaedia articles the artefacts section is written from.
+ * The four Radiopaedia articles the artifacts section is written from.
  *
  * Named individually rather than hidden behind one "Source" button: the section
  * is a rewrite in this primer's own voice, not a reproduction, and a reader who
@@ -48,14 +48,14 @@ export const SOURCES = {
  * to the right article in one click. Radiopaedia articles are revised, so each
  * entry records the revision this was written from.
  */
-export interface ArtefactReference {
+export interface ArtifactReference {
   title: string
   author: string
   revised: string
   url: string
 }
 
-export const ARTEFACT_REFERENCES: ArtefactReference[] = [
+export const ARTIFACT_REFERENCES: ArtifactReference[] = [
   {
     title: 'Anisotropy',
     author: 'Andrew Murphy',

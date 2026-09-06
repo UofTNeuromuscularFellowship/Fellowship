@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Card, CardHeader } from '../components/ui/Card'
-import { ARTEFACT_REFERENCES, FIGURES, SOURCES, type PrimerFigure } from '../data/ultrasoundPrimer'
+import { ARTIFACT_REFERENCES, FIGURES, SOURCES, type PrimerFigure } from '../data/ultrasoundPrimer'
 
 // ---------------------------------------------------------------------------
 // Neuromuscular ultrasound primer.
@@ -20,14 +20,14 @@ import { ARTEFACT_REFERENCES, FIGURES, SOURCES, type PrimerFigure } from '../dat
 // data/ultrasoundPrimer.ts).
 // ---------------------------------------------------------------------------
 
-type SectionId = 'physics' | 'transducers' | 'modes' | 'settings' | 'artefacts' | 'diaphragm'
+type SectionId = 'physics' | 'transducers' | 'modes' | 'settings' | 'artifacts' | 'diaphragm'
 
 const SECTIONS: Array<{ id: SectionId; label: string; sub: string; source: string }> = [
   { id: 'physics', label: 'Physics', sub: 'What the picture is made of', source: SOURCES.physics },
   { id: 'transducers', label: 'Transducers', sub: 'Choosing and holding the probe', source: SOURCES.transducers },
   { id: 'modes', label: 'Scanning modes', sub: 'B, M and Doppler', source: SOURCES.scanning },
   { id: 'settings', label: 'Machine settings', sub: 'Depth, focus, gain', source: SOURCES.settings },
-  { id: 'artefacts', label: 'Artefacts', sub: 'What the machine gets wrong', source: SOURCES.artefacts },
+  { id: 'artifacts', label: 'Artifacts', sub: 'What the machine gets wrong', source: SOURCES.artifacts },
   { id: 'diaphragm', label: 'Diaphragm', sub: 'A worked assessment', source: SOURCES.diaphragm },
 ]
 
@@ -167,7 +167,7 @@ function Physics() {
 
       <Gap>
         The source page does not separate axial from lateral resolution, and does not cover
-        refraction or scattering. The named artefacts that follow from this physics — anisotropy,
+        refraction or scattering. The named artifacts that follow from this physics — anisotropy,
         shadowing, enhancement and reverberation — have their own section further on.
       </Gap>
     </>
@@ -434,14 +434,14 @@ function Diaphragm() {
 }
 
 // ---------------------------------------------------------------------------
-// Artefacts.
+// Artifacts.
 //
-// Written from Radiopaedia's reference articles (ARTEFACT_REFERENCES), rewritten
+// Written from Radiopaedia's reference articles (ARTIFACT_REFERENCES), rewritten
 // in this primer's voice rather than reproduced, and illustrated with diagrams
 // drawn here rather than borrowed images — the mechanism is geometry, and a
 // clean drawing of the geometry teaches it better than a screen capture.
 //
-// The clinical framing is deliberately neuromuscular: the artefact that will
+// The clinical framing is deliberately neuromuscular: the artifact that will
 // actually mislead a fellow in this lab is anisotropy on a nerve, not a
 // cholesterol crystal in a gallbladder.
 // ---------------------------------------------------------------------------
@@ -505,11 +505,11 @@ function Probe({ x, y, w = 90 }: { x: number; y: number; w?: number }) {
   )
 }
 
-function Artefacts() {
+function Artifacts() {
   return (
     <>
       <P>
-        Every artefact below is the machine reporting exactly what it measured, under an assumption
+        Every artifact below is the machine reporting exactly what it measured, under an assumption
         that has stopped being true. It assumes sound travelled in a straight line, at 1540 m/s, out
         and back once. Where that assumption breaks, the picture is wrong in a way that is
         reproducible — which is what makes these worth learning rather than merely tolerating.
@@ -592,7 +592,7 @@ function Artefacts() {
       </Diagram>
 
       <P>
-        In musculoskeletal scanning this is the artefact that produces wrong diagnoses: a normal
+        In musculoskeletal scanning this is the artifact that produces wrong diagnoses: a normal
         tendon rendered hypoechoic by a few degrees of probe tilt looks like tendinosis, or like a
         tear. The fix is mechanical, not electronic — heel-and-toe the probe through the angle and
         watch the structure brighten and darken. Anything that brightens when you square up to it
@@ -600,7 +600,7 @@ function Artefacts() {
       </P>
       <Key>
         Anisotropy is reversible and pathology is not. Before you call a nerve or tendon hypoechoic,
-        rock the probe. If it lights up, you were looking at the artefact.
+        rock the probe. If it lights up, you were looking at the artifact.
       </Key>
       <P>
         It can also be turned to use. A tendon running through hyperechoic fat can be hard to
@@ -618,7 +618,7 @@ function Artefacts() {
       </P>
       <P>
         Shadow intensity is not fixed: bringing the focal zone closer to the shadowing object
-        deepens the shadow. And the artefact is diagnostically useful in its own right, which is how
+        deepens the shadow. And the artifact is diagnostically useful in its own right, which is how
         gallstones are identified. In a limb it is how you know where you are — the bright line and
         black shadow of the fibular head or the medial epicondyle is a landmark, not a problem.
       </P>
@@ -697,7 +697,7 @@ function Artefacts() {
         <Probe x={40} y={20} w={70} />
         <line x1={75} y1={44} x2={75} y2={68} stroke={D.beam} strokeWidth={2} markerEnd="url(#ar-beam)" />
 
-        {/* An evenly stepped ladder, because that is what the artefact looks
+        {/* An evenly stepped ladder, because that is what the artifact looks
             like: the two real reflectors, then a repeat at the SAME interval
             for every extra round trip, each weaker than the one above it. */}
         {[
@@ -753,12 +753,12 @@ function Artefacts() {
         with depth because each successive echo is weaker.
       </P>
       <Key>
-        Reverberation is the artefact to expect around a needle. Two parallel metal surfaces in the
+        Reverberation is the artifact to expect around a needle. Two parallel metal surfaces in the
         beam is precisely the geometry that produces it — angling the probe, rather than turning the
         gain down, is what clears it.
       </Key>
       <Gap>
-        Ring-down artefact looks similar to reverberation and is often grouped with it, but it does
+        Ring-down artifact looks similar to reverberation and is often grouped with it, but it does
         not arise from the same mechanism and is treated as a separate entity in the source. It is
         not described here.
       </Gap>
@@ -771,7 +771,7 @@ function Artefacts() {
         revision each was written from is recorded.
       </P>
       <ul className="mt-2 space-y-1">
-        {ARTEFACT_REFERENCES.map((r) => (
+        {ARTIFACT_REFERENCES.map((r) => (
           <li key={r.url} className="text-sm text-ink">
             <a
               href={r.url}
@@ -797,7 +797,7 @@ const BODIES: Record<SectionId, () => JSX.Element> = {
   transducers: Transducers,
   modes: Modes,
   settings: Settings,
-  artefacts: Artefacts,
+  artifacts: Artifacts,
   diaphragm: Diaphragm,
 }
 
