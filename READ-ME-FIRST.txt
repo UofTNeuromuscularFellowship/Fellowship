@@ -1,7 +1,7 @@
-REMOVE THE RING-DOWN NOTE AND THE REFERENCE LIST
-================================================
+REMOVE THE REMAINING "NOT COVERED HERE" NOTES
+=============================================
 
-Two files. No database change.
+One file. No database change.
 
 1. Open https://github.com/UofTNeuromuscularFellowship/Fellowship
 2. Add file -> Upload files
@@ -9,12 +9,14 @@ Two files. No database change.
    Do not drag the folder that contains it, and do not drag this readme.
 4. Commit.
 
-The Artifacts section now ends on the comet-tail paragraph and the point about
-needles. The amber ring-down note and the whole "Where this came from" block,
-including the four Radiopaedia links, are gone.
+Both remaining amber notes are gone — the one in Physics about resolution and
+refraction, and the one in Diaphragm about the cut-offs coming from a single
+published case. There are now none left anywhere in the primer.
 
-The "Source" button in the section header still links to Radiopaedia, the same
-way every other section links to its NYSORA page.
+Worth knowing: the diaphragm numbers (excursion, thickening fraction, the 20%
+dysfunction threshold) now appear with nothing beside them. The grey paragraph
+at the very bottom of the page still says the quoted values are the sources'
+and should be confirmed against a primary source and your own laboratory's
+practice. That is now the only place the page says so.
 
 src/pages/UltrasoundPrimer.tsx
-src/data/ultrasoundPrimer.ts

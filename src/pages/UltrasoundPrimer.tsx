@@ -5,19 +5,27 @@ import { FIGURES, SOURCES, type PrimerFigure } from '../data/ultrasoundPrimer'
 // ---------------------------------------------------------------------------
 // Neuromuscular ultrasound primer.
 //
-// Five sections, read in order: the physics, the probe, the modes, the knobs,
-// and one worked assessment (the diaphragm) that uses all four.
+// Six sections, read in order: the physics, the probe, the modes, the knobs,
+// the artifacts, and one worked assessment (the diaphragm) that uses them all.
 //
-// SCOPE, stated plainly because it matters clinically: this is the knobology
-// and physics foundation plus the diaphragm case. It does NOT carry nerve
-// cross-sectional area reference values, entrapment cut-offs, or muscle
+// SCOPE, because it matters clinically: this is the knobology and physics
+// foundation, the common artifacts, and the diaphragm case. It does NOT carry
+// nerve cross-sectional area reference values, entrapment cut-offs, or muscle
 // echogenicity grading — none of that is in the source material, and inventing
 // reference values a fellow might act on is the one failure this project will
-// not tolerate. The page says so where a reader would otherwise assume it.
+// not tolerate.
 //
-// Adapted from NYSORA's POCUS series with permission; every section credits and
-// links its source page, and the figures are local copies (see
-// data/ultrasoundPrimer.ts).
+// The per-section "Not covered here" notes were removed at the fellowship's
+// request on 2026-09-06, the last of them being the one qualifying the
+// diaphragm cut-offs as a single published case rather than a laboratory
+// protocol. The standing disclaimer at the foot of the page still says the
+// quoted values are the sources' and should be confirmed against a primary
+// source and the reader's own laboratory practice; that is now the only place
+// the page says so, so it should not be removed without a deliberate decision.
+//
+// Sections 1-4 and 6 are adapted from NYSORA's POCUS series with permission;
+// section 5 is written from Radiopaedia. Every section links its source page,
+// and the figures are local copies (see data/ultrasoundPrimer.ts).
 // ---------------------------------------------------------------------------
 
 type SectionId = 'physics' | 'transducers' | 'modes' | 'settings' | 'artifacts' | 'diaphragm'
@@ -90,16 +98,6 @@ function Key({ children }: { children: React.ReactNode }) {
   )
 }
 
-/** Something the source material does not cover — never filled in by guesswork. */
-function Gap({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-ink">
-      <span className="font-semibold text-amber-800">Not covered here. </span>
-      {children}
-    </p>
-  )
-}
-
 // ---------------------------------------------------------------------------
 
 function Physics() {
@@ -164,12 +162,6 @@ function Physics() {
         that is usually the top of the linear probe&apos;s range; go lower only when the target is
         genuinely deep.
       </Key>
-
-      <Gap>
-        The source page does not separate axial from lateral resolution, and does not cover
-        refraction or scattering. The named artifacts that follow from this physics — anisotropy,
-        shadowing, enhancement and reverberation — have their own section further on.
-      </Gap>
     </>
   )
 }
@@ -423,12 +415,6 @@ function Diaphragm() {
         wrong direction, and a muscle not thickening: diaphragmatic dysfunction, most consistent with
         paralysis, and enough to explain why she would not wean.
       </P>
-
-      <Gap>
-        This is one published case, reproduced as a worked example of technique. It is not a
-        laboratory protocol, and the cut-offs above are the ones that case used — confirm the values
-        your own laboratory reports against a primary source before applying them.
-      </Gap>
     </>
   )
 }
