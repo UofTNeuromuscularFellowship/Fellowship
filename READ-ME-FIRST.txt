@@ -1,7 +1,7 @@
-SPELLING: ARTIFACT
-==================
+REMOVE THE RING-DOWN NOTE AND THE REFERENCE LIST
+================================================
 
-Two files. No database change. Nothing else in the portal is affected.
+Two files. No database change.
 
 1. Open https://github.com/UofTNeuromuscularFellowship/Fellowship
 2. Add file -> Upload files
@@ -9,9 +9,12 @@ Two files. No database change. Nothing else in the portal is affected.
    Do not drag the folder that contains it, and do not drag this readme.
 4. Commit.
 
-Changes "artefact" to "artifact" everywhere in the ultrasound primer — the
-section tab, the headings, the prose and the code names. This is also the
-spelling the sources use: all four Radiopaedia articles are titled "artifact".
+The Artifacts section now ends on the comet-tail paragraph and the point about
+needles. The amber ring-down note and the whole "Where this came from" block,
+including the four Radiopaedia links, are gone.
+
+The "Source" button in the section header still links to Radiopaedia, the same
+way every other section links to its NYSORA page.
 
 src/pages/UltrasoundPrimer.tsx
 src/data/ultrasoundPrimer.ts

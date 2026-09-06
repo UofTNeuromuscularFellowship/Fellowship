@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Card, CardHeader } from '../components/ui/Card'
-import { ARTIFACT_REFERENCES, FIGURES, SOURCES, type PrimerFigure } from '../data/ultrasoundPrimer'
+import { FIGURES, SOURCES, type PrimerFigure } from '../data/ultrasoundPrimer'
 
 // ---------------------------------------------------------------------------
 // Neuromuscular ultrasound primer.
@@ -436,10 +436,16 @@ function Diaphragm() {
 // ---------------------------------------------------------------------------
 // Artifacts.
 //
-// Written from Radiopaedia's reference articles (ARTIFACT_REFERENCES), rewritten
-// in this primer's voice rather than reproduced, and illustrated with diagrams
-// drawn here rather than borrowed images — the mechanism is geometry, and a
-// clean drawing of the geometry teaches it better than a screen capture.
+// Written from Radiopaedia's reference articles, rewritten in this primer's
+// voice rather than reproduced, and illustrated with diagrams drawn here rather
+// than borrowed images — the mechanism is geometry, and a clean drawing of the
+// geometry teaches it better than a screen capture.
+//
+// The on-page reference list and the ring-down note were removed at the
+// fellowship's request on 2026-09-05. The articles are still recorded in
+// ARTIFACT_REFERENCES in data/ultrasoundPrimer.ts, and the section header still
+// carries its Source button to Radiopaedia, so the provenance is not lost even
+// though it is no longer set out on the page.
 //
 // The clinical framing is deliberately neuromuscular: the artifact that will
 // actually mislead a fellow in this lab is anisotropy on a nerve, not a
@@ -757,37 +763,6 @@ function Artifacts() {
         beam is precisely the geometry that produces it — angling the probe, rather than turning the
         gain down, is what clears it.
       </Key>
-      <Gap>
-        Ring-down artifact looks similar to reverberation and is often grouped with it, but it does
-        not arise from the same mechanism and is treated as a separate entity in the source. It is
-        not described here.
-      </Gap>
-
-      <H>Where this came from</H>
-      <P>
-        This section is not from the NYSORA series the rest of the primer follows. It is written
-        from four Radiopaedia reference articles, rewritten here rather than reproduced, and the
-        diagrams above are drawn for this page. Radiopaedia articles are revised over time, so the
-        revision each was written from is recorded.
-      </P>
-      <ul className="mt-2 space-y-1">
-        {ARTIFACT_REFERENCES.map((r) => (
-          <li key={r.url} className="text-sm text-ink">
-            <a
-              href={r.url}
-              target="_blank"
-              rel="noreferrer noopener"
-              className="font-medium text-accent hover:underline"
-            >
-              {r.title}
-            </a>
-            <span className="text-muted">
-              {' '}
-              — Radiopaedia, last revised by {r.author} on {r.revised}
-            </span>
-          </li>
-        ))}
-      </ul>
     </>
   )
 }

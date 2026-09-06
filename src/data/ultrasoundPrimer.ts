@@ -42,11 +42,15 @@ export const SOURCES = {
 /**
  * The four Radiopaedia articles the artifacts section is written from.
  *
- * Named individually rather than hidden behind one "Source" button: the section
- * is a rewrite in this primer's own voice, not a reproduction, and a reader who
- * wants the full account — or the references behind it — should be able to get
- * to the right article in one click. Radiopaedia articles are revised, so each
- * entry records the revision this was written from.
+ * NO LONGER RENDERED. The on-page reference list was removed at the fellowship's
+ * request on 2026-09-05; this record is kept here so that whoever maintains that
+ * section can still find what it was written from, and against which revision.
+ * Radiopaedia articles are revised over time, so the revision matters.
+ *
+ * Radiopaedia is CC BY-NC-SA, which asks for attribution. The section header's
+ * Source button still links to Radiopaedia, and the prose is a rewrite rather
+ * than a reproduction, but if the credit list is ever wanted back the data is
+ * right here.
  */
 export interface ArtifactReference {
   title: string
