@@ -1,33 +1,29 @@
-TAG WHAT A CASE SHOWS
-=====================
+RENAME + DASHBOARD QUICK LINK
+=============================
 
-The database change is ALREADY APPLIED to the live project — the tables exist
-and both lists are loaded. Nothing to run. This zip is the code side.
+Four files. No database change.
+
+NOTE: this also carries the "hide the ultrasound primer" change, which I sent
+earlier but which is not on GitHub yet. Uploading this does both. You do not
+need the older hide-ultrasound zip.
 
 1. Open https://github.com/UofTNeuromuscularFellowship/Fellowship
 2. Add file -> Upload files
-3. Extract this zip and DRAG THE "src" AND "supabase" FOLDERS onto the page.
-   Do not drag the folder that contains them, and do not drag this readme.
+3. Extract this zip and DRAG THE "src" FOLDER onto the page.
+   Do not drag the folder that contains it, and do not drag this readme.
 4. Commit. Vercel redeploys on its own.
 
-WHAT YOU GET
+WHAT CHANGES
 ------------
-- Uploading a waveform offers your 17 EMG terms. Uploading an ultrasound
-  offers your 9 nerves and structures. Pick as many as apply, or none.
-- Already-uploaded cases can be tagged too: open one and use "Tag what it
-  shows".
-- Tags appear under the image, are searchable by name, and the case list has a
-  filter that lists only the terms something is actually tagged with.
-- MRI, muscle biopsy and examination findings have no list yet, so no picker
-  appears for them. Tell me the terms and I will add them.
+- The page is now called "Waveforms & images Library" — the heading, the
+  EMG Toolkit menu entry, and the new dashboard link all match.
+- Dashboard quick links: "Fellowship handbook" is replaced by
+  "Waveforms & images Library". The handbook itself is untouched and is still
+  in the Program menu.
+- Also included (from the earlier zip): the Ultrasound primer is hidden from
+  the menu and reachable only by you at /ultrasound.
 
-ADDING A TERM LATER
--------------------
-You do not need me or a code change. One row in the case_finding table:
-  code, label, applies_to (e.g. {waveform}), sort_order
-Retire a term by setting active = false rather than deleting it, so cases
-already tagged with it keep their tag.
-
-src/lib/caseMedia.ts
+src/App.tsx
+src/components/AppShell.tsx
 src/pages/CaseMedia.tsx
-supabase/migrations/0022_case_media_findings.sql   (record of the applied change)
+src/pages/Dashboard.tsx

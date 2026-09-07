@@ -91,7 +91,11 @@ export default function App() {
           reader inside it is lazily loaded when a document is opened. */}
       <Route path="/library" element={<Shell allow={['fellow', 'supervisor', 'director', 'admin']}><Library /></Shell>} />
       <Route path="/test-directory" element={<Shell allow={['fellow', 'supervisor', 'director']}><TestDirectory /></Shell>} />
-      <Route path="/ultrasound" element={<Shell allow={['fellow', 'supervisor', 'director']}><UltrasoundPrimer /></Shell>} />
+      {/* Hidden from the menu (see AppShell) and narrowed to the director while
+          it is withdrawn, so a fellow who bookmarked it cannot still open it.
+          Widen this allow list back to ['fellow', 'supervisor', 'director'] to
+          publish it again. */}
+      <Route path="/ultrasound" element={<Shell allow={['director', 'admin']}><UltrasoundPrimer /></Shell>} />
       <Route path="/waveforms" element={<Shell allow={['fellow', 'supervisor', 'director']}><CaseMediaLibrary /></Shell>} />
       <Route path="/settings" element={<Shell><Settings /></Shell>} />
       {/* Legacy path redirects */}

@@ -40,8 +40,11 @@ const SECTIONS: NavSection[] = [
       { to: '/study', label: 'Test your anatomy knowledge', allow: ['fellow', 'supervisor', 'director'] },
       { to: '/atlas-3d', label: '3D atlas', allow: ['fellow', 'supervisor', 'director'] },
       { to: '/test-directory', label: 'Diagnostic test directory', allow: ['fellow', 'supervisor', 'director'] },
-      { to: '/ultrasound', label: 'Ultrasound primer', allow: ['fellow', 'supervisor', 'director'] },
-      { to: '/waveforms', label: 'Waveforms & images', allow: ['fellow', 'supervisor', 'director'] },
+      // Ultrasound primer hidden from the menu on 2026-09-06. The page and its
+      // figures are untouched; the route still exists and is reachable at
+      // /ultrasound by the director. To bring it back, restore this line:
+      //   { to: '/ultrasound', label: 'Ultrasound primer', allow: ['fellow', 'supervisor', 'director'] },
+      { to: '/waveforms', label: 'Waveforms & images Library', allow: ['fellow', 'supervisor', 'director'] },
       { to: '/library', label: 'Library', allow: ['fellow', 'supervisor', 'director', 'admin'] },
     ],
   },

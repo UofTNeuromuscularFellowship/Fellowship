@@ -1071,7 +1071,7 @@ export default function CaseMediaLibrary() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-display text-2xl font-bold text-ink">Waveforms &amp; images</h1>
+        <h1 className="font-display text-2xl font-bold text-ink">Waveforms &amp; images Library</h1>
         <p className="mt-1 text-sm text-muted">
           Teaching images and clips — waveforms, ultrasound, MRI, biopsy and examination findings —
           with annotations and a legend

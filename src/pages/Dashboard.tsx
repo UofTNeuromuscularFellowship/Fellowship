@@ -27,13 +27,15 @@ interface Notification { id: string; title: string; body: string | null; link: s
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 // The places people go looking for something mid-clinic. Same order as the
-// EMG Toolkit nav, with the Handbook last since it is the slowest read.
+// EMG Toolkit nav. The Fellowship handbook was here until 2026-09-07 and was
+// replaced by the image library, which is the one people reach for during a
+// study rather than before one; the handbook is still in the Program nav.
 const QUICK_LINKS = [
   { to: '/test-directory', label: 'Diagnostic test directory', blurb: 'Where to send genetic and antibody testing, with requisitions.' },
   { to: '/atlas-3d', label: '3D atlas', blurb: 'Muscles, nerves and needle insertion points.' },
   { to: '/library', label: 'Library', blurb: 'Reference texts, guidelines and your reading list.' },
   { to: '/calculators', label: 'EMG/NCS calculators', blurb: 'Reference values and common calculations.' },
-  { to: '/handbook', label: 'Fellowship handbook', blurb: 'Housekeeping, EMG reporting, and site-by-site guides.' },
+  { to: '/waveforms', label: 'Waveforms & images Library', blurb: 'Teaching traces, ultrasound, MRI and biopsy, annotated.' },
 ]
 
 /** Local-calendar YYYY-MM-DD. Not toISOString() — that is the UTC date, which
