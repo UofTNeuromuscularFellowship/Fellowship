@@ -10,7 +10,10 @@ import {
   createCase,
   DEFAULT_CONSENT_WORDING,
   deleteCase,
+  findingsFor,
   getConsent,
+  listFindings,
+  setFindings,
   saveConsent,
   signConsentUrl,
   isVideo,
@@ -24,6 +27,7 @@ import {
   type Annotation,
   type CaseMedia as Case,
   type ConsentRecord,
+  type Finding,
   type MediaKind,
   type ShapeKind,
 } from '../lib/caseMedia'
@@ -50,6 +54,93 @@ const KIND_BADGE: Record<MediaKind, string> = {
   exam: 'bg-amber-100 text-amber-800',
 }
 
+/**
+ * What the case shows.
+ *
+ * Multi-select, because one trace is often two things at once — a run of
+ * positive sharp waves alongside fibrillation potentials — and because a quiz
+ * built on this later needs to know that rather than being forced to pick one.
+ *
+ * The list comes from the database, filtered to the media kind in hand: EMG
+ * terms for a waveform, nerves and structures for an ultrasound. A kind with no
+ * terms defined shows nothing at all rather than an empty box.
+ */
+function FindingPicker({
+  all,
+  kind,
+  selected,
+  onChange,
+  disabled,
+}: {
+  all: Finding[]
+  kind: MediaKind
+  selected: string[]
+  onChange: (next: string[]) => void
+  disabled?: boolean
+}) {
+  const offered = findingsFor(all, kind)
+  if (offered.length === 0) return null
+
+  function toggle(code: string) {
+    onChange(
+      selected.includes(code) ? selected.filter((c) => c !== code) : [...selected, code],
+    )
+  }
+
+  return (
+    <div>
+      <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+        What it shows{' '}
+        <span className="font-normal normal-case">— choose any that apply, or none</span>
+      </span>
+      <div className="mt-1 flex flex-wrap gap-1.5">
+        {offered.map((f) => {
+          const on = selected.includes(f.code)
+          return (
+            <button
+              key={f.code}
+              type="button"
+              onClick={() => toggle(f.code)}
+              disabled={disabled}
+              aria-pressed={on}
+              className={`min-h-[36px] rounded-md border px-3 py-1.5 text-xs font-semibold disabled:opacity-50 ${
+                on
+                  ? 'border-accent bg-accent-soft text-accent'
+                  : 'border-line text-muted hover:text-ink'
+              }`}
+            >
+              {f.label}
+            </button>
+          )
+        })}
+      </div>
+      {selected.length > 0 && (
+        <p className="mt-1 text-xs text-muted">
+          {selected.length} selected — these are what a future quiz would ask about.
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** Findings shown on a case, read-only. */
+function FindingChips({ codes, all }: { codes: string[]; all: Finding[] }) {
+  if (codes.length === 0) return null
+  const label = (c: string) => all.find((f) => f.code === c)?.label ?? c
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {codes.map((c) => (
+        <span
+          key={c}
+          className="rounded-md border border-accent/40 bg-accent-soft/40 px-2 py-0.5 text-xs font-semibold text-accent"
+        >
+          {label(c)}
+        </span>
+      ))}
+    </div>
+  )
+}
+
 function Badge({ kind }: { kind: MediaKind }) {
   return (
     <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${KIND_BADGE[kind]}`}>
@@ -62,10 +153,12 @@ function Badge({ kind }: { kind: MediaKind }) {
 
 function UploadForm({
   authorId,
+  findings,
   onDone,
   onError,
 }: {
   authorId: string
+  findings: Finding[]
   onDone: (c: Case) => void
   onError: (m: string) => void
 }) {
@@ -86,6 +179,7 @@ function UploadForm({
   const [byRepresentative, setByRepresentative] = useState(false)
   const [signerName, setSignerName] = useState('')
   const [signerAuthority, setSignerAuthority] = useState('')
+  const [chosen, setChosen] = useState<string[]>([])
 
   const needsConsent = consentRequired(mediaKind)
   // A representative signature is incomplete without both a name and an
@@ -102,7 +196,10 @@ function UploadForm({
     if (!ready || !file) return
     setBusy(true)
     try {
-      const created = await createCase({ title, mediaKind, description, file }, authorId)
+      const created = await createCase(
+        { title, mediaKind, description, file, findings: chosen },
+        authorId,
+      )
       // The case exists first, because the consent row references it. If the
       // consent write fails the case is removed again rather than left standing
       // without the permission it requires.
@@ -136,6 +233,7 @@ function UploadForm({
       setByRepresentative(false)
       setSignerName('')
       setSignerAuthority('')
+      setChosen([])
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -161,7 +259,15 @@ function UploadForm({
           {MEDIA_KINDS.map((k) => (
             <button
               key={k.id}
-              onClick={() => setMediaKind(k.id)}
+              onClick={() => {
+                setMediaKind(k.id)
+                // Terms are scoped to a kind. Switching from waveform to
+                // ultrasound must not leave "fibrillation potential" attached
+                // to an ultrasound image just because it was picked first.
+                setChosen((cur) =>
+                  cur.filter((c) => findingsFor(findings, k.id).some((f) => f.code === c)),
+                )
+              }}
               title={k.hint}
               className={`min-h-[40px] rounded-md border px-3 py-2 text-sm font-semibold sm:min-h-0 sm:px-2.5 sm:py-1.5 sm:text-xs ${
                 mediaKind === k.id
@@ -174,6 +280,8 @@ function UploadForm({
           ))}
         </div>
       </div>
+
+      <FindingPicker all={findings} kind={mediaKind} selected={chosen} onChange={setChosen} />
 
       <label className="block">
         <span className="text-xs font-semibold uppercase tracking-wide text-muted">
@@ -497,6 +605,7 @@ function CaseView({
   url,
   posterUrl,
   mayEdit,
+  findings,
   onSaved,
   onDeleted,
   onError,
@@ -505,6 +614,7 @@ function CaseView({
   url: string | null
   posterUrl: string | null
   mayEdit: boolean
+  findings: Finding[]
   onSaved: (c: Case) => void
   onDeleted: (id: string) => void
   onError: (m: string) => void
@@ -516,12 +626,35 @@ function CaseView({
   const [activeId, setActiveId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
+  // Findings are edited on their own, not inside the annotation editor: someone
+  // correcting a tag should not have to enter drawing mode to do it.
+  const [tagging, setTagging] = useState(false)
+  const [tagDraft, setTagDraft] = useState<string[]>(c.findings)
+  const [tagBusy, setTagBusy] = useState(false)
 
   useEffect(() => {
     setDraft(c.annotations)
     setEditing(false)
     setActiveId(null)
   }, [c.id, c.annotations])
+
+  useEffect(() => {
+    setTagDraft(c.findings)
+    setTagging(false)
+  }, [c.id, c.findings])
+
+  async function saveTags() {
+    setTagBusy(true)
+    try {
+      await setFindings(c.id, tagDraft)
+      onSaved({ ...c, findings: [...tagDraft] })
+      setTagging(false)
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setTagBusy(false)
+    }
+  }
 
   const video = isVideo(c)
   // A clip is annotated through a still captured from it; the still is what the
@@ -743,6 +876,55 @@ function CaseView({
           <p className="whitespace-pre-line text-sm leading-relaxed text-ink">{c.description}</p>
         )}
 
+        {/* ---- what it shows ---- */}
+        {tagging ? (
+          <div className="rounded-md border border-line px-4 py-3">
+            <FindingPicker
+              all={findings}
+              kind={c.mediaKind}
+              selected={tagDraft}
+              onChange={setTagDraft}
+              disabled={tagBusy}
+            />
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                onClick={() => void saveTags()}
+                disabled={tagBusy}
+                className="min-h-[38px] rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              >
+                {tagBusy ? 'Saving…' : 'Save'}
+              </button>
+              <button
+                onClick={() => {
+                  setTagDraft(c.findings)
+                  setTagging(false)
+                }}
+                className="min-h-[38px] rounded-md border border-line px-3 py-1.5 text-xs font-semibold text-muted hover:text-ink"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          (c.findings.length > 0 || mayEdit) && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              {c.findings.length > 0 ? (
+                <FindingChips codes={c.findings} all={findings} />
+              ) : (
+                <span className="text-xs text-muted">Not tagged yet</span>
+              )}
+              {mayEdit && findingsFor(findings, c.mediaKind).length > 0 && (
+                <button
+                  onClick={() => setTagging(true)}
+                  className="min-h-[36px] text-xs font-semibold text-accent hover:underline"
+                >
+                  {c.findings.length > 0 ? 'Edit what it shows' : 'Tag what it shows'}
+                </button>
+              )}
+            </div>
+          )
+        )}
+
         {/* ---- consent, under the photo ---- */}
         <ConsentBlock c={c} />
 
@@ -818,6 +1000,10 @@ export default function CaseMediaLibrary() {
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
   const [kindFilter, setKindFilter] = useState<MediaKind | 'all'>('all')
+  // The controlled vocabulary, not this case's tags. Named apart from the
+  // setFindings() writer imported above so the two are never confused.
+  const [vocabulary, setVocabulary] = useState<Finding[]>([])
+  const [findingFilter, setFindingFilter] = useState<string>('all')
   const [openId, setOpenId] = useState<string | null>(null)
   // ?add=1 opens the form straight away. That is what the home-screen app's
   // "Add a teaching image" shortcut points at, so a photo taken in clinic lands
@@ -845,12 +1031,37 @@ export default function CaseMediaLibrary() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id])
 
+  // The vocabulary changes rarely, so it is fetched once per visit rather than
+  // with every case list. A failure here is not fatal: the pickers disappear
+  // and the rest of the library still works.
+  useEffect(() => {
+    if (!profile) return
+    listFindings()
+      .then(setVocabulary)
+      .catch(() => setVocabulary([]))
+  }, [profile?.id])
+
+  const findingLabels = useMemo(
+    () => new Map(vocabulary.map((f) => [f.code, f.label])),
+    [vocabulary],
+  )
+
+  /** Only the terms that at least one case actually uses — an empty filter
+      option teaches nothing, and the full list of 26 would swamp the panel. */
+  const usedFindings = useMemo(() => {
+    const used = new Set(cases.flatMap((c) => c.findings))
+    return vocabulary.filter((f) => used.has(f.code))
+  }, [cases, vocabulary])
+
   const shown = useMemo(
     () =>
       cases.filter(
-        (c) => (kindFilter === 'all' || c.mediaKind === kindFilter) && matchesQuery(c, query),
+        (c) =>
+          (kindFilter === 'all' || c.mediaKind === kindFilter) &&
+          (findingFilter === 'all' || c.findings.includes(findingFilter)) &&
+          matchesQuery(c, query, findingLabels),
       ),
-    [cases, kindFilter, query],
+    [cases, kindFilter, findingFilter, query, findingLabels],
   )
 
   const open = useMemo(() => cases.find((c) => c.id === openId) ?? null, [cases, openId])
@@ -895,6 +1106,7 @@ export default function CaseMediaLibrary() {
           <div className="px-5 py-4">
             <UploadForm
               authorId={profile.id}
+              findings={vocabulary}
               onDone={(c) => {
                 setCases((all) => [c, ...all])
                 setOpenId(c.id)
@@ -959,6 +1171,26 @@ export default function CaseMediaLibrary() {
                 </button>
               ))}
             </div>
+
+            {/* A select rather than another row of chips: 26 terms alongside
+                the five kind chips would bury the search box. */}
+            {usedFindings.length > 0 && (
+              <label className="block">
+                <span className="sr-only">Filter by what the case shows</span>
+                <select
+                  value={findingFilter}
+                  onChange={(e) => setFindingFilter(e.target.value)}
+                  className="min-h-[40px] w-full rounded-md border border-line bg-surface px-2 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+                >
+                  <option value="all">Any finding</option>
+                  {usedFindings.map((f) => (
+                    <option key={f.code} value={f.code}>
+                      {f.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
 
           {loading ? (
@@ -1014,6 +1246,7 @@ export default function CaseMediaLibrary() {
                 url={urls.get(open.storagePath) ?? null}
                 posterUrl={open.posterPath ? urls.get(open.posterPath) ?? null : null}
                 mayEdit={canEditCase(profile.role, profile.id, open)}
+                findings={vocabulary}
                 onSaved={(next) => {
                   setCases((all) => all.map((x) => (x.id === next.id ? next : x)))
                   if (next.posterPath && !urls.has(next.posterPath)) void load()

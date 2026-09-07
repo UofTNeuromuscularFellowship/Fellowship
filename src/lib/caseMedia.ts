@@ -93,6 +93,70 @@ export function kindLabel(k: string): string {
   return MEDIA_KINDS.find((m) => m.id === k)?.label ?? k
 }
 
+/**
+ * One term from the controlled vocabulary in case_finding.
+ *
+ * Loaded from the database rather than hard-coded here on purpose: adding
+ * "myokymic discharge" to the list should be an INSERT the director can make,
+ * not an edit to this file followed by a deploy. That also means a term this
+ * build has never heard of still renders correctly.
+ */
+export interface Finding {
+  code: string
+  label: string
+  /** Media kinds this term is offered for, e.g. ['waveform']. */
+  appliesTo: string[]
+  sortOrder: number
+}
+
+/** Active terms, in the fellowship's order. Cheap and cacheable per session. */
+export async function listFindings(): Promise<Finding[]> {
+  const { data, error } = await supabase
+    .from('case_finding')
+    .select('code, label, applies_to, sort_order')
+    .eq('active', true)
+    .order('sort_order', { ascending: true })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as unknown as Array<{
+    code: string
+    label: string
+    applies_to: string[] | null
+    sort_order: number | null
+  }>).map((r) => ({
+    code: r.code,
+    label: r.label,
+    appliesTo: Array.isArray(r.applies_to) ? r.applies_to : [],
+    sortOrder: r.sort_order ?? 0,
+  }))
+}
+
+/** The terms offered for a given media kind. */
+export function findingsFor(all: Finding[], kind: MediaKind): Finding[] {
+  return all.filter((f) => f.appliesTo.includes(kind))
+}
+
+/**
+ * Replace a case's findings with exactly this set.
+ *
+ * Delete-then-insert rather than a diff: the set is at most a couple of dozen
+ * rows, and "the tags are now exactly these" is a much easier thing to be sure
+ * of than a merge. The delete is scoped to the case, so it cannot touch
+ * anything else even if the insert then fails.
+ */
+export async function setFindings(caseId: string, codes: string[]): Promise<void> {
+  const wanted = [...new Set(codes)]
+  const { error: delErr } = await supabase
+    .from('case_media_finding')
+    .delete()
+    .eq('case_id', caseId)
+  if (delErr) throw new Error(delErr.message)
+  if (wanted.length === 0) return
+  const { error } = await supabase
+    .from('case_media_finding')
+    .insert(wanted.map((code) => ({ case_id: caseId, finding_code: code })))
+  if (error) throw new Error(error.message)
+}
+
 export type ShapeKind = 'arrow' | 'ellipse' | 'freehand'
 
 /**
@@ -129,6 +193,8 @@ export interface CaseMedia {
   /** When consent was signed. Null means none is recorded. No identity here. */
   consentSignedAt: string | null
   annotations: Annotation[]
+  /** Codes from case_finding. Labels are resolved against the vocabulary. */
+  findings: string[]
   authorId: string
   authorName?: string | null
   createdAt: string
@@ -137,6 +203,13 @@ export interface CaseMedia {
 
 const COLUMNS =
   'id, title, media_kind, description, file_name, storage_path, mime_type, size_bytes, poster_path, consent_signed_at, annotations, author_id, created_at, updated_at'
+
+/**
+ * The same columns plus the findings, fetched through the foreign key in one
+ * round trip. A second query per case would be a request per row on a page that
+ * lists every case.
+ */
+const COLUMNS_WITH_FINDINGS = `${COLUMNS}, case_media_finding ( finding_code )`
 
 interface Row {
   id: string
@@ -153,6 +226,7 @@ interface Row {
   author_id: string
   created_at: string
   updated_at: string
+  case_media_finding?: Array<{ finding_code: string }> | null
 }
 
 function toCase(r: Row): CaseMedia {
@@ -168,6 +242,9 @@ function toCase(r: Row): CaseMedia {
     posterPath: r.poster_path,
     consentSignedAt: r.consent_signed_at,
     annotations: Array.isArray(r.annotations) ? r.annotations : [],
+    findings: Array.isArray(r.case_media_finding)
+      ? r.case_media_finding.map((f) => f.finding_code)
+      : [],
     authorId: r.author_id,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -182,7 +259,7 @@ export function isVideo(c: Pick<CaseMedia, 'mimeType' | 'fileName'>): boolean {
 export async function listCases(): Promise<CaseMedia[]> {
   const { data, error } = await supabase
     .from('case_media')
-    .select(COLUMNS)
+    .select(COLUMNS_WITH_FINDINGS)
     .order('created_at', { ascending: false })
   if (error) throw new Error(error.message)
   return ((data ?? []) as unknown as Row[]).map(toCase)
@@ -205,6 +282,8 @@ export interface NewCase {
   mediaKind: MediaKind
   description: string
   file: File
+  /** Codes from case_finding, applied right after the row is created. */
+  findings?: string[]
 }
 
 /**
@@ -371,7 +450,19 @@ export async function createCase(input: NewCase, authorId: string): Promise<Case
     await supabase.storage.from(BUCKET).remove([path])
     throw new Error(error.message)
   }
-  return toCase(data as unknown as Row)
+
+  const created = toCase(data as unknown as Row)
+
+  // Tags go on after the row exists, because they reference it. A failure here
+  // leaves a correct case with no tags rather than losing the upload — the
+  // uploader can add them from the case itself, and an untagged case is a far
+  // better outcome than a lost one.
+  const codes = input.findings ?? []
+  if (codes.length > 0) {
+    await setFindings(created.id, codes)
+    created.findings = [...codes]
+  }
+  return created
 }
 
 export async function updateCase(
@@ -388,7 +479,7 @@ export async function updateCase(
     .from('case_media')
     .update(row)
     .eq('id', id)
-    .select(COLUMNS)
+    .select(COLUMNS_WITH_FINDINGS)
     .single()
   if (error) throw new Error(error.message)
   return toCase(data as unknown as Row)
@@ -406,7 +497,7 @@ export async function savePoster(c: CaseMedia, blob: Blob): Promise<CaseMedia> {
     .from('case_media')
     .update({ poster_path: path })
     .eq('id', c.id)
-    .select(COLUMNS)
+    .select(COLUMNS_WITH_FINDINGS)
     .single()
   if (error) throw new Error(error.message)
   return toCase(data as unknown as Row)
@@ -434,7 +525,12 @@ export function canEditCase(
  * its title, its description, what kind of image it is, and the text of its
  * annotation labels, which is often where the actual finding is named.
  */
-export function matchesQuery(c: CaseMedia, q: string): boolean {
+export function matchesQuery(
+  c: CaseMedia,
+  q: string,
+  /** code -> label, so searching "fibrillation" finds a case tagged with it. */
+  findingLabels?: Map<string, string>,
+): boolean {
   const needle = q.trim().toLowerCase()
   if (!needle) return true
   const hay = [
@@ -443,6 +539,7 @@ export function matchesQuery(c: CaseMedia, q: string): boolean {
     kindLabel(c.mediaKind),
     c.authorName ?? '',
     ...c.annotations.map((a) => a.label),
+    ...c.findings.map((code) => findingLabels?.get(code) ?? code),
   ]
     .join('  ')
     .toLowerCase()
