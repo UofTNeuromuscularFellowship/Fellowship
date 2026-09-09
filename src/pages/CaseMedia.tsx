@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { AnnotatedMedia, AnnotationEditor, COLOURS, TOOLS } from '../components/caseMedia/Annotator'
 import { SignaturePad } from '../components/caseMedia/SignaturePad'
 import { InstallImagesApp } from '../components/caseMedia/InstallImagesApp'
+import { ExpandButton, Lightbox } from '../components/caseMedia/Lightbox'
 import {
   canEditCase,
   consentRequired,
@@ -631,6 +632,16 @@ function CaseView({
   const [tagging, setTagging] = useState(false)
   const [tagDraft, setTagDraft] = useState<string[]>(c.findings)
   const [tagBusy, setTagBusy] = useState(false)
+  // Which still is open full screen, if any. A video does not need this — the
+  // browser gives a <video> its own full-screen button — but its captured frame
+  // is an <img>, and an <img> gets nothing.
+  const [expanded, setExpanded] = useState<{ src: string; annotations: Annotation[] } | null>(null)
+  // Title and description, editable after upload. updateCase already accepted
+  // both; there was simply no way to reach it once a case existed.
+  const [editingDetails, setEditingDetails] = useState(false)
+  const [titleDraft, setTitleDraft] = useState(c.title)
+  const [descDraft, setDescDraft] = useState(c.description ?? '')
+  const [detailsBusy, setDetailsBusy] = useState(false)
 
   useEffect(() => {
     setDraft(c.annotations)
@@ -642,6 +653,27 @@ function CaseView({
     setTagDraft(c.findings)
     setTagging(false)
   }, [c.id, c.findings])
+
+  useEffect(() => {
+    setTitleDraft(c.title)
+    setDescDraft(c.description ?? '')
+    setEditingDetails(false)
+    setExpanded(null)
+  }, [c.id, c.title, c.description])
+
+  async function saveDetails() {
+    const title = titleDraft.trim()
+    if (!title) return
+    setDetailsBusy(true)
+    try {
+      onSaved(await updateCase(c.id, { title, description: descDraft.trim() || null }))
+      setEditingDetails(false)
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setDetailsBusy(false)
+    }
+  }
 
   async function saveTags() {
     setTagBusy(true)
@@ -714,6 +746,14 @@ function CaseView({
         action={
           mayEdit ? (
             <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+              {!editing && !editingDetails && (
+                <button
+                  onClick={() => setEditingDetails(true)}
+                  className="min-h-[38px] rounded-md border border-line px-3 py-1.5 text-xs font-semibold text-muted hover:text-ink"
+                >
+                  Edit details
+                </button>
+              )}
               {!editing ? (
                 <button
                   onClick={() => setEditing(true)}
@@ -821,6 +861,56 @@ function CaseView({
       )}
 
       <div className="space-y-4 px-5 py-4">
+        {/* ---- title and description, edited in place ---- */}
+        {editingDetails && (
+          <div className="space-y-3 rounded-md border border-accent/40 bg-accent-soft/20 px-4 py-3">
+            <label className="block">
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+                Case title
+              </span>
+              <input
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                className="mt-1 w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+                Description <span className="font-normal normal-case">— appears under the image</span>
+              </span>
+              <textarea
+                value={descDraft}
+                onChange={(e) => setDescDraft(e.target.value)}
+                rows={6}
+                className="mt-1 w-full rounded-md border border-line bg-surface px-3 py-2 text-sm leading-relaxed text-ink focus:border-accent focus:outline-none"
+              />
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => void saveDetails()}
+                disabled={detailsBusy || titleDraft.trim().length === 0}
+                className="min-h-[38px] rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {detailsBusy ? 'Saving…' : 'Save'}
+              </button>
+              <button
+                onClick={() => {
+                  setTitleDraft(c.title)
+                  setDescDraft(c.description ?? '')
+                  setEditingDetails(false)
+                }}
+                className="min-h-[38px] rounded-md border border-line px-3 py-1.5 text-xs font-semibold text-muted hover:text-ink"
+              >
+                Cancel
+              </button>
+            </div>
+            <p className="text-xs text-muted">
+              The kind, the file itself and any signed consent are not changed here — a case whose
+              kind or media changed would no longer match the consent recorded against it.
+            </p>
+          </div>
+        )}
+
         {/* ---- the media ---- */}
         {!url ? (
           <p className="text-sm text-muted">Loading…</p>
@@ -848,9 +938,17 @@ function CaseView({
                 <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-muted">
                   Captured frame
                 </p>
-                <AnnotatedMedia annotations={c.annotations} activeId={activeId}>
-                  <img src={posterUrl} alt={c.title} className="block w-full" />
-                </AnnotatedMedia>
+                {/* The clip has the browser's own full-screen button; the frame
+                    grabbed from it is an <img> and has none, which is the gap
+                    this fills. */}
+                <div className="relative">
+                  <AnnotatedMedia annotations={c.annotations} activeId={activeId}>
+                    <img src={posterUrl} alt={c.title} className="block w-full" />
+                  </AnnotatedMedia>
+                  <ExpandButton
+                    onClick={() => setExpanded({ src: posterUrl, annotations: c.annotations })}
+                  />
+                </div>
               </div>
             )}
           </div>
@@ -866,9 +964,12 @@ function CaseView({
             <img src={annotationSurface} alt={c.title} className="block w-full" draggable={false} />
           </AnnotationEditor>
         ) : (
-          <AnnotatedMedia annotations={shown} activeId={activeId}>
-            <img src={url} alt={c.title} className="block w-full" />
-          </AnnotatedMedia>
+          <div className="relative">
+            <AnnotatedMedia annotations={shown} activeId={activeId}>
+              <img src={url} alt={c.title} className="block w-full" />
+            </AnnotatedMedia>
+            <ExpandButton onClick={() => setExpanded({ src: url, annotations: shown })} />
+          </div>
         )}
 
         {/* ---- description ---- */}
@@ -987,6 +1088,16 @@ function CaseView({
           </div>
         )}
       </div>
+
+      {expanded && (
+        <Lightbox
+          src={expanded.src}
+          alt={c.title}
+          annotations={expanded.annotations}
+          caption={c.description}
+          onClose={() => setExpanded(null)}
+        />
+      )}
     </Card>
   )
 }

@@ -1,11 +1,7 @@
-RENAME + DASHBOARD QUICK LINK
-=============================
+FULL-SCREEN VIEWER + EDIT DESCRIPTION
+=====================================
 
-Four files. No database change.
-
-NOTE: this also carries the "hide the ultrasound primer" change, which I sent
-earlier but which is not on GitHub yet. Uploading this does both. You do not
-need the older hide-ultrasound zip.
+Three files. No database change.
 
 1. Open https://github.com/UofTNeuromuscularFellowship/Fellowship
 2. Add file -> Upload files
@@ -13,17 +9,27 @@ need the older hide-ultrasound zip.
    Do not drag the folder that contains it, and do not drag this readme.
 4. Commit. Vercel redeploys on its own.
 
-WHAT CHANGES
+WHAT YOU GET
 ------------
-- The page is now called "Waveforms & images Library" — the heading, the
-  EMG Toolkit menu entry, and the new dashboard link all match.
-- Dashboard quick links: "Fellowship handbook" is replaced by
-  "Waveforms & images Library". The handbook itself is untouched and is still
-  in the Program menu.
-- Also included (from the earlier zip): the Ultrasound primer is hidden from
-  the menu and reachable only by you at /ultrasound.
+1. An expand button in the top-right corner of every image, including the
+   frame captured from a clip. It opens the image full screen with its
+   annotations, its legend and its description.
+   - "Actual size" shows a wide trace at full width so you can scroll along it
+     instead of squinting at a fitted-to-screen version.
+   - Escape, the X, or a tap outside the image closes it. Tapping the image
+     itself does not, so a missed tap will not throw you out.
 
-src/App.tsx
-src/components/AppShell.tsx
+2. "Edit details" on any case you can edit — change the title and the
+   description after upload.
+
+WHAT IS DELIBERATELY NOT EDITABLE
+---------------------------------
+The media kind, the file itself, and the signed consent. Changing the kind
+would strip findings tagged against the old kind, and could move a case in or
+out of needing consent — and a case whose kind or media changed would no
+longer match the consent recorded against it. To change those, delete and
+re-upload. Tell me if you would rather it worked differently.
+
+src/components/caseMedia/Lightbox.tsx   (new)
+src/components/caseMedia/Annotator.tsx
 src/pages/CaseMedia.tsx
-src/pages/Dashboard.tsx

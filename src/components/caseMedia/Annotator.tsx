@@ -359,10 +359,14 @@ export function AnnotationEditor({
 export function AnnotatedMedia({
   annotations,
   activeId,
+  className,
   children,
 }: {
   annotations: Annotation[]
   activeId?: string | null
+  /** Extra classes on the wrapper. The lightbox needs it to shrink-wrap the
+      image rather than fill the width, so the overlay can centre it. */
+  className?: string
   children: React.ReactNode
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -391,7 +395,7 @@ export function AnnotatedMedia({
   return (
     <div
       ref={hostRef}
-      className="relative overflow-hidden rounded-md border border-line bg-black"
+      className={`relative overflow-hidden rounded-md border border-line bg-black ${className ?? ''}`}
     >
       {children}
       {annotations.length > 0 && (
