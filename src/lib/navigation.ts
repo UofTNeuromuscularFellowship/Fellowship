@@ -252,3 +252,19 @@ export function itemForPath(groups: NavGroup[], pathname: string): NavItem | und
 export function overviewPath(groupId: string): string {
   return `/s/${groupId}`
 }
+
+/**
+ * Where a rail icon or a phone tile should go.
+ *
+ * An area holding one tool goes straight to that tool. An overview listing a
+ * single card is a step that teaches nothing — you already knew what you
+ * clicked. The phone did this from the start; this is the desktop catching up,
+ * and it keeps the two behaving the same way.
+ *
+ * Applies to Home (the dashboard) and Clinic (the clinic schedule) today, and
+ * to any future area until it gains a second tool, at which point the overview
+ * starts appearing on its own.
+ */
+export function landingPath(group: NavGroup): string {
+  return group.items.length === 1 ? group.items[0].to : overviewPath(group.id)
+}

@@ -1,57 +1,30 @@
-NEW NAVIGATION + LIGHT/DARK MODE
-================================
+HOME OPENS THE DASHBOARD DIRECTLY
+=================================
 
-No database change. This is the biggest change so far — it replaces the whole
-menu — so upload it when you have a few minutes to click around afterwards.
+Three files. No database change.
 
-It ALSO carries the full-screen viewer and editable descriptions from the
-previous zip, which had not gone up yet. You do not need that one.
-
-HOW TO UPLOAD (GitHub web)
---------------------------
 1. Open https://github.com/UofTNeuromuscularFellowship/Fellowship
 2. Add file -> Upload files
-3. Extract this zip and DRAG THESE THREE ONTO THE PAGE:
-
-       src                 (folder)
-       index.html          (file)
-       tailwind.config.js  (file)
-
-   Do not drag the folder that contains them, and do not drag this readme.
-4. Commit. Vercel redeploys on its own.
+3. Extract this zip and DRAG THE "src" FOLDER onto the page.
+   Do not drag the folder that contains it, and do not drag this readme.
+4. Commit.
 
 WHAT CHANGES
 ------------
-DESKTOP. A rail of seven icons down the left: Home, Clinic, Teaching, Case Log,
-EMG Toolkit, Program, Settings. Click one and a panel opens beside it listing
-what is in that area, with the area's overview in the main pane — a card per
-tool saying what it is for. The panel collapses with the arrow at its top, and
-it remembers whether you left it open.
+- Home now opens the dashboard directly. No overview page in between.
+- Clinic does the same, opening the clinic schedule directly. It had exactly
+  the same problem — an overview listing one card — and it would have been odd
+  to fix one and not the other. Say the word if you would rather it kept its
+  overview.
+- Those two areas also lose the "Overview" line in the side panel, since it
+  would point at a page describing the only other link there.
+- Areas with more than one tool are unchanged: Teaching, Case Log, EMG Toolkit,
+  Program and Settings all still open their overview.
 
-PHONE. Tap Menu and you get the same seven as tiles. Tap one for its tools, tap
-a tool to open it. "All areas" goes back up one level. An area with only one
-thing in it (Clinic, Home) opens that thing directly.
+This is automatic, not a list I maintain: any area holding a single tool opens
+that tool, and starts showing an overview by itself the moment a second tool is
+added to it.
 
-LIGHT / DARK. Three choices — Light, Auto, Dark. Auto follows whatever the
-device is set to and is the default. It is remembered per device, so your ward
-computer and your phone can differ. The switch is at the bottom of the rail, in
-the phone menu, and in Settings under "Appearance".
-
-WHERE THINGS WENT
------------------
-Nothing was removed. The seven pages you did not list are placed as follows:
-  Teaching assignments, Rate teaching, Feedback review -> Teaching
-  Competency                                           -> Case Log
-  Test your anatomy knowledge                          -> EMG Toolkit
-  People                                               -> Program
-  Dashboard                                            -> Home
-
-I checked all five roles: every page reachable before is reachable now, and
-what a role cannot reach is exactly what it was never permitted to open.
-
-WORTH A LOOK AFTER IT DEPLOYS
------------------------------
-Switch to dark and glance at a few pages. Every colour is driven from one place
-now, so if something looks wrong it is one line to fix — tell me the page.
-
-public/ultrasound is untouched and is not in this zip.
+src/components/AppShell.tsx
+src/lib/navigation.ts
+src/pages/SectionOverview.tsx

@@ -28,6 +28,11 @@ export default function SectionOverview() {
   // an old link, so send them somewhere useful.
   if (!group) return <Navigate to="/dashboard" replace />
 
+  // An area holding one tool has no overview worth showing: /s/home goes to the
+  // dashboard, /s/clinic to the clinic schedule. Kept here as well as in the
+  // rail so a bookmarked or typed overview URL behaves the same way.
+  if (group.items.length === 1) return <Navigate to={group.items[0].to} replace />
+
   return (
     <div className="space-y-6">
       <header className="rounded-xl border border-line bg-accent-soft/50 px-5 py-5 sm:px-6 sm:py-6">

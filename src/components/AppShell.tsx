@@ -1,4 +1,4 @@
-import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useAuth } from '../context/AuthContext'
@@ -6,7 +6,7 @@ import { roleLabel } from '../lib/format'
 import { Waveform } from './ui/Waveform'
 import { NavIcon } from './nav/NavIcon'
 import { ThemeToggle } from './nav/ThemeToggle'
-import { groupForPath, navFor, overviewPath, type NavGroup } from '../lib/navigation'
+import { groupForPath, landingPath, navFor, overviewPath, type NavGroup } from '../lib/navigation'
 
 // ---------------------------------------------------------------------------
 // The shell.
@@ -67,16 +67,19 @@ export function AppShell({ children }: { children: ReactNode }) {
         aria-label="Areas"
         className="hidden w-[76px] shrink-0 flex-col items-center gap-1 border-r border-line bg-surface py-3 md:flex"
       >
-        <NavLink to="/dashboard" className="mb-2 flex flex-col items-center" aria-label="Fellowship Portal">
+        {/* A plain Link, not a NavLink: it points at the dashboard, so on the
+            dashboard a NavLink would mark itself aria-current alongside the
+            Home icon and a screen reader would hear two current items. */}
+        <Link to="/dashboard" className="mb-2 flex flex-col items-center" aria-label="Fellowship Portal">
           <Waveform className="h-4 w-12 text-accent" />
-        </NavLink>
+        </Link>
 
         {groups.map((g) => {
           const on = active?.id === g.id
           return (
             <NavLink
               key={g.id}
-              to={overviewPath(g.id)}
+              to={landingPath(g)}
               aria-current={on ? 'page' : undefined}
               className={`flex w-[64px] flex-col items-center gap-1 rounded-lg px-1 py-2 text-center transition-colors ${
                 on ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-paper hover:text-ink'
@@ -120,16 +123,20 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           {panelOpen && (
             <div className="flex-1 overflow-y-auto p-2">
-              <NavLink
-                to={overviewPath(active.id)}
-                className={({ isActive }) =>
-                  `mb-1 block rounded-md px-3 py-2 text-sm font-medium ${
-                    isActive ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-paper hover:text-ink'
-                  }`
-                }
-              >
-                Overview
-              </NavLink>
+              {/* No Overview entry for an area with one tool — it would list a
+                  single card describing the only other link in this panel. */}
+              {active.items.length > 1 && (
+                <NavLink
+                  to={overviewPath(active.id)}
+                  className={({ isActive }) =>
+                    `mb-1 block rounded-md px-3 py-2 text-sm font-medium ${
+                      isActive ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-paper hover:text-ink'
+                    }`
+                  }
+                >
+                  Overview
+                </NavLink>
+              )}
               {active.items.map((i) => (
                 <NavLink
                   key={i.to}
