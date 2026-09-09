@@ -2,7 +2,168 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: light; }
+/* ---------------------------------------------------------------------------
+   Theme.
+
+   Every colour in the portal resolves through a CSS variable, which is what
+   makes one dark mode possible rather than a per-component retrofit. Two groups
+   of variables:
+
+   1. The portal's own tokens — ink, paper, surface, line, muted, accent. Every
+      page already used these, so they flip for free.
+
+   2. The Tailwind palette shades the app actually uses — the ambers on a
+      warning, the reds on a delete, the badge colours in the image library.
+      There are 133 such classes across 24 files, and rewriting each one with a
+      dark: variant would have been 133 chances to miss one. Instead each shade
+      is a variable, and in dark mode it takes the value of its MIRROR shade:
+      50 becomes 950, 100 becomes 900, 700 becomes 300. A pale amber warning
+      background becomes a deep amber one and its dark text becomes light,
+      everywhere at once, with no component edited.
+   --------------------------------------------------------------------------- */
+
+:root {
+  color-scheme: light;
+    /* The portal's own palette. */
+    --c-ink: 15 27 45;
+    --c-paper: 247 248 250;
+    --c-surface: 255 255 255;
+    --c-line: 226 230 236;
+    --c-muted: 91 102 119;
+    --c-accent: 14 124 134;
+    --c-accent-soft: 230 242 243;
+    --c-signal: 22 181 194;
+    --c-amber-50: 255 251 235;
+    --c-amber-100: 254 243 199;
+    --c-amber-300: 252 211 77;
+    --c-amber-400: 251 191 36;
+    --c-amber-600: 217 119 6;
+    --c-amber-700: 180 83 9;
+    --c-amber-800: 146 64 14;
+    --c-amber-900: 120 53 15;
+    --c-blue-100: 219 234 254;
+    --c-blue-800: 30 64 175;
+    --c-cyan-50: 236 254 255;
+    --c-cyan-100: 207 250 254;
+    --c-cyan-900: 22 78 99;
+    --c-emerald-50: 236 253 245;
+    --c-emerald-100: 209 250 229;
+    --c-emerald-500: 16 185 129;
+    --c-emerald-600: 5 150 105;
+    --c-emerald-900: 6 78 59;
+    --c-fuchsia-50: 253 244 255;
+    --c-fuchsia-100: 250 232 255;
+    --c-fuchsia-900: 112 26 117;
+    --c-indigo-50: 238 242 255;
+    --c-indigo-100: 224 231 255;
+    --c-indigo-800: 55 48 163;
+    --c-indigo-900: 49 46 129;
+    --c-lime-50: 247 254 231;
+    --c-lime-100: 236 252 203;
+    --c-lime-900: 54 83 20;
+    --c-orange-50: 255 247 237;
+    --c-orange-100: 255 237 213;
+    --c-orange-900: 124 45 18;
+    --c-purple-100: 243 232 255;
+    --c-purple-800: 107 33 168;
+    --c-red-50: 254 242 242;
+    --c-red-200: 254 202 202;
+    --c-red-300: 252 165 165;
+    --c-red-500: 239 68 68;
+    --c-red-600: 220 38 38;
+    --c-red-700: 185 28 28;
+    --c-rose-50: 255 241 242;
+    --c-rose-100: 255 228 230;
+    --c-rose-300: 253 164 175;
+    --c-rose-400: 251 113 133;
+    --c-rose-600: 225 29 72;
+    --c-rose-900: 136 19 55;
+    --c-sky-50: 240 249 255;
+    --c-sky-100: 224 242 254;
+    --c-sky-900: 12 74 110;
+    --c-stone-100: 245 245 244;
+    --c-stone-200: 231 229 228;
+    --c-stone-900: 28 25 23;
+    --c-teal-50: 240 253 250;
+    --c-teal-100: 204 251 241;
+    --c-teal-900: 19 78 74;
+    --c-violet-50: 245 243 255;
+    --c-violet-100: 237 233 254;
+    --c-violet-900: 76 29 149;
+}
+
+.dark {
+  color-scheme: dark;
+    /* Not an inversion: on a dark ground the accent has to lift to stay
+       legible, and "surface" must sit ABOVE "paper" in lightness so a card
+       still reads as raised rather than cut out. */
+    --c-ink: 232 236 242;
+    --c-paper: 13 17 23;
+    --c-surface: 22 27 36;
+    --c-line: 42 50 62;
+    --c-muted: 151 162 178;
+    --c-accent: 61 191 202;
+    --c-accent-soft: 17 51 58;
+    --c-signal: 45 200 212;
+    --c-amber-50: 69 26 3;
+    --c-amber-100: 120 53 15;
+    --c-amber-300: 180 83 9;
+    --c-amber-400: 217 119 6;
+    --c-amber-600: 251 191 36;
+    --c-amber-700: 252 211 77;
+    --c-amber-800: 253 230 138;
+    --c-amber-900: 254 243 199;
+    --c-blue-100: 30 58 138;
+    --c-blue-800: 191 219 254;
+    --c-cyan-50: 8 51 68;
+    --c-cyan-100: 22 78 99;
+    --c-cyan-900: 207 250 254;
+    --c-emerald-50: 2 44 34;
+    --c-emerald-100: 6 78 59;
+    --c-emerald-500: 16 185 129;
+    --c-emerald-600: 52 211 153;
+    --c-emerald-900: 209 250 229;
+    --c-fuchsia-50: 74 4 78;
+    --c-fuchsia-100: 112 26 117;
+    --c-fuchsia-900: 250 232 255;
+    --c-indigo-50: 30 27 75;
+    --c-indigo-100: 49 46 129;
+    --c-indigo-800: 199 210 254;
+    --c-indigo-900: 224 231 255;
+    --c-lime-50: 26 46 5;
+    --c-lime-100: 54 83 20;
+    --c-lime-900: 236 252 203;
+    --c-orange-50: 67 20 7;
+    --c-orange-100: 124 45 18;
+    --c-orange-900: 255 237 213;
+    --c-purple-100: 88 28 135;
+    --c-purple-800: 233 213 255;
+    --c-red-50: 69 10 10;
+    --c-red-200: 153 27 27;
+    --c-red-300: 185 28 28;
+    --c-red-500: 239 68 68;
+    --c-red-600: 248 113 113;
+    --c-red-700: 252 165 165;
+    --c-rose-50: 76 5 25;
+    --c-rose-100: 136 19 55;
+    --c-rose-300: 190 18 60;
+    --c-rose-400: 225 29 72;
+    --c-rose-600: 251 113 133;
+    --c-rose-900: 255 228 230;
+    --c-sky-50: 8 47 73;
+    --c-sky-100: 12 74 110;
+    --c-sky-900: 224 242 254;
+    --c-stone-100: 28 25 23;
+    --c-stone-200: 41 37 36;
+    --c-stone-900: 245 245 244;
+    --c-teal-50: 4 47 46;
+    --c-teal-100: 19 78 74;
+    --c-teal-900: 204 251 241;
+    --c-violet-50: 46 16 101;
+    --c-violet-100: 76 29 149;
+    --c-violet-900: 237 233 254;
+}
+
 
 html, body, #root { height: 100%; }
 body {
@@ -29,8 +190,17 @@ body {
    Tailwind's `print:hidden`; this handles the shell around them.
    --------------------------------------------------------------------------- */
 @media print {
+  /* The shell is a nav rail, a panel and a mobile header. The rail became a
+     <nav> in the 2026-09 navigation rewrite, so this list has to name it —
+     printing a feedback review with a column of icons down the left is exactly
+     what this rule exists to prevent. */
   aside,
+  nav[aria-label='Areas'],
   header { display: none !important; }
+
+  /* The area panel: a bordered column beside the rail, with no landmark role
+     of its own. Hidden by the same reasoning. */
+  .print\:hide-panel { display: none !important; }
 
   main {
     max-width: none !important;

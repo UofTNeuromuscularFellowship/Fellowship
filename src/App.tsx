@@ -25,6 +25,7 @@ import TestDirectory from './pages/TestDirectory'
 import UltrasoundPrimer from './pages/UltrasoundPrimer'
 import CaseMediaLibrary from './pages/CaseMedia'
 import Settings from './pages/Settings'
+import SectionOverview from './pages/SectionOverview'
 import NotFound from './pages/NotFound'
 
 // Code-split: the 3D atlas pulls in three.js, which must not weigh down the
@@ -56,6 +57,10 @@ export default function App() {
           /login itself. */}
       <Route path="/change-password" element={<ChangePassword />} />
       <Route path="/dashboard" element={<Shell><Dashboard /></Shell>} />
+      {/* One route serving every area's overview. The list of areas lives in
+          lib/navigation.ts; SectionOverview sends an unknown or forbidden id to
+          the dashboard rather than showing an error. */}
+      <Route path="/s/:groupId" element={<Shell><SectionOverview /></Shell>} />
       <Route path="/teaching" element={<Shell><TeachingSchedule /></Shell>} />
       <Route path="/clinic" element={<Shell><ClinicRotations /></Shell>} />
       <Route path="/cases" element={<Shell allow={['fellow', 'supervisor', 'director']}><Cases /></Shell>} />

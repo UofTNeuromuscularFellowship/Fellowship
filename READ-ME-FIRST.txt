@@ -1,35 +1,57 @@
-FULL-SCREEN VIEWER + EDIT DESCRIPTION
-=====================================
+NEW NAVIGATION + LIGHT/DARK MODE
+================================
 
-Three files. No database change.
+No database change. This is the biggest change so far — it replaces the whole
+menu — so upload it when you have a few minutes to click around afterwards.
 
+It ALSO carries the full-screen viewer and editable descriptions from the
+previous zip, which had not gone up yet. You do not need that one.
+
+HOW TO UPLOAD (GitHub web)
+--------------------------
 1. Open https://github.com/UofTNeuromuscularFellowship/Fellowship
 2. Add file -> Upload files
-3. Extract this zip and DRAG THE "src" FOLDER onto the page.
-   Do not drag the folder that contains it, and do not drag this readme.
+3. Extract this zip and DRAG THESE THREE ONTO THE PAGE:
+
+       src                 (folder)
+       index.html          (file)
+       tailwind.config.js  (file)
+
+   Do not drag the folder that contains them, and do not drag this readme.
 4. Commit. Vercel redeploys on its own.
 
-WHAT YOU GET
+WHAT CHANGES
 ------------
-1. An expand button in the top-right corner of every image, including the
-   frame captured from a clip. It opens the image full screen with its
-   annotations, its legend and its description.
-   - "Actual size" shows a wide trace at full width so you can scroll along it
-     instead of squinting at a fitted-to-screen version.
-   - Escape, the X, or a tap outside the image closes it. Tapping the image
-     itself does not, so a missed tap will not throw you out.
+DESKTOP. A rail of seven icons down the left: Home, Clinic, Teaching, Case Log,
+EMG Toolkit, Program, Settings. Click one and a panel opens beside it listing
+what is in that area, with the area's overview in the main pane — a card per
+tool saying what it is for. The panel collapses with the arrow at its top, and
+it remembers whether you left it open.
 
-2. "Edit details" on any case you can edit — change the title and the
-   description after upload.
+PHONE. Tap Menu and you get the same seven as tiles. Tap one for its tools, tap
+a tool to open it. "All areas" goes back up one level. An area with only one
+thing in it (Clinic, Home) opens that thing directly.
 
-WHAT IS DELIBERATELY NOT EDITABLE
----------------------------------
-The media kind, the file itself, and the signed consent. Changing the kind
-would strip findings tagged against the old kind, and could move a case in or
-out of needing consent — and a case whose kind or media changed would no
-longer match the consent recorded against it. To change those, delete and
-re-upload. Tell me if you would rather it worked differently.
+LIGHT / DARK. Three choices — Light, Auto, Dark. Auto follows whatever the
+device is set to and is the default. It is remembered per device, so your ward
+computer and your phone can differ. The switch is at the bottom of the rail, in
+the phone menu, and in Settings under "Appearance".
 
-src/components/caseMedia/Lightbox.tsx   (new)
-src/components/caseMedia/Annotator.tsx
-src/pages/CaseMedia.tsx
+WHERE THINGS WENT
+-----------------
+Nothing was removed. The seven pages you did not list are placed as follows:
+  Teaching assignments, Rate teaching, Feedback review -> Teaching
+  Competency                                           -> Case Log
+  Test your anatomy knowledge                          -> EMG Toolkit
+  People                                               -> Program
+  Dashboard                                            -> Home
+
+I checked all five roles: every page reachable before is reachable now, and
+what a role cannot reach is exactly what it was never permitted to open.
+
+WORTH A LOOK AFTER IT DEPLOYS
+-----------------------------
+Switch to dark and glance at a few pages. Every colour is driven from one place
+now, so if something looks wrong it is one line to fix — tell me the page.
+
+public/ultrasound is untouched and is not in this zip.

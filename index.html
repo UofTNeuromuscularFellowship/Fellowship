@@ -5,6 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Neuromuscular Fellowship Portal</title>
     <meta name="theme-color" content="#0E7C86" />
+    <script>
+      /* Before anything renders. React mounting first would show a white page
+         to a dark-mode user for one frame, which is the flash every themed app
+         is judged by. Kept inline and tiny for the same reason. */
+      (function () {
+        try {
+          var c = localStorage.getItem('nmf-theme') || 'system'
+          var dark = c === 'dark' || (c === 'system' &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches)
+          if (dark) {
+            document.documentElement.classList.add('dark')
+            document.documentElement.style.colorScheme = 'dark'
+            var m = document.querySelector('meta[name="theme-color"]')
+            if (m) m.setAttribute('content', '#0D1117')
+          }
+        } catch (e) {}
+      })()
+    </script>
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
+import { ThemeToggle } from '../components/nav/ThemeToggle'
 import { AssistantEmailsCard } from '../components/AssistantEmails'
 
 export default function Settings() {
@@ -26,6 +27,16 @@ export default function Settings() {
           {msg} <button className="ml-2 font-medium text-accent" onClick={() => setMsg(null)}>dismiss</button>
         </div>
       )}
+
+      <Card>
+        <CardHeader
+          title="Appearance"
+          sub="Light, dark, or whatever this device is set to. Remembered on this device only, so a bright ward computer and a phone at night can differ."
+        />
+        <div className="px-5 py-4">
+          <ThemeToggle />
+        </div>
+      </Card>
 
       <ChangePasswordCard />
       {hasAssistants && <ProviderAssistantLogins providerId={profile.id} onError={setMsg} />}
