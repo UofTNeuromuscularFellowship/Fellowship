@@ -1,5 +1,5 @@
-CALCULATORS: TOOL RAIL
-======================
+ACCOUNT + APPEARANCE ALWAYS ON SCREEN
+=====================================
 
 Two files. No database change.
 
@@ -9,20 +9,28 @@ Two files. No database change.
    Do not drag the folder that contains it, and do not drag this readme.
 4. Commit.
 
+WHAT WAS WRONG
+--------------
+Not the position — the column. The icon rail stretched to the height of the
+whole PAGE rather than the window, so "bottom of the rail" meant the bottom of
+the document. On the dashboard that put the appearance control about 500 pixels
+below the fold. On a short page it happened to be visible, which is why it came
+and went.
+
 WHAT CHANGES
 ------------
-- A stacked icon rail down the left, same style as the image library and the
-  main portal menu: All tools, then the four calculators, then the two
-  teaching tools, under their own small headings.
-- The tool you pick fills the pane beside it. Moving between tools is now one
-  click instead of going back to the grid and in again.
-- "All tools" returns to the card grid, which is unchanged — the descriptions
-  there are how someone meets a tool they have not used before.
-- The text badges (TLI, F/H, SR, DM) are now drawn icons matching the rest of
-  the app.
-- The "Educational use only" notice stays above everything, in both states.
+- The rail and the side panel are now pinned to the window. Their foot is
+  always the foot of the screen, whatever the page length, and the menu stays
+  put while you scroll.
+- Your name, role, the Light/Auto/Dark switch and Sign out are now behind ONE
+  button: a circle with your initials, bottom-left of the rail on a computer
+  and top-right of the header on a phone. They used to be split across two
+  different columns.
+- The phone's Menu overlay no longer repeats them — the account button in the
+  header is one tap away, and two appearance switches would not have stayed in
+  step with each other.
 
-Nothing about the calculations, cutoffs or interpretations has changed.
+Nothing else moved. Click the circle to see everything about your account.
 
-src/components/calculators/ToolIcon.tsx   (new)
-src/pages/Calculators.tsx
+src/components/AppShell.tsx
+src/components/nav/AccountMenu.tsx   (new)

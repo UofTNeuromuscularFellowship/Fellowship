@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { roleLabel } from '../lib/format'
 import { Waveform } from './ui/Waveform'
 import { NavIcon } from './nav/NavIcon'
-import { ThemeToggle } from './nav/ThemeToggle'
+import { AccountMenu } from './nav/AccountMenu'
 import { groupForPath, landingPath, navFor, overviewPath, type NavGroup } from '../lib/navigation'
 
 // ---------------------------------------------------------------------------
@@ -63,9 +63,15 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen bg-paper">
       {/* ================= desktop: the icon rail ================= */}
+      {/* sticky + h-screen + self-start is the fix for the controls at the foot
+          of this column drifting off the bottom of the page. A flex child
+          stretches to the height of the TALLEST sibling by default, so on a
+          1400px dashboard the rail was 1400px tall and mt-auto put the account
+          controls 500px below the fold. Pinned to the window instead, its foot
+          is always the foot of the screen. */}
       <nav
         aria-label="Areas"
-        className="hidden w-[76px] shrink-0 flex-col items-center gap-1 border-r border-line bg-surface py-3 md:flex"
+        className="sticky top-0 hidden h-screen w-[76px] shrink-0 flex-col items-center gap-1 self-start overflow-y-auto border-r border-line bg-surface py-3 md:flex"
       >
         {/* A plain Link, not a NavLink: it points at the dashboard, so on the
             dashboard a NavLink would mark itself aria-current alongside the
@@ -91,15 +97,23 @@ export function AppShell({ children }: { children: ReactNode }) {
           )
         })}
 
-        <div className="mt-auto flex flex-col items-center gap-2 pt-2">
-          <ThemeToggle compact />
+        {/* Bottom-left, the usual home for an account control in an icon rail,
+            and now genuinely always on screen. Name, role, appearance and sign
+            out are all behind it rather than spread down two columns. */}
+        <div className="mt-auto flex flex-col items-center gap-2 pt-3">
+          <AccountMenu
+            name={profile?.full_name}
+            roleName={role ? roleLabel(role) : ''}
+            onSignOut={handleSignOut}
+            align="up"
+          />
         </div>
       </nav>
 
       {/* ================= desktop: the area panel ================= */}
       {active && (
         <div
-          className={`print:hide-panel hidden shrink-0 border-r border-line bg-surface md:flex md:flex-col ${
+          className={`print:hide-panel sticky top-0 hidden h-screen shrink-0 self-start border-r border-line bg-surface md:flex md:flex-col ${
             panelOpen ? 'w-64' : 'w-[44px]'
           }`}
         >
@@ -153,15 +167,6 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           )}
 
-          {panelOpen && (
-            <div className="border-t border-line px-4 py-3">
-              <p className="truncate text-sm font-medium text-ink">{profile?.full_name}</p>
-              <p className="text-xs text-muted">{role ? roleLabel(role) : ''}</p>
-              <button onClick={handleSignOut} className="mt-2 text-xs font-medium text-accent hover:underline">
-                Sign out
-              </button>
-            </div>
-          )}
         </div>
       )}
 
@@ -188,7 +193,14 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span className="min-w-0 flex-1 truncate text-center font-display text-sm font-semibold text-ink">
               {active?.label ?? 'Fellowship Portal'}
             </span>
-            <ThemeToggle compact />
+            {/* Top-right, the usual place on a phone, and in a header that was
+                already sticky. Opens downward for the same reason. */}
+            <AccountMenu
+              name={profile?.full_name}
+              roleName={role ? roleLabel(role) : ''}
+              onSignOut={handleSignOut}
+              align="down"
+            />
           </div>
         </header>
 
@@ -204,10 +216,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <MobileNav
           groups={groups}
           activeId={active?.id}
-          name={profile?.full_name}
-          roleName={role ? roleLabel(role) : ''}
           onClose={() => setMobileNav(false)}
-          onSignOut={handleSignOut}
         />
       )}
     </div>
@@ -222,21 +231,19 @@ export function AppShell({ children }: { children: ReactNode }) {
  * Two levels, never more, and the back arrow always goes up exactly one. The
  * old mobile menu was one long scroll of every page in the portal, which is
  * fine at eight items and unusable at eighteen.
+ *
+ * Navigation only. Who you are, the appearance control and sign out live in
+ * the account button in the header, which is one tap away and does not need a
+ * second copy in here that would then have to stay in step with the first.
  */
 function MobileNav({
   groups,
   activeId,
-  name,
-  roleName,
   onClose,
-  onSignOut,
 }: {
   groups: NavGroup[]
   activeId?: string
-  name?: string | null
-  roleName: string
   onClose: () => void
-  onSignOut: () => void
 }) {
   // Opens on the home screen, not on the area you happen to be in: the reason
   // to open the menu is usually to go somewhere else.
@@ -327,16 +334,6 @@ function MobileNav({
               })}
             </div>
 
-            <div className="mt-6 rounded-xl border border-line bg-surface px-4 py-3">
-              <p className="truncate text-sm font-medium text-ink">{name}</p>
-              <p className="text-xs text-muted">{roleName}</p>
-              <div className="mt-3 flex items-center justify-between gap-3">
-                <ThemeToggle />
-                <button onClick={onSignOut} className="min-h-[40px] text-sm font-semibold text-accent">
-                  Sign out
-                </button>
-              </div>
-            </div>
           </>
         ) : (
           <>
