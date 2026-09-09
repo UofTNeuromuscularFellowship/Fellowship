@@ -265,6 +265,23 @@ export async function listCases(): Promise<CaseMedia[]> {
   return ((data ?? []) as unknown as Row[]).map(toCase)
 }
 
+/**
+ * id -> full name for everyone who has uploaded a case.
+ *
+ * A separate call rather than a join: public.users is readable only by the
+ * owner of the row and the director, so joining it would give a fellow their
+ * own name and NULL for everyone else. See 0023.
+ */
+export async function listAuthors(): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  const { data, error } = await supabase.rpc('case_media_authors')
+  if (error) return out
+  for (const r of (data ?? []) as Array<{ id: string; full_name: string }>) {
+    if (r.id && r.full_name) out.set(r.id, r.full_name)
+  }
+  return out
+}
+
 /** One signed link per storage path, in a single round trip. */
 export async function signPaths(paths: string[]): Promise<Map<string, string>> {
   const out = new Map<string, string>()

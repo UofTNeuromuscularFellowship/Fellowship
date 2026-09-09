@@ -1,30 +1,35 @@
-HOME OPENS THE DASHBOARD DIRECTLY
-=================================
+LIBRARY: KIND RAIL, CASE GRID, UPLOADER NAMES
+=============================================
 
-Three files. No database change.
+The database change is ALREADY APPLIED to the live project. Nothing to run.
 
 1. Open https://github.com/UofTNeuromuscularFellowship/Fellowship
 2. Add file -> Upload files
-3. Extract this zip and DRAG THE "src" FOLDER onto the page.
-   Do not drag the folder that contains it, and do not drag this readme.
-4. Commit.
+3. Extract this zip and DRAG THE "src" AND "supabase" FOLDERS onto the page.
+   Do not drag the folder that contains them, and do not drag this readme.
+4. Commit. Vercel redeploys on its own.
 
 WHAT CHANGES
 ------------
-- Home now opens the dashboard directly. No overview page in between.
-- Clinic does the same, opening the clinic schedule directly. It had exactly
-  the same problem — an overview listing one card — and it would have been odd
-  to fix one and not the other. Say the word if you would rather it kept its
-  overview.
-- Those two areas also lose the "Overview" line in the side panel, since it
-  would point at a page describing the only other link there.
-- Areas with more than one tool are unchanged: Teaching, Case Log, EMG Toolkit,
-  Program and Settings all still open their overview.
+- A stacked icon rail down the left: All, Waveform, Ultrasound, MRI, Muscle
+  biopsy, Examination finding, each with a count. Same style as the portal's
+  main rail. On a phone it is a scrolling strip across the top.
+- The cases now fill the pane that used to say "Choose a case from the list" —
+  a card each, with a thumbnail, kind, what it shows, annotation count, and
+  who uploaded it.
+- Clicking a card opens the case as before; "All cases" goes back to the grid.
+- The open case now also names the uploader in its header.
 
-This is automatic, not a list I maintain: any area holding a single tool opens
-that tool, and starts showing an overview by itself the moment a second tool is
-added to it.
+ABOUT THE UPLOADER NAMES
+------------------------
+This needed a small database function, already applied. Your user table is
+locked down so that a fellow can only read their own record — sensible, but it
+meant a fellow would have seen their own name and blanks for everyone else. The
+new function returns ONLY the id and full name, and only for people who have
+actually uploaded a case. No email, no role, no status, and nothing at all
+about members who have never uploaded. Your own uploads read "uploaded by you".
 
-src/components/AppShell.tsx
-src/lib/navigation.ts
-src/pages/SectionOverview.tsx
+src/components/caseMedia/KindIcon.tsx   (new)
+src/lib/caseMedia.ts
+src/pages/CaseMedia.tsx
+supabase/migrations/0023_...sql         (record of the applied change)

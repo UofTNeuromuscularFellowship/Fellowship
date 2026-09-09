@@ -5,6 +5,7 @@ import { AnnotatedMedia, AnnotationEditor, COLOURS, TOOLS } from '../components/
 import { SignaturePad } from '../components/caseMedia/SignaturePad'
 import { InstallImagesApp } from '../components/caseMedia/InstallImagesApp'
 import { ExpandButton, Lightbox } from '../components/caseMedia/Lightbox'
+import { KindIcon } from '../components/caseMedia/KindIcon'
 import {
   canEditCase,
   consentRequired,
@@ -19,6 +20,7 @@ import {
   signConsentUrl,
   isVideo,
   kindLabel,
+  listAuthors,
   listCases,
   matchesQuery,
   MEDIA_KINDS,
@@ -607,6 +609,7 @@ function CaseView({
   posterUrl,
   mayEdit,
   findings,
+  authorName,
   onSaved,
   onDeleted,
   onError,
@@ -616,6 +619,8 @@ function CaseView({
   posterUrl: string | null
   mayEdit: boolean
   findings: Finding[]
+  /** Who uploaded it, already resolved. */
+  authorName?: string | null
   onSaved: (c: Case) => void
   onDeleted: (id: string) => void
   onError: (m: string) => void
@@ -742,7 +747,13 @@ function CaseView({
     <Card>
       <CardHeader
         title={c.title}
-        sub={`${kindLabel(c.mediaKind)} · added ${new Date(c.createdAt).toLocaleDateString()}`}
+        sub={[
+          kindLabel(c.mediaKind),
+          authorName ? `uploaded by ${authorName}` : null,
+          `added ${new Date(c.createdAt).toLocaleDateString()}`,
+        ]
+          .filter(Boolean)
+          .join(' · ')}
         action={
           mayEdit ? (
             <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
@@ -1123,6 +1134,7 @@ export default function CaseMediaLibrary() {
     () => typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('add'),
   )
   const [msg, setMsg] = useState<string | null>(null)
+  const [authors, setAuthors] = useState<Map<string, string>>(new Map())
 
   async function load() {
     setLoading(true)
@@ -1150,7 +1162,18 @@ export default function CaseMediaLibrary() {
     listFindings()
       .then(setVocabulary)
       .catch(() => setVocabulary([]))
+    // Uploader names. A failure leaves the cards without a name rather than
+    // without a library.
+    listAuthors()
+      .then(setAuthors)
+      .catch(() => setAuthors(new Map()))
   }, [profile?.id])
+
+  /** "You" for your own uploads — it reads better than your own name. */
+  function uploader(c: Case): string | null {
+    if (profile && c.authorId === profile.id) return 'you'
+    return authors.get(c.authorId) ?? null
+  }
 
   const findingLabels = useMemo(
     () => new Map(vocabulary.map((f) => [f.code, f.label])),
@@ -1176,6 +1199,15 @@ export default function CaseMediaLibrary() {
   )
 
   const open = useMemo(() => cases.find((c) => c.id === openId) ?? null, [cases, openId])
+
+  /** How many cases each kind holds, before the search box narrows anything —
+      a count that moved as you typed would be reporting the search, not the
+      library. */
+  const counts = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const c of cases) m.set(c.mediaKind, (m.get(c.mediaKind) ?? 0) + 1)
+    return m
+  }, [cases])
 
   if (!profile) return null
 
@@ -1230,122 +1262,60 @@ export default function CaseMediaLibrary() {
         </Card>
       )}
 
-      {/* On a phone the two panes become one: the list until a case is opened,
-          then the case with a way back. Stacking them instead would put the
-          whole list between the reader and the image they just tapped. */}
-      <div className="grid gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
-        {/* ---------------- list ---------------- */}
-        <Card className={`self-start ${openId ? 'hidden lg:block' : ''}`}>
-          <CardHeader
-            title="Cases"
-            sub={`${shown.length} of ${cases.length}`}
-            action={
-              !adding ? (
-                <button
-                  onClick={() => setAdding(true)}
-                  className="shrink-0 rounded-md bg-accent px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90"
-                >
-                  Add case
-                </button>
-              ) : undefined
-            }
-          />
-
-          <div className="space-y-3 border-b border-line px-5 py-3">
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') setQuery('')
-              }}
-              placeholder="Search title, description or labels"
-              className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
-            />
-            <div className="flex flex-wrap gap-1.5">
+      {/* ================= kind rail + cases =================
+          The same shape as the portal itself: a stacked icon rail on the left
+          for the five kinds, and the cases filling the pane that used to say
+          "choose a case from the list". An empty pane beside a list was the
+          most valuable space on the page spent saying nothing. */}
+      <div className="grid gap-5 lg:grid-cols-[6rem_minmax(0,1fr)]">
+        {/* ---------------- the kind rail ----------------
+            A column on a wide screen, a scrolling strip of the same tiles on a
+            phone. Same markup either way rather than two lists to keep in step. */}
+        <nav
+          aria-label="Kinds"
+          // No negative margin here: -mx-1 to bleed the scroll edge made the
+          // strip 8px wider than its column and pushed the whole phone layout
+          // 4px past the viewport.
+          className="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0"
+        >
+          {([{ id: 'all' as const, label: 'All' }, ...MEDIA_KINDS]).map((k) => {
+            const on = kindFilter === k.id
+            const n = k.id === 'all' ? cases.length : counts.get(k.id) ?? 0
+            return (
               <button
-                onClick={() => setKindFilter('all')}
-                className={`min-h-[36px] rounded-md border px-3 py-1.5 text-xs font-semibold sm:min-h-0 sm:px-2 sm:py-1 ${
-                  kindFilter === 'all' ? 'border-accent bg-accent-soft text-accent' : 'border-line text-muted hover:text-ink'
+                key={k.id}
+                onClick={() => {
+                  setKindFilter(k.id as MediaKind | 'all')
+                  setOpenId(null)
+                }}
+                aria-pressed={on}
+                title={k.label}
+                // A fixed height so the tiles align: "Examination finding"
+                // wraps to two lines and would otherwise leave the column
+                // ragged next to the single-word kinds.
+                className={`flex h-[82px] w-[5.5rem] shrink-0 flex-col items-center justify-center gap-1 rounded-lg border px-1 text-center transition-colors lg:w-full ${
+                  on
+                    ? 'border-accent bg-accent-soft text-accent'
+                    : 'border-line bg-surface text-muted hover:text-ink'
                 }`}
               >
-                All
+                <KindIcon kind={k.id as MediaKind | 'all'} />
+                <span className="text-[10px] font-semibold leading-tight">{k.label}</span>
+                <span className={`text-[10px] leading-none ${on ? 'text-accent' : 'text-muted'}`}>
+                  {n}
+                </span>
               </button>
-              {MEDIA_KINDS.map((k) => (
-                <button
-                  key={k.id}
-                  onClick={() => setKindFilter(k.id)}
-                  className={`min-h-[36px] rounded-md border px-3 py-1.5 text-xs font-semibold sm:min-h-0 sm:px-2 sm:py-1 ${
-                    kindFilter === k.id ? 'border-accent bg-accent-soft text-accent' : 'border-line text-muted hover:text-ink'
-                  }`}
-                >
-                  {k.label}
-                </button>
-              ))}
-            </div>
+            )
+          })}
+        </nav>
 
-            {/* A select rather than another row of chips: 26 terms alongside
-                the five kind chips would bury the search box. */}
-            {usedFindings.length > 0 && (
-              <label className="block">
-                <span className="sr-only">Filter by what the case shows</span>
-                <select
-                  value={findingFilter}
-                  onChange={(e) => setFindingFilter(e.target.value)}
-                  className="min-h-[40px] w-full rounded-md border border-line bg-surface px-2 py-2 text-sm text-ink focus:border-accent focus:outline-none"
-                >
-                  <option value="all">Any finding</option>
-                  {usedFindings.map((f) => (
-                    <option key={f.code} value={f.code}>
-                      {f.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-          </div>
-
-          {loading ? (
-            <p className="px-5 py-4 text-sm text-muted">Loading…</p>
-          ) : shown.length === 0 ? (
-            <p className="px-5 py-4 text-sm text-muted">
-              {cases.length === 0
-                ? 'Nothing here yet. Use “Add case” to put up the first waveform or image.'
-                : 'No case matches that search.'}
-            </p>
-          ) : (
-            <ul className="divide-y divide-line lg:max-h-[32rem] lg:overflow-y-auto">
-              {shown.map((c) => (
-                <li key={c.id}>
-                  <button
-                    onClick={() => setOpenId(c.id)}
-                    className={`flex w-full items-start gap-2 px-5 py-3 text-left ${
-                      c.id === openId ? 'bg-accent-soft/60' : 'hover:bg-paper'
-                    }`}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-ink">{c.title}</p>
-                      <p className="mt-0.5 text-xs text-muted">
-                        {c.annotations.length > 0
-                          ? `${c.annotations.length} annotation${c.annotations.length === 1 ? '' : 's'}`
-                          : 'No annotations yet'}
-                        {isVideo(c) ? ' · clip' : ''}
-                      </p>
-                    </div>
-                    <Badge kind={c.mediaKind} />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-
-        {/* ---------------- open case ---------------- */}
-        <div className={openId ? '' : 'hidden lg:block'}>
+        {/* ---------------- the pane ---------------- */}
+        <div>
           {open ? (
             <div className="space-y-3">
               <button
                 onClick={() => setOpenId(null)}
-                className="flex min-h-[40px] items-center gap-1.5 text-sm font-semibold text-accent lg:hidden"
+                className="flex min-h-[40px] items-center gap-1.5 text-sm font-semibold text-accent"
               >
                 <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M14 6l-6 6 6 6" />
@@ -1358,6 +1328,7 @@ export default function CaseMediaLibrary() {
                 posterUrl={open.posterPath ? urls.get(open.posterPath) ?? null : null}
                 mayEdit={canEditCase(profile.role, profile.id, open)}
                 findings={vocabulary}
+                authorName={uploader(open)}
                 onSaved={(next) => {
                   setCases((all) => all.map((x) => (x.id === next.id ? next : x)))
                   if (next.posterPath && !urls.has(next.posterPath)) void load()
@@ -1371,9 +1342,119 @@ export default function CaseMediaLibrary() {
             </div>
           ) : (
             <Card>
-              <p className="px-5 py-8 text-center text-sm text-muted">
-                Choose a case from the list to see the image, its description and its legend.
-              </p>
+              <CardHeader
+                title={kindFilter === 'all' ? 'All cases' : kindLabel(kindFilter)}
+                sub={`${shown.length} of ${cases.length}`}
+                action={
+                  !adding ? (
+                    <button
+                      onClick={() => setAdding(true)}
+                      className="min-h-[38px] shrink-0 rounded-md bg-accent px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90"
+                    >
+                      Add case
+                    </button>
+                  ) : undefined
+                }
+              />
+
+              <div className="flex flex-wrap gap-2 border-b border-line px-5 py-3">
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') setQuery('')
+                  }}
+                  placeholder="Search title, description or labels"
+                  className="min-h-[40px] min-w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+                />
+                {usedFindings.length > 0 && (
+                  <label className="min-w-0">
+                    <span className="sr-only">Filter by what the case shows</span>
+                    <select
+                      value={findingFilter}
+                      onChange={(e) => setFindingFilter(e.target.value)}
+                      className="min-h-[40px] w-full rounded-md border border-line bg-surface px-2 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+                    >
+                      <option value="all">Any finding</option>
+                      {usedFindings.map((f) => (
+                        <option key={f.code} value={f.code}>
+                          {f.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+              </div>
+
+              {loading ? (
+                <p className="px-5 py-8 text-center text-sm text-muted">Loading…</p>
+              ) : shown.length === 0 ? (
+                <p className="px-5 py-10 text-center text-sm text-muted">
+                  {cases.length === 0
+                    ? 'Nothing here yet. Use “Add case” to put up the first waveform or image.'
+                    : kindFilter !== 'all' && query.trim() === '' && findingFilter === 'all'
+                      ? `No ${kindLabel(kindFilter).toLowerCase()} cases yet.`
+                      : 'No case matches that search.'}
+                </p>
+              ) : (
+                <ul className="grid gap-4 px-5 py-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {shown.map((c) => {
+                    const thumb = c.posterPath
+                      ? urls.get(c.posterPath)
+                      : isVideo(c)
+                        ? undefined
+                        : urls.get(c.storagePath)
+                    const who = uploader(c)
+                    return (
+                      <li key={c.id}>
+                        <button
+                          onClick={() => setOpenId(c.id)}
+                          className="flex h-full w-full flex-col overflow-hidden rounded-lg border border-line bg-surface text-left transition-colors hover:border-accent"
+                        >
+                          {/* A fixed-ratio tile so a wide trace and a square
+                              biopsy still line up in the grid. A clip with no
+                              captured frame has nothing to show, so it shows
+                              its kind instead of a broken box. */}
+                          <span className="relative flex aspect-[16/9] items-center justify-center overflow-hidden bg-black">
+                            {thumb ? (
+                              <img src={thumb} alt="" loading="lazy" className="h-full w-full object-cover" />
+                            ) : (
+                              <KindIcon kind={c.mediaKind} className="h-8 w-8 text-white/40" />
+                            )}
+                            {isVideo(c) && (
+                              <span className="absolute bottom-1.5 right-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                                Clip
+                              </span>
+                            )}
+                          </span>
+                          <span className="flex flex-1 flex-col gap-1 p-3">
+                            <span className="flex items-start justify-between gap-2">
+                              <span className="min-w-0 text-sm font-semibold leading-snug text-ink">
+                                {c.title}
+                              </span>
+                              <Badge kind={c.mediaKind} />
+                            </span>
+                            {c.findings.length > 0 && (
+                              <span className="text-xs leading-snug text-accent">
+                                {c.findings
+                                  .map((f) => findingLabels.get(f) ?? f)
+                                  .join(' · ')}
+                              </span>
+                            )}
+                            <span className="mt-auto pt-1 text-xs text-muted">
+                              {who ? `Uploaded by ${who}` : 'Uploader unknown'}
+                              {' · '}
+                              {c.annotations.length > 0
+                                ? `${c.annotations.length} annotation${c.annotations.length === 1 ? '' : 's'}`
+                                : 'no annotations'}
+                            </span>
+                          </span>
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
             </Card>
           )}
         </div>
