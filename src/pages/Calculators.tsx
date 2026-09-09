@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Card, CardHeader } from '../components/ui/Card'
+import { ToolIcon, type ToolIconName } from '../components/calculators/ToolIcon'
 
 // ---------------------------------------------------------------------------
 // EMG / NCS calculators — educational reference tools for the fellowship.
@@ -10,20 +11,28 @@ import { Card, CardHeader } from '../components/ui/Card'
 
 type TabKey = 'tli' | 'fh' | 'srar' | 'cidp' | 'temp' | 'filter'
 
-interface ToolMeta { key: TabKey; label: string; blurb: string; category: 'calc' | 'teach'; icon: string }
+interface ToolMeta {
+  key: TabKey
+  label: string
+  /** Two words for the rail, where the full label will not fit. */
+  short: string
+  blurb: string
+  category: 'calc' | 'teach'
+  icon: ToolIconName
+}
 
 const TOOLS: ToolMeta[] = [
-  { key: 'tli', label: 'Terminal Latency Index', category: 'calc', icon: 'TLI',
+  { key: 'tli', label: 'Terminal Latency Index', short: 'Terminal latency', category: 'calc', icon: 'tli',
     blurb: 'Distal vs. proximal motor conduction (TLI), with the normal / distal-slowing / anti-MAG cutoffs.' },
-  { key: 'fh', label: 'F-wave & H-reflex', category: 'calc', icon: 'F/H',
+  { key: 'fh', label: 'F-wave & H-reflex', short: 'F-wave & H', category: 'calc', icon: 'fh',
     blurb: 'Predicted soleus H-reflex latency, interside F and H differences, and F-wave chronodispersion.' },
-  { key: 'srar', label: 'Sural / Radial ratio', category: 'calc', icon: 'SR',
+  { key: 'srar', label: 'Sural / Radial ratio', short: 'Sural / radial', category: 'calc', icon: 'srar',
     blurb: 'The SRAR — sensitises a borderline sural amplitude for early length-dependent axonal polyneuropathy.' },
-  { key: 'cidp', label: 'Demyelination & CIDP', category: 'calc', icon: 'DM',
+  { key: 'cidp', label: 'Demyelination & CIDP', short: 'Demyelination', category: 'calc', icon: 'cidp',
     blurb: 'Compute each demyelinating parameter against your lab’s limits, plus the EAN/PNS 2021 motor checklist.' },
-  { key: 'temp', label: 'Temperature & waveform', category: 'teach', icon: '°C',
+  { key: 'temp', label: 'Temperature & waveform', short: 'Temperature', category: 'teach', icon: 'temp',
     blurb: 'See how cooling slows conduction and prolongs latency — with a temperature-correction calculator.' },
-  { key: 'filter', label: 'Filter settings', category: 'teach', icon: 'Hz',
+  { key: 'filter', label: 'Filter settings', short: 'Filters', category: 'teach', icon: 'filter',
     blurb: 'See how the low- and high-frequency filters reshape the waveform (duration, amplitude, onset latency).' },
 ]
 
@@ -41,81 +50,142 @@ export default function Calculators() {
       <div>
         <h1 className="font-display text-2xl font-bold text-ink">EMG / NCS calculators &amp; teaching tools</h1>
         <p className="mt-1 text-sm text-muted">
-          {current ? 'Formula and interpretation are shown with each result' : 'Pick a tool — each shows its formula and interpretation'}
+          {current
+            ? 'Formula and interpretation are shown with each result'
+            : 'Pick a tool — each shows its formula and interpretation'}
         </p>
       </div>
 
+      {/* Stays above everything, in both states. It is the one thing on this
+          page that must not depend on which tool is open. */}
       <div className="rounded-md border border-amber-400 bg-amber-50 px-4 py-3 text-sm text-ink">
         <span className="font-semibold">Educational use only.</span> These tools support teaching and interpretation —
         they are not medical advice and do not diagnose any individual. Cutoffs are technique- and lab-dependent;
-        always validate results against your own laboratory's normative values and the full clinical picture.
+        always validate results against your own laboratory&apos;s normative values and the full clinical picture.
       </div>
 
-      {current === null ? (
-        <div className="space-y-6">
+      {/* ================= tool rail + pane =================
+          The same shape as the image library and the portal itself: a stacked
+          icon rail, and the thing you picked filling the pane. Switching from
+          the terminal latency index to the sural/radial ratio is now one click
+          from anywhere, rather than back-then-forward through a card grid. */}
+      <div className="grid gap-5 lg:grid-cols-[6rem_minmax(0,1fr)]">
+        {/* ---------------- the rail ----------------
+            Grouped, because the two halves of this page are not the same kind
+            of thing: four calculators that take your numbers and return an
+            index, and two teaching tools that take no numbers at all and show
+            how a waveform behaves. A flat list of six would lose that. */}
+        <nav
+          aria-label="Tools"
+          className="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0"
+        >
+          <button
+            onClick={() => setActive(null)}
+            aria-pressed={active === null}
+            title="All tools"
+            className={`flex h-[82px] w-[5.5rem] shrink-0 flex-col items-center justify-center gap-1 rounded-lg border px-1 text-center transition-colors lg:w-full ${
+              active === null
+                ? 'border-accent bg-accent-soft text-accent'
+                : 'border-line bg-surface text-muted hover:text-ink'
+            }`}
+          >
+            <ToolIcon name="all" />
+            <span className="text-[10px] font-semibold leading-tight">All tools</span>
+          </button>
+
           {CATEGORIES.map((cat) => (
-            <div key={cat.key}>
-              <div className="mb-2">
-                <h2 className="font-display text-base font-semibold text-ink">{cat.title}</h2>
-                <p className="text-sm text-muted">{cat.sub}</p>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {TOOLS.filter((t) => t.category === cat.key).map((t) => (
-                  <button
-                    key={t.key}
-                    onClick={() => setActive(t.key)}
-                    className="group flex gap-3 rounded-lg border border-line bg-surface p-4 text-left transition-colors hover:border-accent hover:bg-accent-soft/30"
-                  >
-                    <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-accent-soft text-xs font-semibold text-accent">
-                      {t.icon}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="font-display text-sm font-semibold text-ink">{t.label}</span>
-                      <span className="mt-0.5 block text-sm text-muted">{t.blurb}</span>
-                      <span className="mt-1 inline-block text-xs font-medium text-accent">Open →</span>
-                    </span>
-                  </button>
-                ))}
+            <div key={cat.key} className="contents lg:block">
+              <p className="hidden px-1 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-muted lg:block">
+                {cat.key === 'calc' ? 'Calculators' : 'Teaching'}
+              </p>
+              <div className="contents lg:flex lg:flex-col lg:gap-2">
+                {TOOLS.filter((t) => t.category === cat.key).map((t) => {
+                  const on = active === t.key
+                  return (
+                    <button
+                      key={t.key}
+                      onClick={() => setActive(t.key)}
+                      aria-pressed={on}
+                      title={t.label}
+                      className={`flex h-[82px] w-[5.5rem] shrink-0 flex-col items-center justify-center gap-1 rounded-lg border px-1 text-center transition-colors lg:w-full ${
+                        on
+                          ? 'border-accent bg-accent-soft text-accent'
+                          : 'border-line bg-surface text-muted hover:text-ink'
+                      }`}
+                    >
+                      <ToolIcon name={t.icon} />
+                      <span className="text-[10px] font-semibold leading-tight">{t.short}</span>
+                    </button>
+                  )
+                })}
               </div>
             </div>
           ))}
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              onClick={() => setActive(null)}
-              className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent-soft"
-            >
-              ← All tools
-            </button>
-            <div className="flex flex-wrap gap-1.5">
-              {TOOLS.map((t) => (
-                <button
-                  key={t.key}
-                  onClick={() => setActive(t.key)}
-                  className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
-                    t.key === active ? 'border-accent bg-accent-soft text-accent' : 'border-line text-muted hover:text-ink'
-                  }`}
-                >
-                  {t.label}
-                </button>
+        </nav>
+
+        {/* ---------------- the pane ---------------- */}
+        <div className="min-w-0">
+          {current === null ? (
+            <div className="space-y-6">
+              {CATEGORIES.map((cat) => (
+                <div key={cat.key}>
+                  <div className="mb-2">
+                    <h2 className="font-display text-base font-semibold text-ink">{cat.title}</h2>
+                    <p className="text-sm text-muted">{cat.sub}</p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {TOOLS.filter((t) => t.category === cat.key).map((t) => (
+                      <button
+                        key={t.key}
+                        onClick={() => setActive(t.key)}
+                        className="group flex gap-3 rounded-lg border border-line bg-surface p-4 text-left transition-colors hover:border-accent hover:bg-accent-soft/30"
+                      >
+                        <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent">
+                          <ToolIcon name={t.icon} />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="font-display text-sm font-semibold text-ink">{t.label}</span>
+                          <span className="mt-0.5 block text-sm text-muted">{t.blurb}</span>
+                          <span className="mt-1 inline-block text-xs font-medium text-accent">Open →</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
-          </div>
-          <div>
-            <h2 className="font-display text-lg font-semibold text-ink">{current.label}</h2>
-            <p className="text-sm text-muted">{current.blurb}</p>
-          </div>
+          ) : (
+            <div className="space-y-4">
+              <button
+                onClick={() => setActive(null)}
+                className="flex min-h-[40px] items-center gap-1.5 text-sm font-semibold text-accent"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M14 6l-6 6 6 6" />
+                </svg>
+                All tools
+              </button>
 
-          {active === 'tli' && <TerminalLatencyIndex />}
-          {active === 'fh' && <FWaveHReflex />}
-          {active === 'srar' && <SuralRadialRatio />}
-          {active === 'cidp' && <><DemyelinationParams /><CidpChecklist /></>}
-          {active === 'temp' && <TemperatureTool />}
-          {active === 'filter' && <FilterTool />}
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent">
+                  <ToolIcon name={current.icon} />
+                </span>
+                <div className="min-w-0">
+                  <h2 className="font-display text-lg font-semibold text-ink">{current.label}</h2>
+                  <p className="text-sm text-muted">{current.blurb}</p>
+                </div>
+              </div>
+
+              {active === 'tli' && <TerminalLatencyIndex />}
+              {active === 'fh' && <FWaveHReflex />}
+              {active === 'srar' && <SuralRadialRatio />}
+              {active === 'cidp' && <><DemyelinationParams /><CidpChecklist /></>}
+              {active === 'temp' && <TemperatureTool />}
+              {active === 'filter' && <FilterTool />}
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   )
 }

@@ -1,35 +1,28 @@
-LIBRARY: KIND RAIL, CASE GRID, UPLOADER NAMES
-=============================================
+CALCULATORS: TOOL RAIL
+======================
 
-The database change is ALREADY APPLIED to the live project. Nothing to run.
+Two files. No database change.
 
 1. Open https://github.com/UofTNeuromuscularFellowship/Fellowship
 2. Add file -> Upload files
-3. Extract this zip and DRAG THE "src" AND "supabase" FOLDERS onto the page.
-   Do not drag the folder that contains them, and do not drag this readme.
-4. Commit. Vercel redeploys on its own.
+3. Extract this zip and DRAG THE "src" FOLDER onto the page.
+   Do not drag the folder that contains it, and do not drag this readme.
+4. Commit.
 
 WHAT CHANGES
 ------------
-- A stacked icon rail down the left: All, Waveform, Ultrasound, MRI, Muscle
-  biopsy, Examination finding, each with a count. Same style as the portal's
-  main rail. On a phone it is a scrolling strip across the top.
-- The cases now fill the pane that used to say "Choose a case from the list" —
-  a card each, with a thumbnail, kind, what it shows, annotation count, and
-  who uploaded it.
-- Clicking a card opens the case as before; "All cases" goes back to the grid.
-- The open case now also names the uploader in its header.
+- A stacked icon rail down the left, same style as the image library and the
+  main portal menu: All tools, then the four calculators, then the two
+  teaching tools, under their own small headings.
+- The tool you pick fills the pane beside it. Moving between tools is now one
+  click instead of going back to the grid and in again.
+- "All tools" returns to the card grid, which is unchanged — the descriptions
+  there are how someone meets a tool they have not used before.
+- The text badges (TLI, F/H, SR, DM) are now drawn icons matching the rest of
+  the app.
+- The "Educational use only" notice stays above everything, in both states.
 
-ABOUT THE UPLOADER NAMES
-------------------------
-This needed a small database function, already applied. Your user table is
-locked down so that a fellow can only read their own record — sensible, but it
-meant a fellow would have seen their own name and blanks for everyone else. The
-new function returns ONLY the id and full name, and only for people who have
-actually uploaded a case. No email, no role, no status, and nothing at all
-about members who have never uploaded. Your own uploads read "uploaded by you".
+Nothing about the calculations, cutoffs or interpretations has changed.
 
-src/components/caseMedia/KindIcon.tsx   (new)
-src/lib/caseMedia.ts
-src/pages/CaseMedia.tsx
-supabase/migrations/0023_...sql         (record of the applied change)
+src/components/calculators/ToolIcon.tsx   (new)
+src/pages/Calculators.tsx
