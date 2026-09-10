@@ -25,6 +25,7 @@ import TestDirectory from './pages/TestDirectory'
 import UltrasoundPrimer from './pages/UltrasoundPrimer'
 import CaseMediaLibrary from './pages/CaseMedia'
 import Settings from './pages/Settings'
+import Platform from './pages/Platform'
 import SectionOverview from './pages/SectionOverview'
 import NotFound from './pages/NotFound'
 
@@ -38,9 +39,13 @@ function LazyPage({ children }: { children: React.ReactNode }) {
   )
 }
 
-function Shell({ children, allow }: { children: React.ReactNode; allow?: ('fellow' | 'supervisor' | 'director' | 'admin' | 'assistant')[] }) {
+function Shell({ children, allow, platformOnly }: {
+  children: React.ReactNode
+  allow?: ('fellow' | 'supervisor' | 'director' | 'admin' | 'assistant')[]
+  platformOnly?: boolean
+}) {
   return (
-    <ProtectedRoute allow={allow}>
+    <ProtectedRoute allow={allow} platformOnly={platformOnly}>
       <AppShell>{children}</AppShell>
     </ProtectedRoute>
   )
@@ -103,6 +108,9 @@ export default function App() {
       <Route path="/ultrasound" element={<Shell allow={['director', 'admin']}><UltrasoundPrimer /></Shell>} />
       <Route path="/waveforms" element={<Shell allow={['fellow', 'supervisor', 'director']}><CaseMediaLibrary /></Shell>} />
       <Route path="/settings" element={<Shell><Settings /></Shell>} />
+      {/* Platform admin only: the programs using this portal. Not part of any
+          program, so no site role applies — see ProtectedRoute. */}
+      <Route path="/platform" element={<Shell platformOnly><Platform /></Shell>} />
       {/* Legacy path redirects */}
       <Route path="/home" element={<Navigate to="/dashboard" replace />} />
       <Route path="*" element={<NotFound />} />

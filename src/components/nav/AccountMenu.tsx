@@ -27,12 +27,20 @@ function initials(name?: string | null): string {
 export function AccountMenu({
   name,
   roleName,
+  siteName,
+  sites,
+  onSwitchSite,
   onSignOut,
   /** Which way the panel opens. The rail sits at the bottom, headers at the top. */
   align = 'up',
 }: {
   name?: string | null
   roleName: string
+  /** The program currently open. */
+  siteName?: string | null
+  /** Other programs this login belongs to. Only passed when there is more than one. */
+  sites?: { id: string; name: string; active: boolean }[]
+  onSwitchSite?: (id: string) => void
   onSignOut: () => void
   align?: 'up' | 'down'
 }) {
@@ -120,7 +128,29 @@ export function AccountMenu({
           className="z-50 rounded-lg border border-line bg-surface p-3 shadow-lg"
         >
           <p className="truncate text-sm font-semibold text-ink">{name}</p>
-          <p className="text-xs text-muted">{roleName}</p>
+          <p className="text-xs text-muted">{roleName}{siteName ? ` · ${siteName}` : ''}</p>
+
+          {sites && sites.length > 1 && (
+            <div className="mt-3 border-t border-line pt-3">
+              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted">
+                Switch program
+              </p>
+              <div className="space-y-1">
+                {sites.map((s) => (
+                  <button
+                    key={s.id}
+                    disabled={s.active}
+                    onClick={() => { setOpen(false); onSwitchSite?.(s.id) }}
+                    className={`block w-full truncate rounded-md px-2 py-1.5 text-left text-sm ${
+                      s.active ? 'bg-accent-soft font-semibold text-accent' : 'text-ink hover:bg-paper'
+                    }`}
+                  >
+                    {s.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="mt-3 border-t border-line pt-3">
             <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted">

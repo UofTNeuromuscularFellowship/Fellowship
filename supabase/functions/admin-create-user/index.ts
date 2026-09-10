@@ -1,82 +1,172 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'npm:@supabase/supabase-js@2'
 
-const cors = {
+// ---------------------------------------------------------------------------
+// Create (or add) a person at a site.
+//
+// Multi-site: the target site is body.site_id, defaulting to the caller's
+// active site. The caller must be a director/admin of that site, or a platform
+// admin (who may only appoint a first director). If an account with this email
+// already exists it is NOT recreated — a membership at the target site is added
+// instead, which is how one login belongs to two programs.
+// ---------------------------------------------------------------------------
+
+const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
-function json(status: number, body: unknown) {
-  return new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } })
-}
-const ALLOWED_ROLES = ['fellow', 'supervisor', 'director', 'admin']
+const JSON_H = { ...corsHeaders, 'Content-Type': 'application/json' }
+const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: JSON_H })
 
-async function sendInviteEmail(to: string, fullName: string, link: string): Promise<boolean> {
-  const key = Deno.env.get('RESEND_API_KEY')
-  if (!key) return false
-  const from = Deno.env.get('INVITE_FROM_EMAIL') ?? 'onboarding@resend.dev'
-  const html = `
-    <div style="font-family:Inter,Arial,sans-serif;max-width:520px;margin:0 auto;color:#0F1B2D">
-      <h2 style="font-family:Georgia,serif">Neuromuscular Fellowship Portal</h2>
-      <p>Hi ${fullName || 'there'},</p>
-      <p>You've been invited to the University of Toronto City Wide Neuromuscular
-      Fellowship portal. Click below to set your password and sign in.</p>
-      <p style="margin:28px 0">
-        <a href="${link}" style="background:#0E7C86;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:600">Accept invitation</a>
-      </p>
-      <p style="font-size:13px;color:#5B6677">If the button doesn't work, paste this link into your browser:<br>${link}</p>
-    </div>`
+function generatePassword(): string {
+  const words = ['Nerve', 'Muscle', 'Axon', 'Myelin', 'Synapse', 'Motor', 'Sensory', 'Reflex']
+  const w = words[Math.floor(Math.random() * words.length)]
+  const digits = Math.floor(1000 + Math.random() * 9000)
+  const symbols = '!@#$%'
+  const s = symbols[Math.floor(Math.random() * symbols.length)]
+  return `NM${w}${s}${digits}`
+}
+
+function roleBlurb(role: string): string {
+  switch (role) {
+    case 'fellow':
+      return `<p>As a fellow you can view your clinic and teaching schedule, log EMG/NCS cases, track your competency progress, request vacation, rate teaching sessions, and subscribe the schedule to your own calendar.</p>`
+    case 'supervisor':
+      return `<p>As teaching/clinical faculty you can see your teaching sessions and confirm them (or flag a conflict or cancel), add Zoom links, set your away dates so schedules are built around you, submit evaluations of the fellows, and add an administrative assistant to help manage your schedule (Settings → Assistant logins).</p>`
+    case 'director':
+      return `<p>As the fellowship director you have full access: schedules, approvals, people management, and program settings.</p>`
+    case 'admin':
+      return `<p>As a program coordinator you can manage people and competency targets in the portal.</p>`
+    case 'assistant':
+      return `<p>As an administrative assistant you help manage a provider's schedule. Once the fellowship director (or the provider) links you to them, open the <strong>Teaching</strong>, <strong>Clinic</strong>, or <strong>Away dates</strong> page and use the <strong>“Managing schedule for”</strong> selector at the top to act on their behalf.</p>`
+    default:
+      return ''
+  }
+}
+
+async function platformSettings(admin: ReturnType<typeof createClient>) {
+  const PLATFORM = '00000000-0000-4000-8000-000000000000'
+  const { data: rows } = await admin.from('app_settings').select('key, value').eq('site_id', PLATFORM).in('key', ['email_from', 'portal_url'])
+  const get = (k: string) => (rows ?? []).find((r: { key: string }) => r.key === k)?.value as string | undefined
+  return {
+    FROM: get('email_from') ?? Deno.env.get('INVITE_FROM_EMAIL') ?? 'onboarding@resend.dev',
+    PORTAL: get('portal_url') ?? Deno.env.get('PORTAL_URL') ?? '',
+  }
+}
+
+async function sendEmail(admin: ReturnType<typeof createClient>, to: string, subject: string, html: string, refPrefix: string): Promise<boolean> {
+  const resendKey = Deno.env.get('RESEND_API_KEY')
+  if (!resendKey) return false
+  const { FROM } = await platformSettings(admin)
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: `Neuromuscular Fellowship <${from}>`, to, subject: "You're invited to the Neuromuscular Fellowship Portal", html }),
+    headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: FROM, to: [to], subject, html }),
   })
-  return res.ok
+  if (!res.ok) { console.error('email failed', await res.text()); return false }
+  try { await admin.from('email_log').insert({ ref_key: `${refPrefix}-${to}-${Date.now()}`, to_email: to }) } catch (_e) { /* log only */ }
+  return true
 }
 
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
-  if (req.method !== 'POST') return json(405, { error: 'Method not allowed' })
+Deno.serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   try {
-    const url = Deno.env.get('SUPABASE_URL')!
-    const anon = Deno.env.get('SUPABASE_ANON_KEY')!
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const portalUrl = Deno.env.get('PORTAL_URL') ?? 'https://fellowship-sandy.vercel.app'
     const authHeader = req.headers.get('Authorization') ?? ''
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-    const caller = createClient(url, anon, { global: { headers: { Authorization: authHeader } } })
-    const { data: who } = await caller.auth.getUser()
-    if (!who?.user) return json(401, { error: 'Not authenticated' })
+    const callerClient = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: authHeader } } })
+    const { data: userData, error: userErr } = await callerClient.auth.getUser()
+    if (userErr || !userData?.user) return reply({ error: 'Not authenticated' }, 401)
+    const callerId = userData.user.id
 
-    const admin = createClient(url, serviceKey)
-    const { data: profile } = await admin.from('users').select('role').eq('id', who.user.id).single()
-    if (!profile || !['director', 'admin'].includes(profile.role)) {
-      return json(403, { error: 'Only directors or admins can add users' })
+    const admin = createClient(supabaseUrl, serviceKey)
+    const body = await req.json()
+    const { email, full_name, role, cohort_year, phone } = body
+    if (!email || !full_name || !role) return reply({ error: 'email, full_name, and role are required' }, 400)
+    if (!['fellow', 'supervisor', 'director', 'admin', 'assistant'].includes(role)) return reply({ error: 'invalid role' }, 400)
+
+    // ---- which site, and may the caller act there? ----
+    const { data: callerRow } = await admin.from('users').select('active_site_id').eq('id', callerId).maybeSingle()
+    const siteId: string | null = body.site_id ?? callerRow?.active_site_id ?? null
+    if (!siteId) return reply({ error: 'No program selected.' }, 400)
+
+    const { data: site } = await admin.from('sites').select('id, name, status').eq('id', siteId).maybeSingle()
+    if (!site || site.status !== 'active') return reply({ error: 'Unknown or suspended program.' }, 400)
+
+    const { data: pa } = await admin.from('platform_admins').select('user_id').eq('user_id', callerId).maybeSingle()
+    const isPlatform = !!pa
+    const { data: callerMembership } = await admin.from('site_memberships').select('role, status')
+      .eq('site_id', siteId).eq('user_id', callerId).maybeSingle()
+    const isSiteAdmin = callerMembership?.status === 'active' && ['director', 'admin'].includes(callerMembership.role)
+
+    if (!isSiteAdmin) {
+      if (!isPlatform) return reply({ error: 'Only a director or admin of this program can add people to it' }, 403)
+      if (role !== 'director') return reply({ error: 'The platform admin can only appoint a program director. The director adds everyone else.' }, 403)
     }
 
-    const body = await req.json().catch(() => ({}))
-    const email = (body.email ?? '').trim().toLowerCase()
-    const full_name = (body.full_name ?? '').trim()
-    const role = ALLOWED_ROLES.includes(body.role) ? body.role : 'fellow'
-    const cohort_year = body.cohort_year || null
-    const duration_years = body.duration_years ? Number(body.duration_years) : null
-    const start_date = body.start_date || null
-    const end_date = body.end_date || null
-    if (!email || !full_name) return json(400, { error: 'email and full_name are required' })
+    const emailLc = String(email).toLowerCase()
+    const { PORTAL } = await platformSettings(admin)
+    const first = (full_name ?? '').split(' ')[0] || 'there'
 
-    const { data: link, error: linkErr } = await admin.auth.admin.generateLink({
-      type: 'invite', email, options: { data: { full_name }, redirectTo: `${portalUrl}/login` },
+    // ---- existing account: add a membership instead of a second account ----
+    const { data: existing } = await admin.from('users').select('id, full_name').eq('email', emailLc).maybeSingle()
+    if (existing) {
+      const { data: m } = await admin.from('site_memberships').select('id, status')
+        .eq('site_id', siteId).eq('user_id', existing.id).maybeSingle()
+      if (m && m.status === 'active') return reply({ error: 'This person is already a member of this program.' }, 400)
+      const { error: mErr } = await admin.from('site_memberships').upsert(
+        { site_id: siteId, user_id: existing.id, role, status: 'active', updated_at: new Date().toISOString() },
+        { onConflict: 'site_id,user_id' },
+      )
+      if (mErr) return reply({ error: mErr.message }, 400)
+      // Someone whose only membership was inactive was banned; lift it.
+      await admin.auth.admin.updateUserById(existing.id, { ban_duration: 'none' })
+
+      const html =
+        `<div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:0 auto;color:#0F1B2D;line-height:1.5">` +
+        `<h2 style="font-family:Georgia,serif">You have been added to ${site.name}</h2>` +
+        `<p>Hi ${(existing.full_name ?? '').split(' ')[0] || 'there'},</p>` +
+        `<p>Your existing portal account (<strong>${emailLc}</strong>) now also belongs to <strong>${site.name}</strong>. ` +
+        `Sign in as usual at <a href="${PORTAL}/login">${PORTAL}/login</a> — you will be asked which program to open.</p>` +
+        roleBlurb(role) + `</div>`
+      const emailed = await sendEmail(admin, emailLc, `You have been added to ${site.name}`, html, 'added')
+      return reply({ ok: true, user_id: existing.id, email: emailLc, added_existing: true, welcome_emailed: emailed })
+    }
+
+    // ---- brand new account ----
+    const tempPassword = generatePassword()
+    const { data: created, error: createErr } = await admin.auth.admin.createUser({
+      email: emailLc,
+      password: tempPassword,
+      email_confirm: true,
+      user_metadata: { full_name, role, site_id: siteId, cohort_year: cohort_year ?? null, must_change_password: true },
     })
-    if (linkErr || !link?.user) return json(400, { error: linkErr?.message ?? 'Could not create invitation' })
+    if (createErr || !created?.user) return reply({ error: createErr?.message ?? 'auth create failed' }, 400)
 
+    // role/status are derived from the membership the trigger just created.
     const { error: updErr } = await admin.from('users').update({
-      full_name, role, cohort_year, duration_years, start_date, end_date, updated_at: new Date().toISOString(),
-    }).eq('id', link.user.id)
-    if (updErr) return json(400, { error: updErr.message })
+      full_name, cohort_year: cohort_year ?? null, phone: phone ?? null, must_change_password: true, active_site_id: siteId,
+    }).eq('id', created.user.id)
+    if (updErr) return reply({ error: updErr.message }, 400)
 
-    const actionLink = link.properties?.action_link as string
-    const emailed = await sendInviteEmail(email, full_name, actionLink)
-    return json(200, { invited: true, email, email_sent: emailed, action_link: emailed ? undefined : actionLink })
+    const html =
+      `<div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:0 auto;color:#0F1B2D;line-height:1.5">` +
+      `<h2 style="font-family:Georgia,serif">Welcome to the Neuromuscular Fellowship Portal</h2>` +
+      `<p>Hi ${first},</p>` +
+      `<p>An account has been set up for you on the fellowship portal for <strong>${site.name}</strong>.</p>` +
+      `<p style="background:#F7F8FA;border:1px solid #E2E6EC;border-radius:8px;padding:12px 16px">` +
+      `<strong>Sign in:</strong> <a href="${PORTAL}/login">${PORTAL}/login</a><br/>` +
+      `<strong>Email:</strong> ${emailLc}<br/>` +
+      `<strong>Temporary password:</strong> ${tempPassword}</p>` +
+      `<p>For your security you'll be asked to choose your own password the first time you sign in.</p>` +
+      roleBlurb(role) +
+      `<p style="color:#5B6677;font-size:13px">Questions? Reply to this email.</p>` +
+      `</div>`
+    const welcomeEmailed = await sendEmail(admin, emailLc, 'Your Neuromuscular Fellowship portal access', html, 'welcome')
+
+    return reply({ ok: true, user_id: created.user.id, email: emailLc, temp_password: tempPassword, welcome_emailed: welcomeEmailed })
   } catch (e) {
-    return json(500, { error: String(e) })
+    return reply({ error: String(e) }, 500)
   }
 })

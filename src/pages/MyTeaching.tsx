@@ -931,6 +931,28 @@ function FeedbackPanel({ session, isDirector, onError }: { session: Session; isD
 }
 
 async function openCompletionLetter(s: Session) {
+  // The letterhead and signature come from the program, not from a constant:
+  // the site row names the program, and the site's directors sign.
+  let programName = 'Neuromuscular Fellowship'
+  let institution = ''
+  let signature = ''
+  try {
+    const { data: siteRows } = await supabase.rpc('my_sites')
+    const active = ((siteRows as { name: string; is_active: boolean }[] | null) ?? []).find((r) => r.is_active)
+    if (active?.name) programName = active.name
+    const { data: me } = await supabase.from('users').select('active_site_id').eq('id', (await supabase.auth.getUser()).data.user?.id ?? '').maybeSingle()
+    if (me?.active_site_id) {
+      const { data: siteRow } = await supabase.from('sites').select('institution').eq('id', me.active_site_id).maybeSingle()
+      institution = siteRow?.institution ?? ''
+    }
+    const { data: dirs } = await supabase.rpc('site_directors')
+    const list = (dirs as { full_name: string; email: string }[] | null) ?? []
+    if (list.length > 0) {
+      signature = list.map((d) => `${d.full_name}<br/>Fellowship Director, ${programName}<br/>${d.email}`).join('<br/><br/>')
+    }
+  } catch { /* the letter falls back to generic wording */ }
+  if (!signature) signature = `Fellowship Director, ${programName}`
+
   let feedbackLine = ''
   try {
     const { data } = await supabase.rpc('provider_session_feedback', { p_session: s.id })
@@ -959,10 +981,10 @@ async function openCompletionLetter(s: Session) {
   .muted { color: #555; font-size: .9rem; } .sig { margin-top: 4rem; }
   @media print { body { margin: 1rem auto; } }
 </style></head><body>
-<h1>Citywide Neuromuscular Fellowship<br/><span class="muted">Division of Neurology, University of Toronto</span></h1>
+<h1>${programName}${institution ? `<br/><span class="muted">${institution}</span>` : ''}</h1>
 <p class="muted">${new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
 <h2>Confirmation of Teaching Activity</h2>
-<p>This letter confirms that <strong>${s.provider_name ?? ''}</strong> delivered the following didactic teaching session to the fellows of the Citywide Neuromuscular Fellowship:</p>
+<p>This letter confirms that <strong>${s.provider_name ?? ''}</strong> delivered the following didactic teaching session to the fellows of the ${programName}:</p>
 <p><strong>Topic:</strong> ${s.topic ?? ''}<br/>
 <strong>Date:</strong> ${new Date(s.session_date + 'T00:00:00').toLocaleDateString('en-CA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}<br/>
 <strong>Time:</strong> ${s.start_time.slice(0, 5)}–${s.end_time.slice(0, 5)}</p>
@@ -972,9 +994,7 @@ ${feedbackLine}
 <p>This letter documents the teaching activity described above for the recipient's continuing professional development records.</p>
 <div class="sig">
 <p>_______________________________<br/>
-Dr. Aaron Izenberg<br/>
-Fellowship Director, Citywide Neuromuscular Fellowship<br/>
-aaron.izenberg@sunnybrook.ca · 416-480-4475</p>
+${signature}</p>
 </div>
 <script>window.print()</script>
 </body></html>`

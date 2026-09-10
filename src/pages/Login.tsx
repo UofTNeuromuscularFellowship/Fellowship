@@ -24,6 +24,10 @@ export default function Login() {
   const [busy, setBusy] = useState(false)
   const [forgotMode, setForgotMode] = useState(false)
   const [resetSent, setResetSent] = useState(false)
+  // Shown only when this login belongs to more than one program. A person with
+  // a single program never sees it — they land straight in the portal.
+  const [choose, setChoose] = useState<{ id: string; name: string; role: string; is_active: boolean }[] | null>(null)
+  const [dest, setDest] = useState<string>('/dashboard')
 
   async function sendReset() {
     if (!email.trim()) { setError('Enter your email address first.'); return }
@@ -54,8 +58,27 @@ export default function Login() {
         .single()
       mustChange = Boolean(row?.must_change_password)
     }
+    const target = mustChange ? '/change-password' : (from ?? '/dashboard')
+    // More than one program on this login: ask which to open. Exactly one:
+    // AuthContext points the account at it and we go straight in.
+    const { data: mine } = await supabase.rpc('my_sites')
+    const active = ((mine as { id: string; name: string; role: string; status: string; is_active: boolean }[] | null) ?? [])
+      .filter((m) => m.status === 'active')
     setBusy(false)
-    navigate(mustChange ? '/change-password' : (from ?? '/dashboard'))
+    if (active.length > 1 && !mustChange) {
+      setDest(target)
+      setChoose(active)
+      return
+    }
+    navigate(target)
+  }
+
+  async function pickSite(id: string) {
+    setBusy(true); setError(null)
+    const { error: err } = await supabase.rpc('set_active_site', { p_site: id })
+    if (err) { setBusy(false); setError(err.message); return }
+    // A full navigation so every context (role, toolkit, data) reloads for the chosen program.
+    window.location.assign(dest)
   }
 
   return (
@@ -64,9 +87,31 @@ export default function Login() {
         <div className="text-center">
           <Waveform className="mx-auto h-6 w-32 text-accent" />
           <h1 className="mt-4 font-display text-xl font-bold text-ink">Fellowship Portal</h1>
-          <p className="mt-1 text-sm text-muted">City Wide Neuromuscular Fellowship</p>
+          <p className="mt-1 text-sm text-muted">Neuromuscular fellowship programs</p>
         </div>
 
+        {choose ? (
+          <div className="mt-8 rounded-lg border border-line bg-surface p-6">
+            <p className="mb-1 font-display text-sm font-semibold text-ink">Which program?</p>
+            <p className="mb-4 text-xs text-muted">Your account belongs to more than one fellowship program.</p>
+            {error && (
+              <div className="mb-4 rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink">{error}</div>
+            )}
+            <div className="space-y-2">
+              {choose.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => pickSite(s.id)}
+                  disabled={busy}
+                  className="flex w-full items-center justify-between rounded-md border border-line bg-paper px-4 py-3 text-left hover:border-accent disabled:opacity-50"
+                >
+                  <span className="text-sm font-medium text-ink">{s.name}</span>
+                  <span className="text-xs text-muted">{s.role}{s.is_active ? ' · last used' : ''}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
         <div className="mt-8 rounded-lg border border-line bg-surface p-6">
           {error && (
             <div className="mb-4 rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink">
@@ -143,6 +188,7 @@ export default function Login() {
             </>
           )}
         </div>
+        )}
 
         <p className="mt-6 text-center text-xs text-muted">
           <Link to="/" className="text-accent hover:underline">← Back to program page</Link>

@@ -20,6 +20,11 @@ export interface NavItem {
   /** One line in the section overview, saying what the tool is for. */
   blurb: string
   allow?: UserRole[]
+  /** EMG Toolkit entitlement key. The item is shown only when the current
+   *  program has this tool switched on (site_tools). */
+  tool?: string
+  /** Shown to platform admins only, whatever their site role. */
+  platformOnly?: boolean
 }
 
 export interface NavGroup {
@@ -39,6 +44,7 @@ export type IconName =
   | 'emg'
   | 'program'
   | 'settings'
+  | 'platform'
 
 export const NAV: NavGroup[] = [
   {
@@ -138,36 +144,42 @@ export const NAV: NavGroup[] = [
     items: [
       {
         to: '/test-directory',
+        tool: 'test-directory',
         label: 'Diagnostic test directory',
         blurb: 'Where to send genetic and antibody testing, with requisitions.',
         allow: ['fellow', 'supervisor', 'director'],
       },
       {
         to: '/atlas-3d',
+        tool: 'atlas-3d',
         label: '3D atlas',
         blurb: 'Muscles, nerves and needle insertion points in three dimensions.',
         allow: ['fellow', 'supervisor', 'director'],
       },
       {
         to: '/waveforms',
+        tool: 'waveforms',
         label: 'Waveforms & images Library',
         blurb: 'Teaching traces, ultrasound, MRI and biopsy, annotated.',
         allow: ['fellow', 'supervisor', 'director'],
       },
       {
         to: '/library',
+        tool: 'library',
         label: 'Literature library',
         blurb: 'Reference texts, guidelines and your reading list.',
         allow: ['fellow', 'supervisor', 'director', 'admin'],
       },
       {
         to: '/calculators',
+        tool: 'calculators',
         label: 'EMG/NCS calculators',
         blurb: 'Reference values and the calculations you repeat.',
         allow: ['fellow', 'supervisor', 'director'],
       },
       {
         to: '/study',
+        tool: 'study',
         label: 'Test your anatomy knowledge',
         blurb: 'Self-testing on muscles, nerves and root levels.',
         allow: ['fellow', 'supervisor', 'director'],
@@ -212,19 +224,47 @@ export const NAV: NavGroup[] = [
       },
     ],
   },
+  {
+    id: 'platform',
+    label: 'Platform',
+    tagline: 'Programs using this portal',
+    icon: 'platform',
+    items: [
+      {
+        to: '/platform',
+        label: 'Programs',
+        blurb: 'Create fellowship programs, appoint their directors and choose which toolkit items each may use.',
+        platformOnly: true,
+      },
+    ],
+  },
 ]
 
 /** The groups this role can see, with the items they cannot see removed. */
-export function navFor(role: UserRole | undefined, opts?: { hideClinic?: boolean }): NavGroup[] {
+export function navFor(
+  role: UserRole | undefined,
+  opts?: { hideClinic?: boolean; tools?: Set<string>; platformAdmin?: boolean },
+): NavGroup[] {
   return NAV.map((g) => ({
     ...g,
     items: g.items.filter((i) => {
+      if (i.platformOnly) return !!opts?.platformAdmin
       // A teaching-only supervisor runs no fellowship clinics, so the clinic
       // schedule is noise for them. Everything teaching-related stays put.
       if (opts?.hideClinic && i.to === '/clinic') return false
+      // A toolkit item the program has not been granted is not offered. (The
+      // route and the database refuse it too; this only keeps the menu honest.)
+      if (i.tool && opts?.tools && !opts.tools.has(i.tool)) return false
       return !i.allow || (role && i.allow.includes(role))
     }),
   })).filter((g) => g.items.length > 0)
+}
+
+/** The toolkit key a path needs, if any — used by ProtectedRoute. */
+export function toolForPath(pathname: string): string | undefined {
+  if (pathname === '/ultrasound') return 'ultrasound'
+  if (pathname === '/test-mode') return 'study'
+  return itemForPath(NAV, pathname)?.tool
 }
 
 /**

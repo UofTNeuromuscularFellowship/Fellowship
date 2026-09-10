@@ -44,7 +44,7 @@ function useCollapsedPanel() {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { profile, signOut } = useAuth()
+  const { profile, signOut, site, sites, tools, isPlatformAdmin, switchSite } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const role = profile?.role
@@ -52,7 +52,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [mobileNav, setMobileNav] = useState(false)
 
   const hideClinic = role === 'supervisor' && profile?.teaching_only === true
-  const groups = navFor(role, { hideClinic })
+  // A platform admin with no program sees only the Platform area.
+  const groups = site
+    ? navFor(role, { hideClinic, tools, platformAdmin: isPlatformAdmin })
+    : navFor(undefined, { platformAdmin: isPlatformAdmin }).filter((g) => g.id === 'platform')
+  const siteName = site?.short_name ?? site?.name ?? (isPlatformAdmin ? 'Platform' : '')
+  const switchable = sites.length > 1 ? sites.map((s) => ({ id: s.id, name: s.name, active: s.is_active })) : undefined
   const active = groupForPath(groups, location.pathname) ?? groups[0]
 
   async function handleSignOut() {
@@ -76,8 +81,13 @@ export function AppShell({ children }: { children: ReactNode }) {
         {/* A plain Link, not a NavLink: it points at the dashboard, so on the
             dashboard a NavLink would mark itself aria-current alongside the
             Home icon and a screen reader would hear two current items. */}
-        <Link to="/dashboard" className="mb-2 flex flex-col items-center" aria-label="Fellowship Portal">
+        <Link to="/dashboard" className="mb-2 flex flex-col items-center" aria-label="Fellowship Portal" title={site?.name ?? undefined}>
           <Waveform className="h-4 w-12 text-accent" />
+          {siteName && (
+            <span className="mt-1 max-w-[68px] truncate text-center text-[9px] font-semibold uppercase tracking-wide text-muted">
+              {siteName}
+            </span>
+          )}
         </Link>
 
         {groups.map((g) => {
@@ -103,7 +113,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="mt-auto flex flex-col items-center gap-2 pt-3">
           <AccountMenu
             name={profile?.full_name}
-            roleName={role ? roleLabel(role) : ''}
+            roleName={role ? roleLabel(role) : (isPlatformAdmin ? 'Platform admin' : '')}
+            siteName={site?.name}
+            sites={switchable}
+            onSwitchSite={(id) => switchSite(id)}
             onSignOut={handleSignOut}
             align="up"
           />
@@ -191,13 +204,16 @@ export function AppShell({ children }: { children: ReactNode }) {
               Menu
             </button>
             <span className="min-w-0 flex-1 truncate text-center font-display text-sm font-semibold text-ink">
-              {active?.label ?? 'Fellowship Portal'}
+              {active?.label ?? siteName ?? 'Fellowship Portal'}
             </span>
             {/* Top-right, the usual place on a phone, and in a header that was
                 already sticky. Opens downward for the same reason. */}
             <AccountMenu
               name={profile?.full_name}
-              roleName={role ? roleLabel(role) : ''}
+              roleName={role ? roleLabel(role) : (isPlatformAdmin ? 'Platform admin' : '')}
+              siteName={site?.name}
+              sites={switchable}
+              onSwitchSite={(id) => switchSite(id)}
               onSignOut={handleSignOut}
               align="down"
             />

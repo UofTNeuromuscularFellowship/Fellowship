@@ -26,8 +26,10 @@ export default function People() {
   const [emailedCreate, setEmailedCreate] = useState(false)
 
   async function load() {
+    // site_users: the people of THIS program, with the role they hold here
+    // (someone can be a supervisor here and a fellow at another program).
     const { data, error } = await supabase
-      .from('users')
+      .from('site_users')
       .select('id, email, full_name, role, status, cohort_year, assistant_emails, teaching_only')
       .order('full_name')
     if (error) setMsg(error.message)
