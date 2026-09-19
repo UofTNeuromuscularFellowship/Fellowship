@@ -17,6 +17,22 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 // the recipient could click — they then landed on an "email link is invalid or
 // has expired" page. A scanner that fetches the new link just gets HTML; the
 // token is only redeemed when the page's JavaScript runs verifyOtp.
+//
+// v4 (multi-site): three things that were correct for one programme and wrong
+// for several.
+//   1. app_settings is keyed (site_id, key). Reading email_from and portal_url
+//      with .maybeSingle() and no site filter throws PGRST116 the moment a
+//      second programme holds a row under either key, which would silently
+//      kill password resets for everyone. Both are platform-wide — one
+//      deployment, one domain — so they are read from the platform site.
+//   2. users.status is now only a mirror of whichever programme the person
+//      last opened. Somebody active at programme B but with programme A as
+//      their active site would have been refused a reset. Eligibility is an
+//      active membership ANYWHERE, read from site_memberships.
+//   3. The email_log row is written with the person's site so the trail is
+//      attributable; the service role's own current_site_id() is null.
+// The rate-limit key stays global per address — one reset email per address
+// per hour is the right ceiling regardless of how many programmes they are in.
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -40,15 +56,27 @@ Deno.serve(async (req) => {
     const email = String(body.email ?? '').trim().toLowerCase()
     if (!email || !email.includes('@')) return json(200, { ok: true })
 
-    // Only active portal accounts get reset emails
+    // Only accounts with a live membership somewhere get reset emails
     const { data: u, error: lookupErr } = await admin
       .from('users')
-      .select('id, full_name, status')
+      .select('id, full_name, active_site_id')
       .ilike('email', email)
       .maybeSingle()
     if (lookupErr) { console.error('pwreset lookup failed', email, lookupErr.message); return json(200, { ok: true }) }
     if (!u) { console.error('pwreset: no portal account', email); return json(200, { ok: true }) }
-    if (u.status !== 'active') { console.error('pwreset: account not active', email, u.status); return json(200, { ok: true }) }
+
+    const { data: memberships, error: memErr } = await admin
+      .from('site_memberships')
+      .select('site_id')
+      .eq('user_id', u.id)
+      .eq('status', 'active')
+    if (memErr) { console.error('pwreset: membership lookup failed', email, memErr.message); return json(200, { ok: true }) }
+    if (!memberships || memberships.length === 0) {
+      console.error('pwreset: no active membership at any programme', email)
+      return json(200, { ok: true })
+    }
+    const siteIds = memberships.map((m: { site_id: string }) => m.site_id)
+    const logSite = siteIds.includes(u.active_site_id as string) ? (u.active_site_id as string) : siteIds[0]
     if (!resendKey) { console.error('pwreset: RESEND_API_KEY is not set'); return json(200, { ok: true }) }
 
     // Rate limit: one reset email per address per hour
@@ -56,13 +84,17 @@ Deno.serve(async (req) => {
     const { data: already } = await admin.from('email_log').select('ref_key').eq('ref_key', hourKey).maybeSingle()
     if (already) { console.log('pwreset: rate limited this hour', email); return json(200, { ok: true }) }
 
-    const { data: fromRow } = await admin.from('app_settings').select('value').eq('key', 'email_from').maybeSingle()
-    const { data: portalRow } = await admin.from('app_settings').select('value').eq('key', 'portal_url').maybeSingle()
-    const portal = ((portalRow?.value as string) ?? Deno.env.get('PORTAL_URL') ?? 'https://www.neuromuscularto.ca').replace(/\/$/, '')
+    // Sender identity and portal URL are platform-wide, and must be read with
+    // the site filter: app_settings is keyed (site_id, key).
+    const PLATFORM_SITE = '00000000-0000-4000-8000-000000000000'
+    const { data: settingRows } = await admin.from('app_settings').select('key, value')
+      .eq('site_id', PLATFORM_SITE).in('key', ['email_from', 'portal_url'])
+    const setting = (k: string) => (settingRows ?? []).find((r: { key: string }) => r.key === k)?.value as string | undefined
+    const portal = (setting('portal_url') ?? Deno.env.get('PORTAL_URL') ?? 'https://app.neuromuscular.ca').replace(/\/$/, '')
 
     // Same verified sender as every other portal email. Only fall back to the
     // Resend sandbox address if the setting is missing entirely.
-    const from = (fromRow?.value as string)
+    const from = setting('email_from')
       ?? Deno.env.get('INVITE_FROM_EMAIL')
       ?? 'Neuromuscular Fellowship <onboarding@resend.dev>'
 
@@ -98,7 +130,7 @@ Deno.serve(async (req) => {
       console.error('pwreset: resend rejected', res.status, await res.text(), 'from=', from, 'to=', email)
       return json(200, { ok: true })
     }
-    await admin.from('email_log').insert({ ref_key: hourKey, to_email: email })
+    await admin.from('email_log').insert({ ref_key: hourKey, to_email: email, site_id: logSite })
     console.log('pwreset: sent', email)
     return json(200, { ok: true })
   } catch (e) {
