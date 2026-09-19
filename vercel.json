@@ -1,17 +1,13 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "routes": [
     {
-      "//": "app.neuromuscular.ca is the shared portal host for every programme. Its root must not serve Toronto's landing page (program.html and the SPA's Landing route are both Citywide-specific), so send it to the sign-in screen. 307 rather than 308: temporary, so browsers do not cache it permanently if this changes.",
       "src": "/",
       "has": [{ "type": "host", "value": "app.neuromuscular.ca" }],
       "status": 307,
       "headers": { "Location": "/login" }
     },
-    {
-      "//": "Every other host (www.neuromuscularto.ca, preview URLs) keeps the existing behaviour: Toronto's public programme page at the root.",
-      "src": "/",
-      "dest": "/program.html"
-    },
+    { "src": "/", "dest": "/program.html" },
     { "handle": "filesystem" },
     { "src": "/.*", "dest": "/index.html" }
   ],
