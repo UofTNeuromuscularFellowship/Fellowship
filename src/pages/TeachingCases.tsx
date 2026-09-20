@@ -12,6 +12,28 @@ import { formatDate } from '../lib/format'
 // ---------------------------------------------------------------------------
 
 const BUCKET = 'teaching-cases'
+
+/**
+ * The verbal consent a supervisor or the director attests to before a case is
+ * recorded here.
+ *
+ * It is built from the programme's own name rather than a fixed one, because
+ * this portal now runs more than one fellowship and a clinician must not be
+ * asked to attest to something about somebody else's programme. The text is
+ * stored WITH each case, so changing it later cannot alter what was attested
+ * to at the time.
+ *
+ * It says "for teaching within" rather than "shared with", because a teaching
+ * case is visible only to the person who logged it — the attestation should
+ * not claim a wider audience than the case actually has.
+ */
+function consentWording(programme: string): string {
+  return [
+    `I explained to this patient that a de-identified record of their case would be kept for teaching within ${programme}, and they gave verbal consent.`,
+    'I have removed identifying details as far as is practicable, and I will do the same for any report, image or recording I attach.',
+    'This attestation is recorded with the case, under my name and today\u2019s date.',
+  ].join('\n')
+}
 const SIGNED_URL_TTL = 3600 // 1 hour
 
 interface TeachingCase {
@@ -24,6 +46,9 @@ interface TeachingCase {
   description: string | null
   teaching_points: string | null
   created_at: string
+  consent_attested_at: string | null
+  consent_attested_by: string | null
+  consent_wording: string | null
 }
 
 interface CaseFile {
@@ -35,7 +60,7 @@ interface CaseFile {
   size_bytes: number | null
 }
 
-const SELECT = 'id, patient_name, mrn, hospital_site, age, sex, description, teaching_points, created_at'
+const SELECT = 'id, patient_name, mrn, hospital_site, age, sex, description, teaching_points, created_at, consent_attested_at, consent_attested_by, consent_wording'
 
 function fileKind(f: File): string {
   const t = f.type || ''
@@ -191,6 +216,10 @@ function CaseEditor({
   const [description, setDescription] = useState(existing?.description ?? '')
   const [teaching, setTeaching] = useState(existing?.teaching_points ?? '')
   const [busy, setBusy] = useState(false)
+  const { site: activeSite } = useAuth()
+  const programme = activeSite?.name ?? 'this fellowship'
+  const alreadyAttested = !!existing?.consent_attested_at
+  const [consent, setConsent] = useState(alreadyAttested)
 
   // Reset fields when the target case changes.
   useEffect(() => {
@@ -201,9 +230,14 @@ function CaseEditor({
     setSex(existing?.sex ?? '')
     setDescription(existing?.description ?? '')
     setTeaching(existing?.teaching_points ?? '')
+    setConsent(!!existing?.consent_attested_at)
   }, [existing?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function save() {
+    if (!consent) {
+      onError('Please confirm the patient gave verbal consent before saving the case.')
+      return
+    }
     setBusy(true)
     const payload = {
       provider_id: userId,
@@ -215,6 +249,15 @@ function CaseEditor({
       description: description.trim() || null,
       teaching_points: teaching.trim() || null,
       updated_at: new Date().toISOString(),
+      // Attesting is one-way: an existing attestation is never rewritten, and a
+      // case that was logged before this existed can be attested to later.
+      ...(alreadyAttested
+        ? {}
+        : {
+            consent_attested_at: new Date().toISOString(),
+            consent_attested_by: userId,
+            consent_wording: consentWording(programme),
+          }),
     }
     const res = existing
       ? await supabase.from('teaching_cases').update(payload).eq('id', existing.id).select(SELECT).single()
@@ -256,6 +299,30 @@ function CaseEditor({
         }
       />
       <div className="space-y-5 px-5 py-4">
+        {alreadyAttested ? (
+          <div className="rounded-md border border-line bg-raised px-4 py-3 text-sm text-muted">
+            <span className="font-semibold text-ink">Verbal consent attested</span> on{' '}
+            {formatDate(existing!.consent_attested_at!)}.
+            {existing?.consent_wording && (
+              <span className="mt-2 block whitespace-pre-line text-xs">{existing.consent_wording}</span>
+            )}
+          </div>
+        ) : (
+          <label className="flex gap-3 rounded-md border border-accent/40 bg-accent/5 px-4 py-3 text-sm text-ink">
+            <input
+              id="teaching-case-consent"
+              type="checkbox"
+              checked={consent}
+              onChange={(e) => setConsent(e.target.checked)}
+              className="mt-1 h-4 w-4 flex-none accent-accent"
+            />
+            <span>
+              <span className="font-semibold">Verbal patient consent</span>
+              <span className="mt-1 block whitespace-pre-line text-muted">{consentWording(programme)}</span>
+            </span>
+          </label>
+        )}
+
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Patient (use initials)">
             <input value={patientName} onChange={(e) => setPatientName(e.target.value)} placeholder="e.g., J.D."
@@ -294,7 +361,7 @@ function CaseEditor({
         </Field>
 
         <div className="flex flex-wrap items-center gap-3">
-          <button onClick={save} disabled={busy}
+          <button onClick={save} disabled={busy || !consent}
             className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
             {busy ? 'Working…' : existing ? 'Save changes' : 'Save case'}
           </button>

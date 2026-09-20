@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Neuromuscular Fellowship Manager</title>
+<meta name="description" content="Scheduling, case logging, feedback and an electrodiagnostic toolkit for neuromuscular fellowship programmes.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#FCFCFA; --surface:#FFFFFF; --raised:#F4F6F4;
+  --ink:#17201C; --body:#39463F; --muted:#5E6B64;
+  --line:#E2E6E2; --line-strong:#C9D2CC;
+  --accent:#1F6F5C; --accent-deep:#16523F; --accent-soft:#E7F0EC;
+  --serif:'Spectral',Georgia,'Times New Roman',serif;
+  --sans:'IBM Plex Sans','Segoe UI',system-ui,-apple-system,sans-serif;
+  --mono:'IBM Plex Mono','SFMono-Regular',Menlo,Consolas,monospace;
+  --measure:64ch;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0F1411; --surface:#161D19; --raised:#1C2520;
+    --ink:#E9EEEB; --body:#C2CDC7; --muted:#93A099;
+    --line:#26302A; --line-strong:#35423A;
+    --accent:#63BCA1; --accent-deep:#8ED3BC; --accent-soft:#17251F;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F1411; --surface:#161D19; --raised:#1C2520;
+  --ink:#E9EEEB; --body:#C2CDC7; --muted:#93A099;
+  --line:#26302A; --line-strong:#35423A;
+  --accent:#63BCA1; --accent-deep:#8ED3BC; --accent-soft:#17251F;
+}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--ground); color:var(--body);
+  font-family:var(--sans); font-size:17px; line-height:1.65;
+  -webkit-font-smoothing:antialiased;
+}
+img,svg{max-width:100%}
+a{color:var(--accent-deep)}
+h1,h2,h3{color:var(--ink); font-family:var(--serif); font-weight:500; text-wrap:balance; margin:0}
+p{margin:0}
+
+.wrap{width:100%; max-width:1080px; margin-inline:auto; padding-inline:24px}
+.prose{max-width:var(--measure)}
+
+.eyebrow{
+  font-family:var(--mono); font-size:12px; font-weight:500;
+  letter-spacing:.13em; text-transform:uppercase; color:var(--muted);
+}
+
+/* ---------- masthead ---------- */
+.masthead{
+  border-bottom:1px solid var(--line); background:var(--ground);
+  position:sticky; top:env(safe-area-inset-top,0px); z-index:20;
+}
+.masthead .wrap{display:flex; align-items:center; justify-content:space-between; gap:16px; padding-block:18px}
+.brand{display:flex; align-items:center; gap:11px; color:var(--ink); text-decoration:none}
+.brand svg{display:block; flex:none}
+.brand .wordmark{display:block}
+.brand b{font-family:var(--serif); font-size:19px; font-weight:600; letter-spacing:-.01em}
+.brand span{display:block; font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin-top:1px}
+.masthead a.signin{
+  font-size:14.5px; font-weight:500; color:var(--ink); text-decoration:none;
+  border:1px solid var(--line-strong); border-radius:2px; padding:9px 16px; white-space:nowrap;
+}
+.masthead a.signin:hover{border-color:var(--accent); color:var(--accent-deep)}
+
+/* ---------- hero ---------- */
+.hero{padding-block:clamp(56px,9vw,104px) 0}
+.hero h1{font-size:clamp(38px,6.2vw,62px); line-height:1.08; letter-spacing:-.02em; margin-top:22px}
+.hero h1 em{font-style:italic; color:var(--accent-deep)}
+.hero .lede{font-size:clamp(18px,2.2vw,20.5px); color:var(--body); margin-top:26px; max-width:58ch}
+.actions{display:flex; flex-wrap:wrap; gap:12px; margin-top:34px}
+.btn{
+  font-family:var(--sans); font-size:15.5px; font-weight:500; text-decoration:none;
+  padding:13px 22px; border-radius:2px; border:1px solid transparent; display:inline-block;
+}
+.btn-primary{background:var(--accent); color:#fff; border-color:var(--accent)}
+.btn-primary:hover{background:var(--accent-deep); border-color:var(--accent-deep)}
+.btn-quiet{color:var(--ink); border-color:var(--line-strong); background:transparent}
+.btn-quiet:hover{border-color:var(--accent); color:var(--accent-deep)}
+
+/* the trace: a motor unit potential, the one shape every tool here has in common */
+.trace{margin-top:clamp(48px,7vw,80px); border-top:1px solid var(--line); padding-top:0}
+.trace svg{display:block; width:100%; height:clamp(64px,10vw,104px)}
+.trace figcaption{
+  font-family:var(--mono); font-size:11.5px; letter-spacing:.06em; color:var(--muted);
+  padding-top:10px; border-top:1px solid var(--line); margin-top:-1px;
+}
+
+/* ---------- generic section ---------- */
+section{padding-block:clamp(56px,8vw,92px)}
+.section-head{max-width:var(--measure)}
+.section-head h2{font-size:clamp(27px,3.6vw,36px); line-height:1.2; letter-spacing:-.015em; margin-top:14px}
+.section-head p{margin-top:16px; color:var(--muted)}
+
+/* ---------- modules ---------- */
+.modules{
+  margin-top:clamp(34px,5vw,52px);
+  display:grid; gap:1px; background:var(--line);
+  border:1px solid var(--line); border-radius:3px; overflow:hidden;
+  grid-template-columns:repeat(auto-fit,minmax(248px,1fr));
+}
+.module{background:var(--surface); padding:26px 24px 28px}
+.module h3{font-family:var(--sans); font-size:16px; font-weight:600; letter-spacing:-.005em}
+.module .num{font-family:var(--mono); font-size:11px; color:var(--accent); letter-spacing:.1em; display:block; margin-bottom:12px}
+.module p{font-size:15px; line-height:1.6; color:var(--muted); margin-top:9px}
+
+/* ---------- separation ---------- */
+.split{display:grid; gap:clamp(28px,4vw,56px); grid-template-columns:1fr; align-items:start}
+@media (min-width:860px){ .split{grid-template-columns:1fr 1fr} }
+.panel{
+  background:var(--raised); border:1px solid var(--line); border-radius:3px;
+  padding:clamp(24px,3vw,32px);
+}
+.panel h3{font-family:var(--sans); font-size:15px; font-weight:600; margin-bottom:6px}
+.rule-list{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:18px}
+.rule-list li{display:grid; grid-template-columns:auto 1fr; gap:14px; align-items:start}
+.rule-list .k{
+  font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--accent); padding-top:4px; white-space:nowrap;
+}
+.rule-list p{font-size:15.5px; line-height:1.6}
+.rule-list strong{color:var(--ink); font-weight:600}
+
+/* ---------- steps ---------- */
+.steps{list-style:none; margin:clamp(30px,4vw,44px) 0 0; padding:0; counter-reset:step; display:flex; flex-direction:column}
+.steps li{
+  counter-increment:step; display:grid; grid-template-columns:auto 1fr; gap:20px;
+  padding-block:22px; border-top:1px solid var(--line);
+}
+.steps li:last-child{border-bottom:1px solid var(--line)}
+.steps li::before{
+  content:counter(step,decimal-leading-zero);
+  font-family:var(--mono); font-size:12px; color:var(--accent); padding-top:4px; letter-spacing:.05em;
+}
+.steps h3{font-family:var(--sans); font-size:16px; font-weight:600}
+.steps p{font-size:15.5px; color:var(--muted); margin-top:5px; max-width:58ch}
+
+/* ---------- pricing / inquire ---------- */
+.inquire{
+  border:1px solid var(--line-strong); border-radius:3px; background:var(--surface);
+  padding:clamp(28px,4.5vw,48px);
+}
+.inquire h2{font-size:clamp(25px,3.2vw,33px); letter-spacing:-.015em; margin-top:12px}
+.inquire p{margin-top:16px; color:var(--muted); max-width:56ch}
+.contact-line{
+  margin-top:26px; padding-top:22px; border-top:1px solid var(--line);
+  display:flex; flex-wrap:wrap; gap:8px 28px; font-size:15px;
+}
+.contact-line span{color:var(--muted)}
+.contact-line a{font-weight:500}
+
+/* ---------- footer ---------- */
+footer{border-top:1px solid var(--line); padding-block:34px 44px; margin-top:clamp(40px,6vw,72px)}
+footer .wrap{display:flex; flex-wrap:wrap; gap:14px 32px; justify-content:space-between; align-items:baseline}
+footer p,footer a{font-size:14px; color:var(--muted)}
+footer .sites{display:flex; flex-wrap:wrap; gap:18px}
+
+@media (max-width:520px){
+  .wrap{padding-inline:18px}
+  .brand b{font-size:16px}
+  .brand span{font-size:9.5px; letter-spacing:.1em}
+  .brand svg{width:22px; height:22px}
+  .masthead a.signin{font-size:13px; padding:8px 12px}
+  .masthead .wrap{gap:10px}
+  .actions .btn{width:100%; text-align:center}
+}
+a:focus-visible,.btn:focus-visible{outline:2px solid var(--accent); outline-offset:3px; border-radius:2px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important; transition:none!important}}
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap">
+    <a class="brand" href="/">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+        <path d="M5.8 12.6h2.1l1.2-4 1.9 7.4 1.6-8.6 1.7 6.2 1-1h3.1"></path>
+      </svg>
+      <span class="wordmark">
+        <b>Neuromuscular</b>
+        <span>Fellowship Manager</span>
+      </span>
+    </a>
+    <a class="signin" href="https://app.neuromuscular.ca/login">Programme sign-in</a>
+  </div>
+</header>
+
+<main>
+
+  <div class="wrap hero">
+    <p class="eyebrow">Software for neuromuscular fellowship programmes</p>
+    <h1>The running of a fellowship, <em>in one place.</em></h1>
+    <p class="lede">
+      Teaching schedules, clinic rotations, case logs, feedback and an electrodiagnostic
+      toolkit — built by a neuromuscular programme for the people who actually run one,
+      and now available to other fellowships.
+    </p>
+    <div class="actions">
+      <a class="btn btn-primary" href="#inquire">Inquire about your programme</a>
+      <a class="btn btn-quiet" href="#what">See what it handles</a>
+    </div>
+
+    <figure class="trace">
+      <svg viewBox="0 0 1200 120" preserveAspectRatio="none" role="img"
+           aria-label="A motor unit potential traced along a baseline.">
+        <path d="M0,74 H150 l22,-5 18,34 20,-84 18,96 16,-58 14,18 12,-10 H480
+                 l24,-4 17,30 19,-78 17,90 15,-54 13,16 11,-9 H840
+                 l26,-5 16,28 18,-74 18,86 14,-52 12,15 10,-8 H1200"
+              fill="none" stroke="var(--accent)" stroke-width="1.6"
+              stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"></path>
+      </svg>
+      <figcaption>Motor unit potentials — the shape behind every tool in the kit</figcaption>
+    </figure>
+  </div>
+
+  <section id="what">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">What it handles</p>
+        <h2>The administrative weight of a training programme, carried by the software.</h2>
+        <p>
+          Every part of this was written because a fellowship needed it that week — not
+          as a feature list drawn up in advance.
+        </p>
+      </div>
+
+      <div class="modules">
+        <article class="module">
+          <span class="num">01</span>
+          <h3>Teaching schedule</h3>
+          <p>
+            Sessions, topics and presenters across the academic year. Drafts are assigned
+            in bulk, reviewed, then published; swaps between presenters go through the
+            portal rather than a reply-all thread.
+          </p>
+        </article>
+        <article class="module">
+          <span class="num">02</span>
+          <h3>Clinic rotations</h3>
+          <p>
+            Fellow templates, rotation grids and per-site coverage, with away dates and
+            vacation requests folded into the same calendar the schedule is generated from.
+          </p>
+        </article>
+        <article class="module">
+          <span class="num">03</span>
+          <h3>Case log &amp; competencies</h3>
+          <p>
+            Fellows log studies with nerves, muscles and diagnoses recorded as structured
+            fields, so progress against competency targets is counted rather than estimated.
+          </p>
+        </article>
+        <article class="module">
+          <span class="num">04</span>
+          <h3>Feedback &amp; evaluations</h3>
+          <p>
+            Post-session feedback and quarterly evaluations are requested automatically,
+            chased automatically, and collected where the director can actually read them.
+          </p>
+        </article>
+        <article class="module">
+          <span class="num">05</span>
+          <h3>Handbook &amp; library</h3>
+          <p>
+            The programme handbook, session materials and a reading list, versioned and
+            kept where trainees will look for them instead of in an email attachment.
+          </p>
+        </article>
+        <article class="module">
+          <span class="num">06</span>
+          <h3>Electrodiagnostic toolkit</h3>
+          <p>
+            A 3D nerve and muscle atlas, a needle-EMG and NCS reference, a searchable
+            diagnostic testing directory, and a literature digest. Enabled per programme.
+          </p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="separate">
+    <div class="wrap">
+      <div class="split">
+        <div class="section-head">
+          <p class="eyebrow">How programmes sit side by side</p>
+          <h2>Your programme's records are yours alone.</h2>
+          <p>
+            A fellowship's case logs and feedback are among the most sensitive records it
+            keeps. Separation is enforced in the database itself, not by a filter the
+            application remembers to apply.
+          </p>
+        </div>
+
+        <div class="panel">
+          <ul class="rule-list">
+            <li>
+              <span class="k">Records</span>
+              <p><strong>Every row belongs to one programme.</strong> Cases, feedback,
+              evaluations, schedules, attendance and trades are readable only from inside
+              the programme that created them.</p>
+            </li>
+            <li>
+              <span class="k">People</span>
+              <p><strong>Roles are per programme.</strong> Someone may belong to two
+              fellowships with a different role in each, and sees each one separately.</p>
+            </li>
+            <li>
+              <span class="k">Directors</span>
+              <p><strong>A director governs their own programme.</strong> They appoint their
+              supervisors and fellows, and cannot reach another programme's records.</p>
+            </li>
+            <li>
+              <span class="k">Platform</span>
+              <p><strong>Administration is walled off from clinical content.</strong> The
+              account that creates programmes and enables tools does not get a window into
+              anyone's cases.</p>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="start">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Getting started</p>
+        <h2>Four steps, and the programme is yours to run.</h2>
+      </div>
+      <ol class="steps">
+        <li>
+          <div>
+            <h3>Your programme is created</h3>
+            <p>A dedicated fellowship space, with its own name, its own people and its own records.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>You appoint your director</h3>
+            <p>From there the programme is self-governing: the director adds supervisors, fellows and administrative assistants.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>You choose your tools</h3>
+            <p>The electrodiagnostic toolkit is enabled item by item, so a programme runs with what it uses and nothing more.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Your fellows sign in</h3>
+            <p>One address for everyone — and a sign-in button you can put on your own fellowship's website.</p>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="inquire">
+    <div class="wrap">
+      <div class="inquire">
+        <p class="eyebrow">Pricing</p>
+        <h2>Priced per programme. Tell us about yours.</h2>
+        <p>
+          Fellowships differ in size, in how many sites they cover and in which tools they
+          need, so pricing is quoted per programme rather than listed. Get in touch with
+          the number of fellows and supervisors you expect and we will come back to you.
+        </p>
+        <div class="actions">
+          <a class="btn btn-primary"
+             href="mailto:uoftneuromuscularfellowship@gmail.com?subject=Neuromuscular%20Fellowship%20Manager%20%E2%80%94%20enquiry">
+            Send an enquiry
+          </a>
+        </div>
+        <div class="contact-line">
+          <span>Already registered?</span>
+          <a href="https://app.neuromuscular.ca/login">Sign in to your programme</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Neuromuscular Fellowship Manager</p>
+    <div class="sites">
+      <a href="https://app.neuromuscular.ca/login">Programme sign-in</a>
+      <a href="https://www.neuromuscularto.ca">City Wide Neuromuscular Fellowship, Toronto</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

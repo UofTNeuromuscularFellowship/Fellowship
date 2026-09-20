@@ -10,7 +10,7 @@ import {
   canEditCase,
   consentRequired,
   createCase,
-  DEFAULT_CONSENT_WORDING,
+  defaultConsentWording,
   deleteCase,
   findingsFor,
   getConsent,
@@ -177,7 +177,8 @@ function UploadForm({
   const [busy, setBusy] = useState(false)
   // Consent, captured at upload for anything a patient could be recognised in.
   const [patientName, setPatientName] = useState('')
-  const [wording, setWording] = useState(DEFAULT_CONSENT_WORDING)
+  const { site: consentSite } = useAuth()
+  const [wording, setWording] = useState(() => defaultConsentWording(consentSite?.name ?? 'this fellowship'))
   const [signature, setSignature] = useState<Blob | null>(null)
   const [byRepresentative, setByRepresentative] = useState(false)
   const [signerName, setSignerName] = useState('')

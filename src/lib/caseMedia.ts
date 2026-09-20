@@ -14,7 +14,11 @@ export const BUCKET = 'case-media'
 export const CONSENT_BUCKET = 'case-consent'
 
 /**
- * Default consent wording.
+ * Default consent wording, built from the programme's own name.
+ *
+ * This used to name one fellowship in a string constant. The portal now runs
+ * more than one, and a patient must never be asked to sign a form naming a
+ * programme that is not treating them — so the caller passes its own name in.
  *
  * The "pending review" marker that used to close this text was removed at the
  * fellowship's request on 2026-09-04. It is still editable per upload, and it
@@ -39,10 +43,11 @@ export const CONSENT_BUCKET = 'case-consent'
  * authenticated member. A patient signing this is agreeing to a closed teaching
  * library, not to publication.
  */
-export const DEFAULT_CONSENT_WORDING = [
-  'I understand that the Citywide Neuromuscular Fellowship at the University of Toronto ' +
-    'keeps a teaching library of medical images, which is used by the doctors and trainees ' +
-    'of the fellowship to learn to recognise and diagnose neuromuscular conditions.',
+export function defaultConsentWording(programme: string): string {
+  return [
+    `I understand that ${programme} keeps a teaching library of medical images, ` +
+      'which is used by the doctors and trainees of the fellowship to learn to recognise ' +
+      'and diagnose neuromuscular conditions.',
 
   'My physician or other healthcare professional has asked me, and I hereby agree, to allow ' +
     'him or her to:',
@@ -74,7 +79,8 @@ export const DEFAULT_CONSENT_WORDING = [
     'my treatment, my care, or any service or benefit I receive.',
 
   'I understand that I will receive no payment for allowing the Images to be taken or used.',
-].join('\n\n')
+  ].join('\n\n')
+}
 
 /** Long enough to read a case and annotate it without the link dying mid-edit. */
 export const MEDIA_URL_TTL = 4 * 3600

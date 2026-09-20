@@ -7,8 +7,28 @@
       "status": 307,
       "headers": { "Location": "/login" }
     },
+    {
+      "src": "/",
+      "has": [{ "type": "host", "value": "www.neuromuscular.ca" }],
+      "dest": "/platform.html"
+    },
+    {
+      "src": "/",
+      "has": [{ "type": "host", "value": "neuromuscular.ca" }],
+      "dest": "/platform.html"
+    },
     { "src": "/", "dest": "/program.html" },
     { "handle": "filesystem" },
+    {
+      "src": "/.*",
+      "has": [{ "type": "host", "value": "www.neuromuscular.ca" }],
+      "dest": "/platform.html"
+    },
+    {
+      "src": "/.*",
+      "has": [{ "type": "host", "value": "neuromuscular.ca" }],
+      "dest": "/platform.html"
+    },
     { "src": "/.*", "dest": "/index.html" }
   ],
   "crons": [
