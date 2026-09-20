@@ -112,6 +112,24 @@ section{padding-block:clamp(56px,8vw,92px)}
 .module .num{font-family:var(--mono); font-size:11px; color:var(--accent); letter-spacing:.1em; display:block; margin-bottom:12px}
 .module p{font-size:15px; line-height:1.6; color:var(--muted); margin-top:9px}
 
+/* ---------- toolkit ---------- */
+.tools{
+  margin:clamp(34px,5vw,52px) 0 0; padding:0;
+  display:grid; gap:0 clamp(28px,4vw,56px);
+  grid-template-columns:1fr;
+}
+@media (min-width:760px){ .tools{grid-template-columns:1fr 1fr} }
+.tool{padding-block:22px; border-top:1px solid var(--line)}
+.tool dt{
+  font-family:var(--mono); font-size:11.5px; letter-spacing:.11em;
+  text-transform:uppercase; color:var(--accent); margin-bottom:8px;
+}
+.tool dd{margin:0; font-size:15.5px; line-height:1.6; color:var(--body); max-width:46ch}
+.tool:last-child{border-bottom:1px solid var(--line)}
+@media (min-width:760px){
+  .tool:nth-last-child(2){border-bottom:1px solid var(--line)}
+}
+
 /* ---------- separation ---------- */
 .split{display:grid; gap:clamp(28px,4vw,56px); grid-template-columns:1fr; align-items:start}
 @media (min-width:860px){ .split{grid-template-columns:1fr 1fr} }
@@ -207,7 +225,7 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--accent); outline-offs
     </p>
     <div class="actions">
       <a class="btn btn-primary" href="#inquire">Inquire about your programme</a>
-      <a class="btn btn-quiet" href="#what">See what it handles</a>
+      <a class="btn btn-quiet" href="#toolkit">See the toolkit</a>
     </div>
 
     <figure class="trace">
@@ -278,13 +296,72 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--accent); outline-offs
         </article>
         <article class="module">
           <span class="num">06</span>
-          <h3>Electrodiagnostic toolkit</h3>
+          <h3>People &amp; roles</h3>
           <p>
-            A 3D nerve and muscle atlas, a needle-EMG and NCS reference, a searchable
-            diagnostic testing directory, and a literature digest. Enabled per programme.
+            Your director appoints supervisors, fellows and administrative assistants,
+            and an assistant acts for the providers they support &mdash; so the rota, the
+            reminders and the CCs all reach the right desk.
           </p>
         </article>
       </div>
+    </div>
+  </section>
+
+  <section id="toolkit">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">The electrodiagnostic toolkit</p>
+        <h2>Six tools for the teaching itself, not the timetable.</h2>
+        <p>
+          Enabled per programme, one at a time &mdash; a fellowship runs with what it
+          uses and nothing more.
+        </p>
+      </div>
+
+      <dl class="tools">
+        <div class="tool">
+          <dt>3D atlas</dt>
+          <dd>
+            A nerve and muscle atlas that works as an interactive needle-EMG and
+            nerve conduction reference &mdash; rotate to the approach you are teaching.
+          </dd>
+        </div>
+        <div class="tool">
+          <dt>Calculators</dt>
+          <dd>
+            The EMG and NCS calculations that come up while teaching and while
+            learning, worked out in the open rather than on the back of a chart.
+          </dd>
+        </div>
+        <div class="tool">
+          <dt>Waveforms &amp; images</dt>
+          <dd>
+            Build your own database of reference images and video, from diagnostic
+            imaging through to the waveforms themselves.
+          </dd>
+        </div>
+        <div class="tool">
+          <dt>Anatomy practice</dt>
+          <dd>
+            Generate test material for teaching out of the library your programme has
+            already built.
+          </dd>
+        </div>
+        <div class="tool">
+          <dt>Literature digest</dt>
+          <dd>
+            What is new in the neuromuscular literature, gathered for you &mdash; to stay
+            current, and to run a journal club from.
+          </dd>
+        </div>
+        <div class="tool">
+          <dt>Reference library</dt>
+          <dd>
+            A digital library of your fellowship's own reference material, in one
+            place your trainees will actually look.
+          </dd>
+        </div>
+      </dl>
     </div>
   </section>
 
