@@ -44,7 +44,7 @@ function useCollapsedPanel() {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { profile, signOut, site, sites, tools, isPlatformAdmin, switchSite } = useAuth()
+  const { profile, signOut, site, sites, tools, isPlatformAdmin, switchSite, courseCount } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const role = profile?.role
@@ -54,7 +54,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const hideClinic = role === 'supervisor' && profile?.teaching_only === true
   // A platform admin with no program sees only the Platform area.
   const groups = site
-    ? navFor(role, { hideClinic, tools, platformAdmin: isPlatformAdmin })
+    ? navFor(role, { hideClinic, tools, platformAdmin: isPlatformAdmin, courses: courseCount > 0 })
     : navFor(undefined, { platformAdmin: isPlatformAdmin }).filter((g) => g.id === 'platform')
   const siteName = site?.short_name ?? site?.name ?? (isPlatformAdmin ? 'Platform' : '')
   const switchable = sites.length > 1 ? sites.map((s) => ({ id: s.id, name: s.name, active: s.is_active })) : undefined

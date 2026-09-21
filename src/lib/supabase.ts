@@ -14,3 +14,7 @@ const anonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || FALLBACK_A
 export const supabase = createClient<Database>(url, anonKey, {
   auth: { persistSession: true, autoRefreshToken: true },
 })
+
+/** For calling edge functions with fetch, where the JSON error body matters. */
+export const FUNCTIONS_URL = `${url}/functions/v1`
+export const PUBLIC_ANON_KEY = anonKey

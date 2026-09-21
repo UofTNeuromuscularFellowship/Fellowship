@@ -1,7 +1,7 @@
 import type { IconName } from '../../lib/navigation'
 
 // ---------------------------------------------------------------------------
-// The seven rail icons.
+// The rail icons.
 //
 // Drawn here rather than pulled from an icon set: they are on one 24-unit grid
 // with one stroke weight, and two of them (the case log, the EMG toolkit) have
@@ -64,6 +64,16 @@ const PATHS: Record<IconName, React.ReactNode> = {
     <>
       <path d="M12 7.2C10.4 5.9 8.3 5.3 5 5.3v12.4c3.3 0 5.4.6 7 1.9 1.6-1.3 3.7-1.9 7-1.9V5.3c-3.3 0-5.4.6-7 1.9z" />
       <path d="M12 7.2V19.6" />
+    </>
+  ),
+
+  // A lanyard badge — events you host.
+  events: (
+    <>
+      <path d="M9 3.5 12 8l3-4.5" />
+      <rect x="5.5" y="8" width="13" height="12.5" rx="2" />
+      <circle cx="12" cy="12.6" r="1.9" />
+      <path d="M8.6 17.6c.7-1.4 1.9-2.1 3.4-2.1s2.7.7 3.4 2.1" />
     </>
   ),
 

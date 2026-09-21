@@ -24,8 +24,8 @@ const TOOLS: { key: string; label: string; blurb: string }[] = [
   { key: 'atlas-3d', label: '3D atlas', blurb: 'Muscles, nerves and needle insertion points in three dimensions.' },
   { key: 'waveforms', label: 'Waveforms & images library', blurb: 'Teaching traces, ultrasound, MRI and biopsy, annotated.' },
   { key: 'library', label: 'Literature library', blurb: 'Reference texts, guidelines and the PubMed reading list.' },
-  { key: 'calculators', label: 'EMG/NCS calculators', blurb: 'Reference values and the calculations you repeat.' },
   { key: 'study', label: 'Anatomy self-test', blurb: 'Self-testing on muscles, nerves and root levels.' },
+  { key: 'conference', label: 'Conference management', blurb: 'Itinerary, invitations and RSVPs, speakers, logistics, feedback and letters.' },
   { key: 'ultrasound', label: 'Ultrasound primer', blurb: 'Currently withdrawn from menus everywhere; kept for when it returns.' },
 ]
 

@@ -12,10 +12,12 @@ interface Props {
 }
 
 export function ProtectedRoute({ children, allow, skipPasswordGate, platformOnly }: Props) {
-  const { session, profile, loading, tools, isPlatformAdmin, site } = useAuth()
+  const { session, profile, loading, profileReady, tools, isPlatformAdmin, site, sites } = useAuth()
   const location = useLocation()
 
-  if (loading) {
+  // After a sign-in the session arrives a moment before the programs do; the
+  // "belongs to no program" rule below must not fire in that gap.
+  if (loading || (session && !profileReady)) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <p className="text-sm text-muted">Loading…</p>
@@ -50,6 +52,13 @@ export function ProtectedRoute({ children, allow, skipPasswordGate, platformOnly
   // A platform admin with no program of their own has nowhere else to go.
   if (!site && isPlatformAdmin && location.pathname !== '/platform') {
     return <Navigate to="/platform" replace />
+  }
+
+  // Someone who belongs to no program - a conference attendee, or a former
+  // member - has only their courses. (Their account can read no program's
+  // data anyway; this keeps them off empty pages.)
+  if (sites.length === 0 && !isPlatformAdmin) {
+    return <Navigate to="/courses" replace />
   }
 
   if (allow && profile && !allow.includes(profile.role)) {

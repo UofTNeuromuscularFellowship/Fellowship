@@ -43,6 +43,7 @@ export type IconName =
   | 'caselog'
   | 'emg'
   | 'program'
+  | 'events'
   | 'settings'
   | 'platform'
 
@@ -172,7 +173,9 @@ export const NAV: NavGroup[] = [
       },
       {
         to: '/calculators',
-        tool: 'calculators',
+        // Deliberately no `tool:` key. The calculators are free to the public
+        // at /tools/calculators, so gating them behind a paid entitlement
+        // inside the portal would hide from members what anyone can use.
         label: 'EMG/NCS calculators',
         blurb: 'Reference values and the calculations you repeat.',
         allow: ['fellow', 'supervisor', 'director'],
@@ -202,6 +205,29 @@ export const NAV: NavGroup[] = [
         label: 'People',
         blurb: 'Fellows, supervisors and their accounts.',
         allow: ['director', 'admin'],
+      },
+    ],
+  },
+  {
+    id: 'events',
+    label: 'Events',
+    tagline: 'Courses and conferences you host',
+    icon: 'events',
+    items: [
+      {
+        to: '/events',
+        tool: 'conference',
+        label: 'Conferences',
+        blurb: 'Itinerary, invitations and RSVPs, speakers, logistics, feedback and participation letters.',
+        allow: ['director', 'admin'],
+      },
+      {
+        // Shown only to someone registered for or invited to a course, in
+        // any program - see navFor's `courses` option. No toolkit gate: the
+        // course may belong to another program entirely.
+        to: '/courses',
+        label: 'My courses',
+        blurb: 'Courses and conferences you are invited to or registered for.',
       },
     ],
   },
@@ -243,7 +269,7 @@ export const NAV: NavGroup[] = [
 /** The groups this role can see, with the items they cannot see removed. */
 export function navFor(
   role: UserRole | undefined,
-  opts?: { hideClinic?: boolean; tools?: Set<string>; platformAdmin?: boolean },
+  opts?: { hideClinic?: boolean; tools?: Set<string>; platformAdmin?: boolean; courses?: boolean },
 ): NavGroup[] {
   return NAV.map((g) => ({
     ...g,
@@ -252,6 +278,7 @@ export function navFor(
       // A teaching-only supervisor runs no fellowship clinics, so the clinic
       // schedule is noise for them. Everything teaching-related stays put.
       if (opts?.hideClinic && i.to === '/clinic') return false
+      if (i.to === '/courses') return !!opts?.courses
       // A toolkit item the program has not been granted is not offered. (The
       // route and the database refuse it too; this only keeps the menu honest.)
       if (i.tool && opts?.tools && !opts.tools.has(i.tool)) return false
@@ -264,6 +291,8 @@ export function navFor(
 export function toolForPath(pathname: string): string | undefined {
   if (pathname === '/ultrasound') return 'ultrasound'
   if (pathname === '/test-mode') return 'study'
+  // /events/<id> and /events/<id>/badges are not menu items themselves.
+  if (pathname === '/events' || pathname.startsWith('/events/')) return 'conference'
   return itemForPath(NAV, pathname)?.tool
 }
 
@@ -278,6 +307,8 @@ export function groupForPath(groups: NavGroup[], pathname: string): NavGroup | u
   const overview = pathname.match(/^\/s\/([^/]+)$/)
   if (overview) return groups.find((g) => g.id === overview[1])
   return groups.find((g) => g.items.some((i) => i.to === pathname))
+    // A page below a menu item (/events/<id>) belongs to that item's area.
+    ?? groups.find((g) => g.items.some((i) => pathname.startsWith(i.to + '/')))
 }
 
 export function itemForPath(groups: NavGroup[], pathname: string): NavItem | undefined {

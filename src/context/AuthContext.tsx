@@ -45,6 +45,16 @@ interface AuthContextValue {
   tools: Set<string>
   isPlatformAdmin: boolean
   loading: boolean
+  /**
+   * True once programs, profile and courses have loaded for the CURRENT
+   * session. `loading` only covers the first session found on page load; a
+   * sign-in afterwards sets the session a moment before its programs arrive,
+   * and anything that routes on "belongs to no program" must wait for this.
+   */
+  profileReady: boolean
+  /** Conference registrations (any program) linked to this login. */
+  courseCount: number
+  refreshCourses: () => Promise<void>
   signIn: (email: string, password: string) => Promise<{ error: string | null }>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
@@ -59,6 +69,9 @@ const AuthContext = createContext<AuthContextValue>({
   tools: new Set(),
   isPlatformAdmin: false,
   loading: true,
+  profileReady: false,
+  courseCount: 0,
+  refreshCourses: async () => {},
   signIn: async () => ({ error: 'not ready' }),
   signOut: async () => {},
   refreshProfile: async () => {},
@@ -73,6 +86,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [tools, setTools] = useState<Set<string>>(new Set())
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [readyFor, setReadyFor] = useState<string | null>(null)
+  const [courseCount, setCourseCount] = useState(0)
+
+  const refreshCourses = useCallback(async () => {
+    const { data, error } = await supabase.rpc('conf_my_courses')
+    setCourseCount(error ? 0 : ((data as unknown[] | null) ?? []).length)
+  }, [])
 
   // Everything about "who am I, where am I" in one pass. Order matters:
   // memberships first, because someone whose only membership is not yet the
@@ -110,7 +130,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSite(null)
       setTools(new Set())
     }
-  }, [])
+    await refreshCourses()
+    setReadyFor(userId)
+  }, [refreshCourses])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -125,7 +147,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s)
       if (s?.user) loadProfile(s.user.id)
-      else { setProfile(null); setSite(null); setSites([]); setTools(new Set()); setIsPlatformAdmin(false) }
+      else {
+        setProfile(null); setSite(null); setSites([]); setTools(new Set()); setIsPlatformAdmin(false)
+        setReadyFor(null); setCourseCount(0)
+      }
       // Arriving via a password-reset email link: take them straight to
       // the change-password screen, wherever the link landed.
       if (_event === 'PASSWORD_RECOVERY' && window.location.pathname !== '/change-password') {
@@ -143,7 +168,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function signOut() {
     await supabase.auth.signOut()
     setProfile(null); setSite(null); setSites([]); setTools(new Set()); setIsPlatformAdmin(false)
+    setReadyFor(null); setCourseCount(0)
   }
+
+  const profileReady = !!session?.user && readyFor === session.user.id
 
   async function refreshProfile() {
     const { data } = await supabase.auth.getSession()
@@ -160,7 +188,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ session, profile, site, sites, tools, isPlatformAdmin, loading, signIn, signOut, refreshProfile, switchSite }}>
+    <AuthContext.Provider value={{
+      session, profile, site, sites, tools, isPlatformAdmin, loading, profileReady, courseCount, refreshCourses,
+      signIn, signOut, refreshProfile, switchSite,
+    }}>
       {children}
     </AuthContext.Provider>
   )

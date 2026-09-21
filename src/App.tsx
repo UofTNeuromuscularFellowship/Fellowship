@@ -1,7 +1,9 @@
 import { lazy, Suspense } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { AppShell } from './components/AppShell'
+import { CoursesFrame } from './components/AttendeeShell'
+import { useAuth } from './context/AuthContext'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
 import ChangePassword from './pages/ChangePassword'
@@ -11,6 +13,7 @@ import ClinicRotations from './pages/ClinicRotations'
 import Cases from './pages/Cases'
 import Competency from './pages/Competency'
 import Calculators from './pages/Calculators'
+import PublicCalculators from './pages/PublicCalculators'
 import StudyTools from './pages/StudyTools'
 import TeachingCases from './pages/TeachingCases'
 import Handbook from './pages/Handbook'
@@ -33,10 +36,36 @@ import NotFound from './pages/NotFound'
 // main portal bundle for the many users who never open it.
 const Atlas3D = lazy(() => import('./pages/Atlas3D'))
 
+// Conference management: a coordinator workspace few members open, and the
+// signed-out pages invitees and speakers reach from email. Both are split out
+// so neither adds weight to the everyday portal bundle.
+const Conferences = lazy(() => import('./pages/Conferences'))
+const ConferenceEvent = lazy(() => import('./pages/ConferenceEvent'))
+const ConferenceBadges = lazy(() => import('./pages/ConferenceBadges'))
+const EventPublic = lazy(() => import('./pages/public/EventPublic'))
+const SpeakerDisclosure = lazy(() => import('./pages/public/SpeakerDisclosure'))
+const RegisterPublic = lazy(() => import('./pages/public/RegisterPublic'))
+const MyCourses = lazy(() => import('./pages/MyCourses'))
+const EventInPortal = lazy(() => import('./pages/public/EventPublic').then((m) => ({ default: m.EventInPortal })))
+
 function LazyPage({ children }: { children: React.ReactNode }) {
   return (
     <Suspense fallback={<p className="text-sm text-muted">Loading…</p>}>{children}</Suspense>
   )
+}
+
+/**
+ * Signed in, but no program required: My courses is for conference
+ * attendees (who belong to no program) as much as for members.
+ */
+function SignedIn({ children }: { children: React.ReactNode }) {
+  const { session, loading, profileReady } = useAuth()
+  const location = useLocation()
+  if (loading || (session && !profileReady)) {
+    return <div className="flex min-h-screen items-center justify-center"><p className="text-sm text-muted">Loading…</p></div>
+  }
+  if (!session) return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />
+  return <CoursesFrame><LazyPage>{children}</LazyPage></CoursesFrame>
 }
 
 function Shell({ children, allow, platformOnly }: {
@@ -56,11 +85,27 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
+      {/* Free and signed-out. Also served on the marketing host - see
+          PublicCalculators for why its links are absolute. */}
+      <Route path="/tools/calculators" element={<PublicCalculators />} />
+      <Route path="/tools" element={<Navigate to="/tools/calculators" replace />} />
       {/* Not wrapped in ProtectedRoute: someone arriving from a reset email has
           no session yet — redeeming the token in the page is what creates one.
           ChangePassword sends anyone with neither a token nor a session to
           /login itself. */}
       <Route path="/change-password" element={<ChangePassword />} />
+      {/* Conference invitees and speakers are not portal members. These pages
+          take a private token from their email and never ask anyone to sign
+          in - see pages/public/EventPublic.tsx. (/speaker, not /s: /s/:groupId
+          is the section overview.) */}
+      <Route path="/e/:token" element={<LazyPage><EventPublic /></LazyPage>} />
+      <Route path="/e/:token/:view" element={<LazyPage><EventPublic /></LazyPage>} />
+      <Route path="/speaker/:token" element={<LazyPage><SpeakerDisclosure /></LazyPage>} />
+      <Route path="/r/:token" element={<LazyPage><RegisterPublic /></LazyPage>} />
+      {/* A member's or an attendee's own courses, from any program. */}
+      <Route path="/courses" element={<SignedIn><MyCourses /></SignedIn>} />
+      <Route path="/courses/:token" element={<SignedIn><EventInPortal /></SignedIn>} />
+      <Route path="/courses/:token/:view" element={<SignedIn><EventInPortal /></SignedIn>} />
       <Route path="/dashboard" element={<Shell><Dashboard /></Shell>} />
       {/* One route serving every area's overview. The list of areas lives in
           lib/navigation.ts; SectionOverview sends an unknown or forbidden id to
@@ -107,6 +152,16 @@ export default function App() {
           publish it again. */}
       <Route path="/ultrasound" element={<Shell allow={['director', 'admin']}><UltrasoundPrimer /></Shell>} />
       <Route path="/waveforms" element={<Shell allow={['fellow', 'supervisor', 'director']}><CaseMediaLibrary /></Shell>} />
+      {/* Conference management: the fellowship director or a program admin,
+          matching is_director_or_admin() behind every conf_* table. Gated on
+          the 'conference' toolkit entry like the other optional modules. */}
+      <Route path="/events" element={<Shell allow={['director', 'admin']}><LazyPage><Conferences /></LazyPage></Shell>} />
+      <Route path="/events/:id" element={<Shell allow={['director', 'admin']}><LazyPage><ConferenceEvent /></LazyPage></Shell>} />
+      {/* Printable sheet: signed in, but without the portal frame around it. */}
+      <Route
+        path="/events/:id/badges"
+        element={<ProtectedRoute allow={['director', 'admin']}><LazyPage><ConferenceBadges /></LazyPage></ProtectedRoute>}
+      />
       <Route path="/settings" element={<Shell><Settings /></Shell>} />
       {/* Platform admin only: the programs using this portal. Not part of any
           program, so no site role applies — see ProtectedRoute. */}

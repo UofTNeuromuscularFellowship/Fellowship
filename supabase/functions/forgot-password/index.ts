@@ -18,21 +18,25 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 // has expired" page. A scanner that fetches the new link just gets HTML; the
 // token is only redeemed when the page's JavaScript runs verifyOtp.
 //
-// v4 (multi-site): three things that were correct for one programme and wrong
+// v4 (multi-site): three things that were correct for one program and wrong
 // for several.
 //   1. app_settings is keyed (site_id, key). Reading email_from and portal_url
 //      with .maybeSingle() and no site filter throws PGRST116 the moment a
-//      second programme holds a row under either key, which would silently
+//      second program holds a row under either key, which would silently
 //      kill password resets for everyone. Both are platform-wide — one
 //      deployment, one domain — so they are read from the platform site.
-//   2. users.status is now only a mirror of whichever programme the person
-//      last opened. Somebody active at programme B but with programme A as
+//   2. users.status is now only a mirror of whichever program the person
+//      last opened. Somebody active at program B but with program A as
 //      their active site would have been refused a reset. Eligibility is an
 //      active membership ANYWHERE, read from site_memberships.
 //   3. The email_log row is written with the person's site so the trail is
 //      attributable; the service role's own current_site_id() is null.
 // The rate-limit key stays global per address — one reset email per address
-// per hour is the right ceiling regardless of how many programmes they are in.
+// per hour is the right ceiling regardless of how many programs they are in.
+//
+// v5: conference attendees. Their accounts belong to no program, so the
+// membership test alone refused them; an account linked to a conference
+// invitation is now eligible as well.
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -71,12 +75,23 @@ Deno.serve(async (req) => {
       .eq('user_id', u.id)
       .eq('status', 'active')
     if (memErr) { console.error('pwreset: membership lookup failed', email, memErr.message); return json(200, { ok: true }) }
-    if (!memberships || memberships.length === 0) {
-      console.error('pwreset: no active membership at any programme', email)
+    const siteIds = (memberships ?? []).map((m: { site_id: string }) => m.site_id)
+
+    // v5: a conference attendee's account belongs to no program, but is
+    // linked to at least one invitation - that makes it a live account too.
+    let attendeeSite: string | null = null
+    if (siteIds.length === 0) {
+      const { data: inv } = await admin.from('conf_invitees').select('site_id')
+        .eq('user_id', u.id).limit(1).maybeSingle()
+      attendeeSite = (inv?.site_id as string | undefined) ?? null
+    }
+    if (siteIds.length === 0 && !attendeeSite) {
+      console.error('pwreset: no active membership or conference registration', email)
       return json(200, { ok: true })
     }
-    const siteIds = memberships.map((m: { site_id: string }) => m.site_id)
-    const logSite = siteIds.includes(u.active_site_id as string) ? (u.active_site_id as string) : siteIds[0]
+    const logSite = siteIds.length === 0
+      ? attendeeSite
+      : siteIds.includes(u.active_site_id as string) ? (u.active_site_id as string) : siteIds[0]
     if (!resendKey) { console.error('pwreset: RESEND_API_KEY is not set'); return json(200, { ok: true }) }
 
     // Rate limit: one reset email per address per hour

@@ -140,7 +140,11 @@ Deno.serve(async (req: Request) => {
       email: emailLc,
       password: tempPassword,
       email_confirm: true,
-      user_metadata: { full_name, role, site_id: siteId, cohort_year: cohort_year ?? null, must_change_password: true },
+      user_metadata: { full_name, cohort_year: cohort_year ?? null, must_change_password: true },
+      // Role and program go in app_metadata, which only the service role can
+      // write. handle_new_user (0033) reads them from there and nowhere else,
+      // so a sign-up cannot name its own role or program.
+      app_metadata: { role, site_id: siteId },
     })
     if (createErr || !created?.user) return reply({ error: createErr?.message ?? 'auth create failed' }, 400)
 
