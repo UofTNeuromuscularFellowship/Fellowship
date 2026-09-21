@@ -3,13 +3,13 @@
 --  1. pubmed_terms was misfiled as platform state. Settings.tsx reads it with
 --     .maybeSingle() and upserts it as the director: with the row under the
 --     platform pseudo-site the upsert created a SECOND (site-scoped) row and
---     the next read returned two, breaking the page. It is per-programme
+--     the next read returned two, breaking the page. It is per-program
 --     curation, so it belongs to the site.
 --  2. digest_settings let ANY director read/write EVERY site's rows.
 --  3-4. Shared reference data (case_finding vocabulary, gene/muscle tables,
---     publications) was writable by any site's director — one programme could
---     edit or delete content every other programme depends on.
---  5. atlas3d_markers had no site column: a second programme's director could
+--     publications) was writable by any site's director — one program could
+--     edit or delete content every other program depends on.
+--  5. atlas3d_markers had no site column: a second program's director could
 --     edit or delete Toronto's curated markers. Reading stays shared (that is
 --     the point of the atlas); writing is confined to the authoring site.
 --  6. auto_assign_teaching has been broken since long before multi-site:
@@ -35,7 +35,7 @@ create policy digest_self on public.digest_settings for all to public
   );
 
 -- Extending a shared vocabulary is additive and stays with directors; editing
--- or removing a code retags other programmes' media, so that is platform-only.
+-- or removing a code retags other programs' media, so that is platform-only.
 drop policy if exists case_finding_write on public.case_finding;
 create policy case_finding_insert on public.case_finding for insert to authenticated
   with check (coalesce(public.is_director_or_admin(), false) or public.is_platform_admin());
@@ -60,7 +60,7 @@ update public.atlas3d_markers set site_id = '00000000-0000-4000-8000-00000000000
 alter table public.atlas3d_markers alter column site_id set not null;
 create index if not exists atlas3d_markers_site_idx on public.atlas3d_markers(site_id);
 comment on column public.atlas3d_markers.site_id is
-  'Authoring programme. Approved markers are readable by every programme (the atlas is shared); only the authoring programme may edit or remove its own.';
+  'Authoring program. Approved markers are readable by every program (the atlas is shared); only the authoring program may edit or remove its own.';
 
 drop policy if exists atlas3d_markers_director_all on public.atlas3d_markers;
 drop policy if exists atlas3d_markers_insert on public.atlas3d_markers;

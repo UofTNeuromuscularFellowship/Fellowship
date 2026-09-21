@@ -3,33 +3,88 @@
   "routes": [
     {
       "src": "/",
-      "has": [{ "type": "host", "value": "app.neuromuscular.ca" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "app.neuromuscular.ca"
+        }
+      ],
       "status": 307,
-      "headers": { "Location": "/login" }
+      "headers": {
+        "Location": "/login"
+      }
     },
     {
       "src": "/",
-      "has": [{ "type": "host", "value": "www.neuromuscular.ca" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "www.neuromuscular.ca"
+        }
+      ],
       "dest": "/platform.html"
     },
     {
       "src": "/",
-      "has": [{ "type": "host", "value": "neuromuscular.ca" }],
-      "dest": "/platform.html"
-    },
-    { "src": "/", "dest": "/program.html" },
-    { "handle": "filesystem" },
-    {
-      "src": "/.*",
-      "has": [{ "type": "host", "value": "www.neuromuscular.ca" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "neuromuscular.ca"
+        }
+      ],
       "dest": "/platform.html"
     },
     {
+      "src": "/",
+      "dest": "/program.html"
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/tools(/.*)?",
+      "has": [
+        {
+          "type": "host",
+          "value": "www.neuromuscular.ca"
+        }
+      ],
+      "dest": "/index.html"
+    },
+    {
+      "src": "/tools(/.*)?",
+      "has": [
+        {
+          "type": "host",
+          "value": "neuromuscular.ca"
+        }
+      ],
+      "dest": "/index.html"
+    },
+    {
       "src": "/.*",
-      "has": [{ "type": "host", "value": "neuromuscular.ca" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "www.neuromuscular.ca"
+        }
+      ],
       "dest": "/platform.html"
     },
-    { "src": "/.*", "dest": "/index.html" }
+    {
+      "src": "/.*",
+      "has": [
+        {
+          "type": "host",
+          "value": "neuromuscular.ca"
+        }
+      ],
+      "dest": "/platform.html"
+    },
+    {
+      "src": "/.*",
+      "dest": "/index.html"
+    }
   ],
   "crons": [
     {

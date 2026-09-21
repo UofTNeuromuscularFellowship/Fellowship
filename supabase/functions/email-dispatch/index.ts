@@ -12,15 +12,15 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 // Multi-site notes, all of which were live defects before this revision:
 //
 //   1. app_settings is keyed (site_id, key). Reading a key with .maybeSingle()
-//      and no site filter throws the moment a second programme sets its own
+//      and no site filter throws the moment a second program sets its own
 //      email_from or portal_url - and because that read happens before the
-//      queue flush, it would have stopped ALL mail for EVERY programme.
+//      queue flush, it would have stopped ALL mail for EVERY program.
 //      Sender identity and portal URL are platform-wide (one deployment, one
 //      domain), so they are read from the platform site explicitly.
 //   2. Sections 2 and 3 selected from users with no site filter, and users.role
-//      and users.status are now only a MIRROR of whichever programme that
+//      and users.status are now only a MIRROR of whichever program that
 //      person last opened. So they would have emailed every fellow of every
-//      programme about one programme's session, and would silently skip anyone
+//      program about one program's session, and would silently skip anyone
 //      whose mirrored role belongs to their other site. Rosters are now read
 //      per site from site_memberships, which is the authoritative role.
 //   3. email_log rows were written with no site_id. The column defaults to
@@ -82,7 +82,7 @@ Deno.serve(async (req: Request) => {
     let failed = 0
     const preview: { ref: string; to: string; subject: string }[] = []
 
-    // siteId is the programme this message is sent on behalf of. It is written
+    // siteId is the program this message is sent on behalf of. It is written
     // to email_log so the trail is attributable and visible under RLS; the
     // service role's own current_site_id() is null and cannot supply it.
     async function send(refKey: string, to: string, subject: string, html: string, siteId: string | null): Promise<boolean> {
@@ -101,7 +101,7 @@ Deno.serve(async (req: Request) => {
       return true
     }
 
-    /** Active members of one programme holding one role, by membership. */
+    /** Active members of one program holding one role, by membership. */
     async function roster(siteId: string, role: string): Promise<Person[]> {
       const { data, error } = await admin.from('site_memberships')
         .select('user_id, users:users!site_memberships_user_id_fkey(id, email, full_name, assistant_emails)')
@@ -114,7 +114,7 @@ Deno.serve(async (req: Request) => {
 
     // ---------- 1) Flush the event queue ----------
     // Site-agnostic on purpose: each queued row already carries its recipient
-    // and the programme it was enqueued for.
+    // and the program it was enqueued for.
     const { data: queued } = await admin
       .from('email_queue')
       .select('id, ref_key, to_email, subject, html, site_id')
@@ -183,7 +183,7 @@ Deno.serve(async (req: Request) => {
 
             // CC administrative assistants: typed emails + linked assistant
             // accounts. Both the link and the assistant's active membership
-            // are scoped to this programme.
+            // are scoped to this program.
             const ccSet = new Set<string>()
             for (const a of ((u.assistant_emails as string[] | null) ?? [])) {
               if (a) ccSet.add(a.toLowerCase())

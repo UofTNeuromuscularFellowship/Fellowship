@@ -2,26 +2,26 @@
 -- 0028 — tenant hardening
 --
 -- Three things the multi-site migration left behind, all of which only bite
--- once a second programme exists, plus the consent attestation for teaching
+-- once a second program exists, plus the consent attestation for teaching
 -- cases.
 --
 --   1. neuro_test_directory had no site_id at all. Every row was visible to
---      every programme, a test one programme added in the portal would have
+--      every program, a test one program added in the portal would have
 --      appeared in the other's directory, and its single hidden_at/hidden_by/
---      hidden_reason columns meant one programme's curation decisions hid rows
+--      hidden_reason columns meant one program's curation decisions hid rows
 --      for everybody. Worse, neuro_test_directory_manage granted ALL to anyone
 --      passing is_director_or_admin() with no site test, so the director of
---      programme B could edit or delete programme A's locally added tests and
+--      program B could edit or delete program A's locally added tests and
 --      the shared national rows alike.
 --
 --      The table is split: rows keep their own site_id (null = shared national
 --      mirror), hiding moves to a per-site table, and the name
 --      neuro_test_directory becomes a view so the portal keeps working
---      unchanged while reading and writing only its own programme's view of
+--      unchanged while reading and writing only its own program's view of
 --      the directory.
 --
 --   2. list_sites() was executable by anon, so the roster of subscribing
---      programmes could be read from the public internet without signing in.
+--      programs could be read from the public internet without signing in.
 --
 --   3. teaching_cases had no record that the patient agreed to their case
 --      being used for teaching, and nothing in the database stopped a fellow
@@ -36,12 +36,12 @@ alter table public.neuro_test_directory
   add column if not exists site_id uuid references public.sites(id) on delete cascade;
 
 comment on column public.neuro_test_directory.site_id is
-  'Null = shared national mirror, visible to every programme. Non-null = a test this programme added itself.';
+  'Null = shared national mirror, visible to every program. Non-null = a test this program added itself.';
 
 -- Every row today is origin='mirror', i.e. shared, so site_id stays null.
 
 -- ===========================================================================
--- 2. Hiding becomes a per-programme decision
+-- 2. Hiding becomes a per-program decision
 -- ===========================================================================
 
 create table if not exists public.neuro_test_hidden (
@@ -54,7 +54,7 @@ create table if not exists public.neuro_test_hidden (
 );
 
 comment on table public.neuro_test_hidden is
-  'One programme taking a test out of its own directory. Never affects another programme.';
+  'One program taking a test out of its own directory. Never affects another program.';
 
 -- The 17 tests Toronto had hidden become Toronto''s hides, not everyone''s.
 insert into public.neuro_test_hidden (site_id, test_id, hidden_at, hidden_by, hidden_reason)
@@ -100,7 +100,7 @@ drop policy if exists neuro_test_directory_local_insert  on public.neuro_test_di
 drop policy if exists neuro_test_directory_local_update  on public.neuro_test_directory_rows;
 drop policy if exists neuro_test_directory_local_delete  on public.neuro_test_directory_rows;
 
--- Shared rows, plus this programme's own additions. Nothing else.
+-- Shared rows, plus this program's own additions. Nothing else.
 create policy ntd_read on public.neuro_test_directory_rows
   for select using (
     public.current_uid() is not null
@@ -108,7 +108,7 @@ create policy ntd_read on public.neuro_test_directory_rows
   );
 
 -- The shared national mirror is platform content: a site director must not be
--- able to rewrite what every other programme sees.
+-- able to rewrite what every other program sees.
 create policy ntd_shared_manage on public.neuro_test_directory_rows
   for all to authenticated
   using (site_id is null and public.is_platform_admin())
@@ -152,7 +152,7 @@ left join public.neuro_test_hidden h
 where r.site_id is null or r.site_id = (select public.current_site_id());
 
 comment on view public.neuro_test_directory is
-  'The directory as one programme sees it: shared national tests plus its own, with its own hides applied.';
+  'The directory as one program sees it: shared national tests plus its own, with its own hides applied.';
 
 grant select, insert, update, delete on public.neuro_test_directory to authenticated;
 grant all on public.neuro_test_directory to service_role;
@@ -180,9 +180,9 @@ begin
     coalesce(new.synced_at, now()), coalesce(new.origin, 'local'),
     coalesce(new.added_by, public.current_uid()), coalesce(new.added_at, now()),
     new.requisition_path,
-    -- A test added in the portal belongs to the programme that added it. The
+    -- A test added in the portal belongs to the program that added it. The
     -- caller does not get to choose, so a crafted request cannot plant a row
-    -- in another programme's directory.
+    -- in another program's directory.
     (select public.current_site_id())
   );
   return new;
@@ -195,10 +195,10 @@ declare
   v_base_changed boolean;
 begin
   if v_site is null then
-    raise exception 'no active programme for this session';
+    raise exception 'no active program for this session';
   end if;
 
-  -- Hiding is per programme and never touches the row itself.
+  -- Hiding is per program and never touches the row itself.
   if new.hidden_at is distinct from old.hidden_at
      or new.hidden_reason is distinct from old.hidden_reason then
     if new.hidden_at is null then

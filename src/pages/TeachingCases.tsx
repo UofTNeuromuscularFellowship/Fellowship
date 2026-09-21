@@ -17,9 +17,9 @@ const BUCKET = 'teaching-cases'
  * The verbal consent a supervisor or the director attests to before a case is
  * recorded here.
  *
- * It is built from the programme's own name rather than a fixed one, because
+ * It is built from the program's own name rather than a fixed one, because
  * this portal now runs more than one fellowship and a clinician must not be
- * asked to attest to something about somebody else's programme. The text is
+ * asked to attest to something about somebody else's program. The text is
  * stored WITH each case, so changing it later cannot alter what was attested
  * to at the time.
  *
@@ -27,9 +27,9 @@ const BUCKET = 'teaching-cases'
  * case is visible only to the person who logged it — the attestation should
  * not claim a wider audience than the case actually has.
  */
-function consentWording(programme: string): string {
+function consentWording(program: string): string {
   return [
-    `I explained to this patient that a de-identified record of their case would be kept for teaching within ${programme}, and they gave verbal consent.`,
+    `I explained to this patient that a de-identified record of their case would be kept for teaching within ${program}, and they gave verbal consent.`,
     'I have removed identifying details as far as is practicable, and I will do the same for any report, image or recording I attach.',
     'This attestation is recorded with the case, under my name and today\u2019s date.',
   ].join('\n')
@@ -217,7 +217,7 @@ function CaseEditor({
   const [teaching, setTeaching] = useState(existing?.teaching_points ?? '')
   const [busy, setBusy] = useState(false)
   const { site: activeSite } = useAuth()
-  const programme = activeSite?.name ?? 'this fellowship'
+  const program = activeSite?.name ?? 'this fellowship'
   const alreadyAttested = !!existing?.consent_attested_at
   const [consent, setConsent] = useState(alreadyAttested)
 
@@ -256,7 +256,7 @@ function CaseEditor({
         : {
             consent_attested_at: new Date().toISOString(),
             consent_attested_by: userId,
-            consent_wording: consentWording(programme),
+            consent_wording: consentWording(program),
           }),
     }
     const res = existing
@@ -318,7 +318,7 @@ function CaseEditor({
             />
             <span>
               <span className="font-semibold">Verbal patient consent</span>
-              <span className="mt-1 block whitespace-pre-line text-muted">{consentWording(programme)}</span>
+              <span className="mt-1 block whitespace-pre-line text-muted">{consentWording(program)}</span>
             </span>
           </label>
         )}

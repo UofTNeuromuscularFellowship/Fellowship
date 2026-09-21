@@ -155,9 +155,9 @@ begin
 
   -- shared content is readable...
   select count(*) into n from public.atlas3d_markers;
-  if n = 0 then raise exception 'FAIL atlas is not shared across programmes'; end if;
+  if n = 0 then raise exception 'FAIL atlas is not shared across programs'; end if;
 
-  -- ...but another programme cannot change it
+  -- ...but another program cannot change it
   update public.atlas3d_markers set label = 'HIJACKED'; get diagnostics n = row_count;
   if n <> 0 then raise exception 'FAIL cross-site write to atlas3d_markers (% rows)', n; end if;
   delete from public.atlas3d_markers; get diagnostics n = row_count;
@@ -172,9 +172,9 @@ begin
   if n <> 0 then raise exception 'FAIL cross-site read of digest_settings (% rows)', n; end if;
 
   perform public.set_active_site(toronto);
-  -- the owning programme can still edit its own markers
+  -- the owning program can still edit its own markers
   update public.atlas3d_markers set updated_at = now(); get diagnostics n = row_count;
-  if n = 0 then raise exception 'FAIL owning programme cannot edit its own atlas markers'; end if;
+  if n = 0 then raise exception 'FAIL owning program cannot edit its own atlas markers'; end if;
   execute 'reset role';
 
   -- ordinary users must not be able to send mail through the RPC surface

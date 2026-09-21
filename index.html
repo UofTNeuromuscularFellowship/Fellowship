@@ -36,7 +36,11 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
-      if ('serviceWorker' in navigator) {
+      // The SPA also serves the free tools on the marketing host. Its service
+      // worker belongs to the portal, not to neuromuscular.ca.
+      var marketing = /(^|\.)neuromuscular\.ca$/.test(location.hostname) &&
+                      location.hostname !== 'app.neuromuscular.ca'
+      if ('serviceWorker' in navigator && !marketing) {
         window.addEventListener('load', function () {
           navigator.serviceWorker.register('/sw.js').catch(function () {})
         })

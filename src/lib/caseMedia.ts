@@ -14,11 +14,11 @@ export const BUCKET = 'case-media'
 export const CONSENT_BUCKET = 'case-consent'
 
 /**
- * Default consent wording, built from the programme's own name.
+ * Default consent wording, built from the program's own name.
  *
  * This used to name one fellowship in a string constant. The portal now runs
  * more than one, and a patient must never be asked to sign a form naming a
- * programme that is not treating them — so the caller passes its own name in.
+ * program that is not treating them — so the caller passes its own name in.
  *
  * The "pending review" marker that used to close this text was removed at the
  * fellowship's request on 2026-09-04. It is still editable per upload, and it
@@ -43,9 +43,9 @@ export const CONSENT_BUCKET = 'case-consent'
  * authenticated member. A patient signing this is agreeing to a closed teaching
  * library, not to publication.
  */
-export function defaultConsentWording(programme: string): string {
+export function defaultConsentWording(program: string): string {
   return [
-    `I understand that ${programme} keeps a teaching library of medical images, ` +
+    `I understand that ${program} keeps a teaching library of medical images, ` +
       'which is used by the doctors and trainees of the fellowship to learn to recognise ' +
       'and diagnose neuromuscular conditions.',
 

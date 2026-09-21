@@ -8,14 +8,14 @@
 --   library      SELECT: bucket_id = 'library'    AND auth.uid() IS NOT NULL
 --   case-consent SELECT: owner = auth.uid() OR is_director_or_admin()
 --
--- So a member of one programme could have listed and downloaded every other
--- programme's waveforms, ultrasound clips, MRI and biopsy images and library
--- documents, and any director could have read any programme's signed patient
+-- So a member of one program could have listed and downloaded every other
+-- program's waveforms, ultrasound clips, MRI and biopsy images and library
+-- documents, and any director could have read any program's signed patient
 -- consent forms — patient names and signature images — regardless of which
 -- fellowship treated the patient. The rows describing those files were
 -- correctly hidden. The files were not.
 --
--- The write side had the same shape: a director of one programme could delete
+-- The write side had the same shape: a director of one program could delete
 -- or overwrite another's library documents and requisition PDFs.
 --
 -- Access is now derived from the owning row. Those tables already enforce site
@@ -26,10 +26,10 @@
 -- teaching-cases was already correct: its policies key on the first path
 -- segment being the uploader's own user id.
 --
--- Verified with a throwaway second programme: from inside it, zero of Toronto's
+-- Verified with a throwaway second program: from inside it, zero of Toronto's
 -- case-media and library objects are visible; from Toronto, all 3 and all 7
 -- still are; and an uploader keeps their own objects while sitting in the other
--- programme.
+-- program.
 -- ---------------------------------------------------------------------------
 
 drop policy if exists case_media_files_select on storage.objects;
@@ -166,7 +166,7 @@ create policy case_consent_delete on storage.objects
   );
 
 -- A requisition PDF follows its directory entry: shared national ones are
--- readable by every programme, a locally added one only by the programme that
+-- readable by every program, a locally added one only by the program that
 -- added it. neuro_test_directory_rows already draws that line.
 drop policy if exists requisitions_read on storage.objects;
 create policy requisitions_read on storage.objects

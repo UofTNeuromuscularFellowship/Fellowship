@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Neuromuscular Fellowship Manager</title>
-<meta name="description" content="Scheduling, case logging, feedback and an electrodiagnostic toolkit for neuromuscular fellowship programmes.">
+<meta name="description" content="Scheduling, case logging, feedback and an electrodiagnostic toolkit for neuromuscular fellowship programs.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -63,8 +63,8 @@ p{margin:0}
 .brand{display:flex; align-items:center; gap:11px; color:var(--ink); text-decoration:none}
 .brand svg{display:block; flex:none}
 .brand .wordmark{display:block}
-.brand b{font-family:var(--serif); font-size:19px; font-weight:600; letter-spacing:-.01em}
-.brand span{display:block; font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin-top:1px}
+.brand b{display:block; color:var(--ink); font-family:var(--serif); font-size:19px; font-weight:600; letter-spacing:-.01em}
+.brand .wordmark > span{display:block; font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin-top:1px}
 .masthead a.signin{
   font-size:14.5px; font-weight:500; color:var(--ink); text-decoration:none;
   border:1px solid var(--line-strong); border-radius:2px; padding:9px 16px; white-space:nowrap;
@@ -112,6 +112,46 @@ section{padding-block:clamp(56px,8vw,92px)}
 .module .num{font-family:var(--mono); font-size:11px; color:var(--accent); letter-spacing:.1em; display:block; margin-bottom:12px}
 .module p{font-size:15px; line-height:1.6; color:var(--muted); margin-top:9px}
 
+/* ---------- overhead ---------- */
+.overhead{
+  margin-top:clamp(34px,5vw,52px); display:grid; gap:clamp(24px,4vw,48px);
+  grid-template-columns:1fr; align-items:start;
+}
+@media (min-width:860px){ .overhead{grid-template-columns:1.1fr 1fr} }
+.feature{
+  background:var(--surface); border:1px solid var(--line-strong); border-radius:3px;
+  padding:clamp(24px,3.4vw,36px);
+}
+.feature h3{font-size:clamp(22px,2.6vw,27px); line-height:1.25; letter-spacing:-.01em; margin-top:12px}
+.feature p:not(.eyebrow){margin-top:14px; color:var(--body); max-width:52ch}
+.chores{list-style:none; margin:0; padding:0; display:flex; flex-direction:column}
+.chores li{padding-block:18px; border-top:1px solid var(--line)}
+.chores li:last-child{border-bottom:1px solid var(--line)}
+.chores .k{
+  display:block; font-family:var(--mono); font-size:11.5px; letter-spacing:.11em;
+  text-transform:uppercase; color:var(--accent); margin-bottom:6px;
+}
+.chores p{font-size:15.5px; line-height:1.6}
+
+/* ---------- free tools ---------- */
+.free{
+  display:grid; gap:clamp(28px,4vw,56px); grid-template-columns:1fr; align-items:start;
+  background:var(--accent-soft); border-radius:3px; padding:clamp(28px,4.5vw,52px);
+}
+@media (min-width:860px){ .free{grid-template-columns:1.05fr 1fr} }
+.free .fine{font-size:13.5px; line-height:1.55; color:var(--muted); margin-top:22px; max-width:50ch}
+.free-list{list-style:none; margin:0; padding:0}
+.free-list li{
+  display:flex; justify-content:space-between; align-items:baseline; gap:16px;
+  padding-block:14px; border-top:1px solid var(--line-strong);
+}
+.free-list li:last-child{border-bottom:1px solid var(--line-strong)}
+.free-list span{color:var(--ink); font-weight:500; font-size:15.5px}
+.free-list em{
+  font-style:normal; font-family:var(--mono); font-size:11px; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--muted); white-space:nowrap;
+}
+
 /* ---------- toolkit ---------- */
 .tools{
   margin:clamp(34px,5vw,52px) 0 0; padding:0;
@@ -119,15 +159,16 @@ section{padding-block:clamp(56px,8vw,92px)}
   grid-template-columns:1fr;
 }
 @media (min-width:760px){ .tools{grid-template-columns:1fr 1fr} }
+.tools{border-bottom:1px solid var(--line)}
 .tool{padding-block:22px; border-top:1px solid var(--line)}
 .tool dt{
   font-family:var(--mono); font-size:11.5px; letter-spacing:.11em;
   text-transform:uppercase; color:var(--accent); margin-bottom:8px;
 }
 .tool dd{margin:0; font-size:15.5px; line-height:1.6; color:var(--body); max-width:46ch}
-.tool:last-child{border-bottom:1px solid var(--line)}
 @media (min-width:760px){
-  .tool:nth-last-child(2){border-bottom:1px solid var(--line)}
+  /* a lone last tool spans the row, so the rules stay full-width */
+  .tool:last-child:nth-child(odd){grid-column:1/-1}
 }
 
 /* ---------- separation ---------- */
@@ -184,7 +225,7 @@ footer .sites{display:flex; flex-wrap:wrap; gap:18px}
 @media (max-width:520px){
   .wrap{padding-inline:18px}
   .brand b{font-size:16px}
-  .brand span{font-size:9.5px; letter-spacing:.1em}
+  .brand .wordmark > span{font-size:9.5px; letter-spacing:.1em}
   .brand svg{width:22px; height:22px}
   .masthead a.signin{font-size:13px; padding:8px 12px}
   .masthead .wrap{gap:10px}
@@ -209,22 +250,23 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--accent); outline-offs
         <span>Fellowship Manager</span>
       </span>
     </a>
-    <a class="signin" href="https://app.neuromuscular.ca/login">Programme sign-in</a>
+    <a class="signin" href="https://app.neuromuscular.ca/login">Program sign-in</a>
   </div>
 </header>
 
 <main>
 
   <div class="wrap hero">
-    <p class="eyebrow">Software for neuromuscular fellowship programmes</p>
+    <p class="eyebrow">Software for neuromuscular fellowship programs</p>
     <h1>The running of a fellowship, <em>in one place.</em></h1>
     <p class="lede">
-      Teaching schedules, clinic rotations, case logs, feedback and an electrodiagnostic
-      toolkit — built by a neuromuscular programme for the people who actually run one,
-      and now available to other fellowships.
+      Cut the administrative overhead of running a fellowship. Schedules that build
+      themselves around everyone's time away, reminders and feedback requests that go out
+      on their own, and an electrodiagnostic toolkit for the teaching itself &mdash; built by
+      a neuromuscular program for the people who actually run one.
     </p>
     <div class="actions">
-      <a class="btn btn-primary" href="#inquire">Inquire about your programme</a>
+      <a class="btn btn-primary" href="#inquire">Inquire about your program</a>
       <a class="btn btn-quiet" href="#toolkit">See the toolkit</a>
     </div>
 
@@ -241,11 +283,60 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--accent); outline-offs
     </figure>
   </div>
 
+  <section id="overhead">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Lower overhead</p>
+        <h2>The administrative hours are the cost. The software takes them on.</h2>
+        <p>
+          Every rota built by hand, every reminder resent and every feedback form chased is
+          an hour of someone's paid time. Hand that work to the software and the overhead of
+          running the program &mdash; and what it costs &mdash; comes down.
+        </p>
+      </div>
+
+      <div class="overhead">
+        <article class="feature">
+          <p class="eyebrow">Smart scheduling</p>
+          <h3>Clinic schedules that build themselves.</h3>
+          <p>
+            Give it each fellow's clinic template and everyone's away dates. It generates the
+            rotation, leaves the gaps where people are away, and holds the result as a draft
+            until you review and publish it.
+          </p>
+          <p>
+            Teaching is assigned the same way &mdash; matched to each clinician's preferred
+            topics and to the dates they are actually available.
+          </p>
+        </article>
+
+        <ul class="chores">
+          <li>
+            <span class="k">Reminders</span>
+            <p>Presenters and fellows are reminded before every session, without anyone sending a thing.</p>
+          </li>
+          <li>
+            <span class="k">Feedback</span>
+            <p>Post-session feedback and quarterly evaluations are requested and chased automatically.</p>
+          </li>
+          <li>
+            <span class="k">Swaps</span>
+            <p>Clinic and teaching trades go through the portal instead of a reply-all thread.</p>
+          </li>
+          <li>
+            <span class="k">Attendance</span>
+            <p>Recorded as it happens, and already counted when the director needs it.</p>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
   <section id="what">
     <div class="wrap">
       <div class="section-head">
         <p class="eyebrow">What it handles</p>
-        <h2>The administrative weight of a training programme, carried by the software.</h2>
+        <h2>The administrative weight of a training program, carried by the software.</h2>
         <p>
           Every part of this was written because a fellowship needed it that week — not
           as a feature list drawn up in advance.
@@ -290,7 +381,7 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--accent); outline-offs
           <span class="num">05</span>
           <h3>Handbook &amp; library</h3>
           <p>
-            The programme handbook, session materials and a reading list, versioned and
+            The program handbook, session materials and a reading list, versioned and
             kept where trainees will look for them instead of in an email attachment.
           </p>
         </article>
@@ -311,9 +402,9 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--accent); outline-offs
     <div class="wrap">
       <div class="section-head">
         <p class="eyebrow">The electrodiagnostic toolkit</p>
-        <h2>Six tools for the teaching itself, not the timetable.</h2>
+        <h2>Five tools for the teaching itself, not the timetable.</h2>
         <p>
-          Enabled per programme, one at a time &mdash; a fellowship runs with what it
+          Enabled per program, one at a time &mdash; a fellowship runs with what it
           uses and nothing more.
         </p>
       </div>
@@ -327,13 +418,6 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--accent); outline-offs
           </dd>
         </div>
         <div class="tool">
-          <dt>Calculators</dt>
-          <dd>
-            The EMG and NCS calculations that come up while teaching and while
-            learning, worked out in the open rather than on the back of a chart.
-          </dd>
-        </div>
-        <div class="tool">
           <dt>Waveforms &amp; images</dt>
           <dd>
             Build your own database of reference images and video, from diagnostic
@@ -343,7 +427,7 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--accent); outline-offs
         <div class="tool">
           <dt>Anatomy practice</dt>
           <dd>
-            Generate test material for teaching out of the library your programme has
+            Generate test material for teaching out of the library your program has
             already built.
           </dd>
         </div>
@@ -365,12 +449,44 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--accent); outline-offs
     </div>
   </section>
 
+  <section id="free">
+    <div class="wrap">
+      <div class="free">
+        <div class="section-head">
+          <p class="eyebrow">Free tools</p>
+          <h2>Free for any clinician. No account needed.</h2>
+          <p>
+            The EMG and NCS calculators from the toolkit, open to everyone. Nothing you enter
+            leaves your browser.
+          </p>
+          <div class="actions">
+            <a class="btn btn-primary" href="/tools/calculators">Open the calculators</a>
+          </div>
+          <p class="fine">
+            For clinicians, as an educational reference. Normative limits vary by laboratory,
+            technique and filter settings &mdash; not medical advice, and not a substitute for
+            clinical judgement.
+          </p>
+        </div>
+
+        <ul class="free-list">
+          <li><span>Terminal latency index</span><em>calculator</em></li>
+          <li><span>F-wave &amp; H-reflex</span><em>calculator</em></li>
+          <li><span>Sural / radial amplitude ratio</span><em>calculator</em></li>
+          <li><span>Demyelination &amp; CIDP criteria</span><em>EAN/PNS 2021</em></li>
+          <li><span>Temperature &amp; the waveform</span><em>teaching visual</em></li>
+          <li><span>Filter settings</span><em>teaching visual</em></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
   <section id="separate">
     <div class="wrap">
       <div class="split">
         <div class="section-head">
-          <p class="eyebrow">How programmes sit side by side</p>
-          <h2>Your programme's records are yours alone.</h2>
+          <p class="eyebrow">How programs sit side by side</p>
+          <h2>Your program's records are yours alone.</h2>
           <p>
             A fellowship's case logs and feedback are among the most sensitive records it
             keeps. Separation is enforced in the database itself, not by a filter the
@@ -382,24 +498,24 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--accent); outline-offs
           <ul class="rule-list">
             <li>
               <span class="k">Records</span>
-              <p><strong>Every row belongs to one programme.</strong> Cases, feedback,
+              <p><strong>Every row belongs to one program.</strong> Cases, feedback,
               evaluations, schedules, attendance and trades are readable only from inside
-              the programme that created them.</p>
+              the program that created them.</p>
             </li>
             <li>
               <span class="k">People</span>
-              <p><strong>Roles are per programme.</strong> Someone may belong to two
+              <p><strong>Roles are per program.</strong> Someone may belong to two
               fellowships with a different role in each, and sees each one separately.</p>
             </li>
             <li>
               <span class="k">Directors</span>
-              <p><strong>A director governs their own programme.</strong> They appoint their
-              supervisors and fellows, and cannot reach another programme's records.</p>
+              <p><strong>A director governs their own program.</strong> They appoint their
+              supervisors and fellows, and cannot reach another program's records.</p>
             </li>
             <li>
               <span class="k">Platform</span>
               <p><strong>Administration is walled off from clinical content.</strong> The
-              account that creates programmes and enables tools does not get a window into
+              account that creates programs and enables tools does not get a window into
               anyone's cases.</p>
             </li>
           </ul>
@@ -412,25 +528,25 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--accent); outline-offs
     <div class="wrap">
       <div class="section-head">
         <p class="eyebrow">Getting started</p>
-        <h2>Four steps, and the programme is yours to run.</h2>
+        <h2>Four steps, and the program is yours to run.</h2>
       </div>
       <ol class="steps">
         <li>
           <div>
-            <h3>Your programme is created</h3>
+            <h3>Your program is created</h3>
             <p>A dedicated fellowship space, with its own name, its own people and its own records.</p>
           </div>
         </li>
         <li>
           <div>
             <h3>You appoint your director</h3>
-            <p>From there the programme is self-governing: the director adds supervisors, fellows and administrative assistants.</p>
+            <p>From there the program is self-governing: the director adds supervisors, fellows and administrative assistants.</p>
           </div>
         </li>
         <li>
           <div>
             <h3>You choose your tools</h3>
-            <p>The electrodiagnostic toolkit is enabled item by item, so a programme runs with what it uses and nothing more.</p>
+            <p>The electrodiagnostic toolkit is enabled item by item, so a program runs with what it uses and nothing more.</p>
           </div>
         </li>
         <li>
@@ -447,10 +563,10 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--accent); outline-offs
     <div class="wrap">
       <div class="inquire">
         <p class="eyebrow">Pricing</p>
-        <h2>Priced per programme. Tell us about yours.</h2>
+        <h2>Priced per program. Tell us about yours.</h2>
         <p>
           Fellowships differ in size, in how many sites they cover and in which tools they
-          need, so pricing is quoted per programme rather than listed. Get in touch with
+          need, so pricing is quoted per program rather than listed. Get in touch with
           the number of fellows and supervisors you expect and we will come back to you.
         </p>
         <div class="actions">
@@ -461,7 +577,7 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--accent); outline-offs
         </div>
         <div class="contact-line">
           <span>Already registered?</span>
-          <a href="https://app.neuromuscular.ca/login">Sign in to your programme</a>
+          <a href="https://app.neuromuscular.ca/login">Sign in to your program</a>
         </div>
       </div>
     </div>
@@ -473,7 +589,7 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--accent); outline-offs
   <div class="wrap">
     <p>Neuromuscular Fellowship Manager</p>
     <div class="sites">
-      <a href="https://app.neuromuscular.ca/login">Programme sign-in</a>
+      <a href="https://app.neuromuscular.ca/login">Program sign-in</a>
       <a href="https://www.neuromuscularto.ca">City Wide Neuromuscular Fellowship, Toronto</a>
     </div>
   </div>

@@ -7,7 +7,7 @@
 -- The ACL shows this as a leading "=X/owner".
 --
 -- The consequence worth naming: public.enqueue_email(ref, to, subject, html)
--- is SECURITY DEFINER, so ANY signed-in user of ANY programme could call
+-- is SECURITY DEFINER, so ANY signed-in user of ANY program could call
 -- /rest/v1/rpc/enqueue_email and send arbitrary HTML from the fellowship's own
 -- sending domain to any address. Every trigger body was likewise callable.
 --
