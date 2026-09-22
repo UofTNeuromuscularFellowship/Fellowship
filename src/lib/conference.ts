@@ -48,6 +48,12 @@ export interface ConfEvent {
   /** Anyone with the public link can register (still subject to capacity). */
   public_registration: boolean
   public_token: string
+  /** False while the guided setup is still running; the step it is on. */
+  setup_done: boolean
+  setup_step: number
+  /** Sales tax for the money pages, e.g. 13 and "HST". */
+  tax_rate: number
+  tax_label: string
   created_at: string
 }
 
@@ -204,12 +210,136 @@ export const DISCLOSURE_LABEL: Record<DisclosureStatus, string> = {
   nothing_to_declare: 'Nothing to declare',
 }
 
+// -------------------------------- money -----------------------------------
+
+export type MoneyKind = 'expense' | 'income'
+export type PayMethod = 'cheque' | 'etransfer' | 'card' | 'eft' | 'cash' | 'other'
+export type ClaimCategory = 'travel' | 'accommodation' | 'meals' | 'other'
+export type ClaimStatus = 'submitted' | 'approved' | 'declined' | 'paid'
+
+/** A budget line: what is planned for one heading. What was paid is summed from transactions. */
+export interface ConfBudgetLine {
+  id: string
+  event_id: string
+  kind: MoneyKind
+  category: string
+  description: string | null
+  /** The budgeted amount. */
+  estimated: number | null
+  notes: string | null
+  sort: number
+}
+
+/** Money that changed hands (or is owing). amount includes tax; tax is the part that was tax. */
+export interface ConfTransaction {
+  id: string
+  event_id: string
+  kind: MoneyKind
+  budget_id: string | null
+  txn_date: string
+  party: string | null
+  description: string
+  amount: number
+  tax: number
+  status: 'owing' | 'paid'
+  paid_on: string | null
+  method: PayMethod | null
+  reference: string | null
+  honorarium_id: string | null
+  notes: string | null
+  created_at: string
+}
+
+export interface ConfHonorarium {
+  id: string
+  event_id: string
+  speaker_id: string
+  budget_id: string | null
+  amount: number | null
+  claims_allowed: boolean
+  claims_note: string | null
+  requested_at: string | null
+  confirmed_at: string | null
+  payee_type: 'individual' | 'corporation' | null
+  legal_name: string | null
+  hst_number: string | null
+  address: string | null
+  pay_method: 'cheque' | 'etransfer' | null
+  etransfer_email: string | null
+  details_at: string | null
+  paid_at: string | null
+  notes: string | null
+}
+
+export interface ConfClaim {
+  id: string
+  event_id: string
+  honorarium_id: string
+  category: ClaimCategory
+  description: string
+  incurred_on: string | null
+  amount: number
+  tax: number
+  status: ClaimStatus
+  decision_note: string | null
+  decided_at: string | null
+  transaction_id: string | null
+  created_at: string
+}
+
+export interface ConfReceipt {
+  id: string
+  event_id: string
+  transaction_id: string | null
+  honorarium_id: string | null
+  claim_id: string | null
+  storage_path: string
+  file_name: string
+  mime_type: string | null
+  size_bytes: number | null
+  uploaded_by: 'coordinator' | 'speaker'
+  created_at: string
+}
+
+export const PAY_METHOD_LABEL: Record<PayMethod, string> = {
+  cheque: 'Cheque', etransfer: 'e-Transfer', card: 'Card', eft: 'Direct deposit / EFT', cash: 'Cash', other: 'Other',
+}
+
+export const CLAIM_CATEGORY_LABEL: Record<ClaimCategory, string> = {
+  travel: 'Travel', accommodation: 'Accommodation', meals: 'Meals', other: 'Other',
+}
+
+/** Round to cents, avoiding float drift in sums. */
+export const cents = (n: number) => Math.round(n * 100) / 100
+
+/** "123456789RT0001" shown the way it is usually written: "123456789 RT0001". */
+export const fmtHst = (s: string | null | undefined) => (s ? s.replace(/^([0-9]{9})(RT[0-9]{4})$/, '$1 $2') : '')
+
+/** "123456789RT0001" from anything a person might type. Null if it is not one. */
+export function normalHst(s: string): string | null {
+  const t = s.replace(/[\s-]/g, '').toUpperCase()
+  return /^[0-9]{9}RT[0-9]{4}$/.test(t) ? t : null
+}
+
 /** Classes shared by every conference form control, matching the portal's own. */
 export const input = 'w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink'
 export const primaryBtn =
   'rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50'
 export const quietBtn =
   'rounded-md border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink hover:border-accent disabled:opacity-50'
+
+/** What stands between an event and publishing it (and so sending invitations). */
+export function publishBlockers(d: Pick<ConfEvent,
+  'organizer_name' | 'organizer_email' | 'venue_name' | 'zoom_url' | 'payment_enabled' | 'payment_url' | 'letters_enabled' | 'credits_statement'>,
+): string[] {
+  const b: string[] = []
+  if (!d.organizer_name?.trim()) b.push('an organizer name')
+  if (!d.organizer_email?.trim()) b.push('an organizer email')
+  if (!d.venue_name?.trim() && !d.zoom_url?.trim()) b.push('a venue or a Zoom link')
+  if (d.payment_enabled && !d.payment_url?.trim()) b.push('the payment link')
+  if (d.letters_enabled && !d.credits_statement?.trim()) b.push('the credit statement for letters')
+  return b
+}
 
 // ------------------------------- dates ------------------------------------
 
@@ -374,5 +504,12 @@ export function friendly(message: string): string {
   if (/conf_invitees_event_email|duplicate key.*conf_invitees/i.test(message)) return 'That email address is already on the list for this event.'
   if (/violates row-level security|permission denied/i.test(message)) return 'Only the fellowship director or a program admin can change this.'
   if (/conf_messages_scheduled_has_time/.test(message)) return 'Choose when the message should go out.'
+  if (/conf_transactions_budget/.test(message)) return 'A cost can only go against a cost line of the budget, and income against an income line.'
+  if (/conf_transactions_tax|conf_claims_tax/.test(message)) return 'The tax can’t be more than the total amount.'
+  if (/conf_transactions_paid_on/.test(message)) return 'Enter the date it was paid.'
+  if (/conf_honoraria_hst_number/.test(message)) return 'An HST number is nine digits, then RT, then four digits — for example 123456789 RT0001.'
+  if (/conf_honoraria_etransfer_email/.test(message)) return 'Enter a valid e-Transfer email address.'
+  if (/conf_honoraria_speaker_id_key/.test(message)) return 'That speaker already has an honorarium set up.'
+  if (/conf_budget_id_event_kind|violates foreign key.*conf_transactions/.test(message)) return 'Payments are recorded against this line. Move them to another line first.'
   return message
 }

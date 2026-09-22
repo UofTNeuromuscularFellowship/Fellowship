@@ -82,7 +82,21 @@ export function Speakers({ event, portalUrl }: { event: ConfEvent; portalUrl: st
   }
 
   async function remove(s: ConfSpeaker) {
-    if (!window.confirm(`Remove ${s.full_name}? They will also come off any sessions.`)) return
+    const { data: h } = await supabase.from('conf_honoraria').select('id, paid_at').eq('speaker_id', s.id).maybeSingle()
+    const hon = h as { id: string; paid_at: string | null } | null
+    const warn = hon?.paid_at
+      ? ' Their payment stays in Costs & income, but their payment details, invoice and expense claims are deleted.'
+      : hon ? ' Their payment set-up, invoice and expense claims are deleted too.' : ''
+    if (!window.confirm(`Remove ${s.full_name}? They will also come off any sessions.${warn}`)) return
+    if (hon) {
+      // files first: the storage policies find them through these rows
+      const { data: claims } = await supabase.from('conf_claims').select('id').eq('honorarium_id', hon.id)
+      const claimIds = ((claims as { id: string }[]) ?? []).map((c) => c.id)
+      const { data: files } = await supabase.from('conf_receipts').select('storage_path')
+        .or([`honorarium_id.eq.${hon.id}`, ...(claimIds.length ? [`claim_id.in.(${claimIds.join(',')})`] : [])].join(','))
+      const paths = ((files as { storage_path: string }[]) ?? []).map((f) => f.storage_path)
+      if (paths.length) await supabase.storage.from('conference').remove(paths)
+    }
     await supabase.from('conf_speakers').delete().eq('id', s.id)
     load()
   }
@@ -122,7 +136,7 @@ export function Speakers({ event, portalUrl }: { event: ConfEvent; portalUrl: st
                 <input id="sp-aff" className={input} value={draft.affiliation ?? ''} onChange={(e) => setDraft({ ...draft, affiliation: e.target.value })} /></label>
               <label className="block sm:col-span-2"><span className="mb-1 block text-xs font-medium text-muted">Short bio</span>
                 <textarea id="sp-bio" rows={2} className={input} value={draft.bio ?? ''} onChange={(e) => setDraft({ ...draft, bio: e.target.value })} /></label>
-              <label className="block sm:col-span-2"><span className="mb-1 block text-xs font-medium text-muted">Notes (travel, honorarium, AV needs)</span>
+              <label className="block sm:col-span-2"><span className="mb-1 block text-xs font-medium text-muted">Notes (travel, AV needs) — honoraria are set under Money → Speaker pay</span>
                 <textarea id="sp-notes" rows={2} className={input} value={draft.notes ?? ''} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} /></label>
             </div>
             <div className="mt-4 flex gap-2">

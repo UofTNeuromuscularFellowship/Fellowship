@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { Card, CardHeader } from '../ui/Card'
-import { friendly, input, primaryBtn, quietBtn, type ConfEvent, type EventStatus } from '../../lib/conference'
+import { friendly, input, primaryBtn, quietBtn, publishBlockers, type ConfEvent, type EventStatus } from '../../lib/conference'
+import { DeleteEvent } from './DeleteEvent'
 
 const ZONES = [
   'America/Toronto', 'America/Vancouver', 'America/Edmonton', 'America/Winnipeg', 'America/Regina',
@@ -9,7 +10,7 @@ const ZONES = [
   'America/Los_Angeles', 'Europe/London',
 ]
 
-type Draft = Omit<ConfEvent, 'id' | 'created_at' | 'reminder_sent_at' | 'feedback_sent_at' | 'public_token'>
+type Draft = Omit<ConfEvent, 'id' | 'created_at' | 'reminder_sent_at' | 'feedback_sent_at' | 'public_token' | 'setup_done' | 'setup_step'>
 
 const TOGGLES: { key: keyof Draft; label: string; help: string }[] = [
   { key: 'feedback_enabled', label: 'Feedback requests', help: 'Once the last session ends, attendees are emailed a link to rate each session.' },
@@ -21,7 +22,14 @@ const TOGGLES: { key: keyof Draft; label: string; help: string }[] = [
   { key: 'public_registration', label: 'Public registration link', help: 'Anyone with the link can register — to post on a website or share by email. Your invite list still works alongside it, and capacity and the waitlist apply to both.' },
 ]
 
-export function EventSettings({ event, onSaved }: { event: ConfEvent; onSaved: () => void }) {
+/**
+ * The event's details. In the guided setup (wizard) it is the first step and
+ * ends in "Save and continue"; afterwards it is the Settings page, with
+ * publishing, archiving, money settings and deletion.
+ */
+export function EventSettings({ event, onSaved, wizard = false, onContinue }: {
+  event: ConfEvent; onSaved: () => void; wizard?: boolean; onContinue?: () => void
+}) {
   const [d, setD] = useState<Draft>(event)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null)
@@ -32,20 +40,18 @@ export function EventSettings({ event, onSaved }: { event: ConfEvent; onSaved: (
   const num = (v: string) => (v.trim() === '' ? null : Math.max(0, Math.floor(Number(v))))
 
   // What stands between this event and sending invitations.
-  const blockers: string[] = []
-  if (!d.organizer_name?.trim()) blockers.push('an organizer name')
-  if (!d.organizer_email?.trim()) blockers.push('an organizer email')
-  if (!d.venue_name?.trim() && !d.zoom_url?.trim()) blockers.push('a venue or a Zoom link')
-  if (d.payment_enabled && !d.payment_url?.trim()) blockers.push('the payment link')
-  if (d.letters_enabled && !d.credits_statement?.trim()) blockers.push('the credit statement for letters')
+  const blockers = publishBlockers(d)
 
-  async function save(nextStatus?: EventStatus) {
-    if (!d.name.trim()) { setMsg({ tone: 'bad', text: 'The event needs a name.' }); return }
-    if (d.ends_on < d.starts_on) { setMsg({ tone: 'bad', text: 'The event ends before it starts.' }); return }
+  async function save(nextStatus?: EventStatus): Promise<boolean> {
+    if (!d.name.trim()) { setMsg({ tone: 'bad', text: 'The event needs a name.' }); return false }
+    if (!d.starts_on || !d.ends_on) { setMsg({ tone: 'bad', text: 'Give the event its dates.' }); return false }
+    if (d.ends_on < d.starts_on) { setMsg({ tone: 'bad', text: 'The event ends before it starts.' }); return false }
     if (nextStatus === 'published' && blockers.length) {
       setMsg({ tone: 'bad', text: `Before publishing, add ${blockers.join(', ')}.` })
-      return
+      return false
     }
+    const rate = Number(d.tax_rate)
+    if (!(rate >= 0 && rate <= 30)) { setMsg({ tone: 'bad', text: 'The tax rate should be between 0 and 30%.' }); return false }
     setBusy(true)
     const clean = (v: string | null) => (v && v.trim() !== '' ? v.trim() : null)
     const { error } = await supabase.from('conf_events').update({
@@ -62,12 +68,14 @@ export function EventSettings({ event, onSaved }: { event: ConfEvent; onSaved: (
       public_registration: d.public_registration,
       organizer_name: clean(d.organizer_name), organizer_email: clean(d.organizer_email),
       organizer_address: clean(d.organizer_address),
+      tax_rate: rate, tax_label: (d.tax_label ?? '').trim().slice(0, 12) || 'HST',
       ...(nextStatus ? { status: nextStatus } : {}),
     }).eq('id', event.id)
     setBusy(false)
-    if (error) { setMsg({ tone: 'bad', text: friendly(error.message) }); return }
-    setMsg({ tone: 'ok', text: nextStatus === 'published' ? 'Published. You can now send invitations.' : 'Saved.' })
+    if (error) { setMsg({ tone: 'bad', text: friendly(error.message) }); return false }
+    setMsg(wizard ? null : { tone: 'ok', text: nextStatus === 'published' ? 'Published. You can now send invitations.' : 'Saved.' })
     onSaved()
+    return true
   }
 
   const field = (label: string, el: React.ReactNode, help?: string, wide = false) => (
@@ -101,11 +109,18 @@ export function EventSettings({ event, onSaved }: { event: ConfEvent; onSaved: (
           {field('Venue address', <input id="ev-addr" className={input} value={d.venue_address ?? ''} onChange={(e) => set('venue_address', e.target.value)} />)}
           {field('Zoom link', <input id="ev-zoom" type="url" className={input} placeholder="https://zoom.us/j/…" value={d.zoom_url ?? ''}
             onChange={(e) => set('zoom_url', e.target.value)} />, 'Only shown to people who have confirmed they are attending, so a forwarded invitation does not hand out the room.')}
-          {field('Zoom passcode', <input id="ev-pass" className={input} value={d.zoom_passcode ?? ''} onChange={(e) => set('zoom_passcode', e.target.value)} />)}
-          {field('In-person capacity', <input id="ev-cap-in" type="number" min={0} className={input} value={d.capacity_in_person ?? ''}
-            onChange={(e) => set('capacity_in_person', num(e.target.value))} />, 'Leave blank for no limit. Once full, new RSVPs join a waitlist and move up automatically when someone cancels.')}
-          {field('Online capacity', <input id="ev-cap-virt" type="number" min={0} className={input} value={d.capacity_virtual ?? ''}
-            onChange={(e) => set('capacity_virtual', num(e.target.value))} />, 'Leave blank for no limit, or match your Zoom licence.')}
+          {d.zoom_url?.trim()
+            ? field('Zoom passcode', <input id="ev-pass" className={input} value={d.zoom_passcode ?? ''} onChange={(e) => set('zoom_passcode', e.target.value)} />)
+            : <div className="hidden sm:block" />}
+          <details className="sm:col-span-2" open={d.capacity_in_person != null || d.capacity_virtual != null}>
+            <summary className="cursor-pointer text-sm font-medium text-accent">Limit the number of places</summary>
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              {field('In-person places', <input id="ev-cap-in" type="number" min={0} className={input} value={d.capacity_in_person ?? ''}
+                onChange={(e) => set('capacity_in_person', num(e.target.value))} />, 'Leave blank for no limit. Once full, new RSVPs join a waitlist and move up automatically when someone cancels.')}
+              {field('Online places', <input id="ev-cap-virt" type="number" min={0} className={input} value={d.capacity_virtual ?? ''}
+                onChange={(e) => set('capacity_virtual', num(e.target.value))} />, 'Leave blank for no limit, or match your Zoom licence.')}
+            </div>
+          </details>
         </div>
       </Card>
 
@@ -123,9 +138,9 @@ export function EventSettings({ event, onSaved }: { event: ConfEvent; onSaved: (
 
       <Card>
         <CardHeader title="Features" sub="Turn on only what this event needs" />
-        <div className="divide-y divide-line">
+        <div className="grid sm:grid-cols-2">
           {TOGGLES.map((t) => (
-            <label key={t.key} className="flex cursor-pointer items-start gap-3 px-5 py-3">
+            <label key={t.key} className="flex cursor-pointer items-start gap-3 border-b border-line px-5 py-3 sm:odd:border-r">
               <input id={`ev-${t.key}`} type="checkbox" className="mt-0.5 h-4 w-4 flex-none"
                 checked={Boolean(d[t.key])} onChange={(e) => set(t.key, e.target.checked as never)} />
               <span>
@@ -169,12 +184,33 @@ export function EventSettings({ event, onSaved }: { event: ConfEvent; onSaved: (
         )}
       </Card>
 
+      {!wizard && (
+        <Card>
+          <CardHeader title="Money" sub="Used by the budget, speaker pay and the financial report" />
+          <div className="grid gap-4 px-5 py-4 sm:grid-cols-2">
+            {field('Sales tax rate (%)', <input id="ev-tax-rate" type="number" min={0} max={30} step="0.001" className={input}
+              value={d.tax_rate ?? ''} onChange={(e) => set('tax_rate', e.target.value as unknown as number)} />,
+              'Ontario HST is 13%. Used to work out the tax on honoraria for speakers who charge it, and the tax included in a receipt.')}
+            {field('Tax name', <input id="ev-tax-label" className={input} maxLength={12} value={d.tax_label ?? ''}
+              onChange={(e) => set('tax_label', e.target.value)} />, 'e.g. HST, or GST outside the HST provinces.')}
+          </div>
+        </Card>
+      )}
+
       {msg && (
         <p className={`rounded-md border px-4 py-3 text-sm ${msg.tone === 'ok'
           ? 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
           : 'border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-200'}`}>{msg.text}</p>
       )}
 
+      {wizard ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <button className={primaryBtn} disabled={busy} onClick={async () => { if (await save()) onContinue?.() }}>
+            {busy ? 'Saving…' : 'Save and continue →'}
+          </button>
+          <span className="text-xs text-muted">You can change any of this later.</span>
+        </div>
+      ) : (
       <div className="flex flex-wrap items-center gap-2">
         <button className={primaryBtn} disabled={busy} onClick={() => save()}>{busy ? 'Saving…' : 'Save changes'}</button>
         {event.status === 'draft' && (
@@ -192,6 +228,9 @@ export function EventSettings({ event, onSaved }: { event: ConfEvent; onSaved: (
           <span className="text-xs text-muted">To publish, add {blockers.join(', ')}.</span>
         )}
       </div>
+      )}
+
+      {!wizard && <DeleteEvent event={event} />}
     </div>
   )
 }

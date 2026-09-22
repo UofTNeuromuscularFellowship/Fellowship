@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
@@ -14,6 +14,7 @@ const STATUS_TONE = {
 export default function Conferences() {
   const { site } = useAuth()
   const navigate = useNavigate()
+  const deleted = (useLocation().state as { deleted?: string } | null)?.deleted
   const [events, setEvents] = useState<(ConfEvent & { going: number })[]>([])
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
@@ -51,14 +52,18 @@ export default function Conferences() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-2xl font-bold text-ink">Events</h1>
-          <p className="mt-1 text-sm text-muted">Courses, symposia and conferences — itinerary, invitations, RSVPs and the logistics behind them.</p>
+          <p className="mt-1 text-sm text-muted">Courses, symposia and conferences — program, invitations, money and logistics.</p>
         </div>
         {!creating && <button className={primaryBtn} onClick={() => setCreating(true)}>+ New event</button>}
       </div>
 
+      {deleted && (
+        <p className="rounded-md border border-line bg-surface px-4 py-3 text-sm text-ink" role="status">“{deleted}” was deleted.</p>
+      )}
+
       {creating && (
         <Card>
-          <CardHeader title="New event" sub="You can fill in everything else once it exists. It stays a private draft until you publish it." />
+          <CardHeader title="New event" sub="Start with a name and dates. A short guided setup takes you through the rest, and it stays a private draft until you publish it." />
           <div className="grid gap-3 px-5 py-4 sm:grid-cols-3">
             <label className="block sm:col-span-3">
               <span className="mb-1 block text-xs font-medium text-muted">Name</span>
@@ -73,7 +78,7 @@ export default function Conferences() {
               <input id="new-ev-end" type="date" className={input} value={end} min={start} onChange={(e) => setEnd(e.target.value)} />
             </label>
             <div className="flex items-end gap-2">
-              <button className={primaryBtn} disabled={busy} onClick={create}>{busy ? 'Creating…' : 'Create'}</button>
+              <button className={primaryBtn} disabled={busy} onClick={create}>{busy ? 'Creating…' : 'Start setup'}</button>
               <button className={quietBtn} onClick={() => { setCreating(false); setMsg(null) }}>Cancel</button>
             </div>
           </div>
@@ -95,7 +100,9 @@ export default function Conferences() {
                     <p className="text-sm text-muted">{eventWhen(e.starts_on, e.ends_on)}{e.venue_name ? ` · ${e.venue_name}` : ''}</p>
                   </div>
                   <span className="text-sm tabular-nums text-muted">{e.going} attending</span>
-                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${STATUS_TONE[e.status]}`}>{e.status}</span>
+                  {e.setup_done
+                    ? <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${STATUS_TONE[e.status]}`}>{e.status}</span>
+                    : <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-200">Setting up · step {Math.min((e.setup_step ?? 0) + 1, 5)} of 5</span>}
                 </Link>
               </li>
             ))}
