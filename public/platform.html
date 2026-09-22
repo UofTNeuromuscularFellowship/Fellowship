@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Neuromuscular Fellowship Manager</title>
-<meta name="description" content="Scheduling, case logging, feedback and an electrodiagnostic toolkit for neuromuscular fellowship programs.">
+<meta name="description" content="Scheduling, case logging, feedback, an electrodiagnostic toolkit and conference and course management for neuromuscular fellowship programs.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -171,6 +171,24 @@ section{padding-block:clamp(56px,8vw,92px)}
   .tool:last-child:nth-child(odd){grid-column:1/-1}
 }
 
+/* ---------- conferences & courses ---------- */
+.phases{
+  margin-top:clamp(34px,5vw,52px); display:grid; gap:clamp(26px,3.4vw,40px);
+  grid-template-columns:1fr;
+}
+@media (min-width:860px){ .phases{grid-template-columns:repeat(3,1fr)} }
+.phase{border-top:2px solid var(--accent); padding-top:18px}
+.phase .eyebrow{color:var(--accent)}
+.phase h3{font-family:var(--sans); font-size:17px; font-weight:600; margin-top:8px}
+.phase ul{list-style:none; margin:14px 0 0; padding:0; display:flex; flex-direction:column; gap:12px}
+.phase li{font-size:15px; line-height:1.6; color:var(--body); padding-left:16px; position:relative}
+.phase li::before{
+  content:''; position:absolute; left:0; top:.66em; width:6px; height:6px;
+  border-radius:50%; background:var(--accent);
+}
+#courses .overhead{margin-top:clamp(40px,6vw,64px)}
+#courses .fine{font-size:13.5px; line-height:1.55; color:var(--muted); margin-top:28px; max-width:70ch}
+
 /* ---------- separation ---------- */
 .split{display:grid; gap:clamp(28px,4vw,56px); grid-template-columns:1fr; align-items:start}
 @media (min-width:860px){ .split{grid-template-columns:1fr 1fr} }
@@ -262,8 +280,9 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--accent); outline-offs
     <p class="lede">
       Cut the administrative overhead of running a fellowship. Schedules that build
       themselves around everyone's time away, reminders and feedback requests that go out
-      on their own, and an electrodiagnostic toolkit for the teaching itself &mdash; built by
-      a neuromuscular program for the people who actually run one.
+      on their own, an electrodiagnostic toolkit for the teaching itself, and one place to run
+      the conferences and courses you host &mdash; built by a neuromuscular program for the
+      people who actually run one.
     </p>
     <div class="actions">
       <a class="btn btn-primary" href="#inquire">Inquire about your program</a>
@@ -449,6 +468,93 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--accent); outline-offs
     </div>
   </section>
 
+  <section id="courses">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Conferences &amp; courses</p>
+        <h2>A comprehensive tool for managing the conferences and courses your program runs.</h2>
+        <p>
+          The program, the invitations, the people in the room and the money behind it all
+          &mdash; from a guided first setup to the financial report at the end, in the same
+          portal your fellowship already uses.
+        </p>
+      </div>
+
+      <div class="phases">
+        <div class="phase">
+          <p class="eyebrow">Before</p>
+          <h3>Plan it and fill it</h3>
+          <ul>
+            <li>A guided setup takes a new event through its details, program, invitations and budget, one step at a time.</li>
+            <li>An itinerary of talks, workshops and moderated panels across days and rooms, with speakers submitting their disclosures online.</li>
+            <li>Invitations from a spreadsheet in your own wording, or a public registration link to post on your site.</li>
+            <li>RSVPs for in person or online, with a waitlist that moves up on its own when someone cancels.</li>
+          </ul>
+        </div>
+        <div class="phase">
+          <p class="eyebrow">During</p>
+          <h3>Run the day</h3>
+          <ul>
+            <li>Each attendee has their own page: the itinerary, the joining link if they are online, and the slides and handouts.</li>
+            <li>Updates and reminders go to the people attending, sent straight away or scheduled ahead.</li>
+            <li>Check-in at the door, and name badges printed from the attendee list.</li>
+            <li>Hotel blocks, catering, printed materials and sponsors, tracked alongside everything else.</li>
+          </ul>
+        </div>
+        <div class="phase">
+          <p class="eyebrow">After</p>
+          <h3>Close it out</h3>
+          <ul>
+            <li>Feedback on every session, requested automatically once the last one ends.</li>
+            <li>Participation letters recording attendance and hours, carrying the credit statement you supply.</li>
+            <li>Speaker honoraria and expenses recorded as they are paid, with every receipt on file.</li>
+            <li>A financial report that shows the budget against what was actually spent.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="overhead">
+        <article class="feature">
+          <p class="eyebrow">The money</p>
+          <h3>From the first budget to the final report.</h3>
+          <p>
+            Set a budget before anything is booked, record costs and income with their receipts as
+            they happen, and see at any point what has been spent, what is still owing and what is left.
+          </p>
+          <p>
+            Speakers confirm their honorarium on a private page and say how they would like to be
+            paid &mdash; cheque or e-Transfer, personally or through their corporation, with an HST
+            number if they charge it &mdash; and claim their travel with the receipts attached.
+          </p>
+        </article>
+
+        <ul class="chores">
+          <li>
+            <span class="k">Budget</span>
+            <p>Plan each heading, then watch paid and owing fill in against it.</p>
+          </li>
+          <li>
+            <span class="k">Receipts</span>
+            <p>Attached to the payment they support, so nothing lives in an inbox.</p>
+          </li>
+          <li>
+            <span class="k">Speaker pay</span>
+            <p>Payment details, invoices and expense claims collected from the speakers themselves.</p>
+          </li>
+          <li>
+            <span class="k">Report</span>
+            <p>One PDF: budget against actual, every transaction, tax totals, and the receipts if you want them.</p>
+          </li>
+        </ul>
+      </div>
+
+      <p class="fine">
+        Enabled per program. Registration fees are collected through your own checkout page, so card
+        details never pass through the portal.
+      </p>
+    </div>
+  </section>
+
   <section id="free">
     <div class="wrap">
       <div class="free">
@@ -546,7 +652,7 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--accent); outline-offs
         <li>
           <div>
             <h3>You choose your tools</h3>
-            <p>The electrodiagnostic toolkit is enabled item by item, so a program runs with what it uses and nothing more.</p>
+            <p>The electrodiagnostic toolkit and conference management are enabled item by item, so a program runs with what it uses and nothing more.</p>
           </div>
         </li>
         <li>
