@@ -35,6 +35,7 @@ export interface TeachingSession {
   provider_confirmed?: boolean
   conflict_flagged?: boolean
   conflict_reason?: string | null
+  assignment_draft?: boolean
 }
 
 export interface ClinicRotation {

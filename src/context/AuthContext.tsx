@@ -13,6 +13,9 @@ export interface Profile {
   must_change_password: boolean
   teaching_only: boolean
   active_site_id: string | null
+  phone: string | null
+  /** Set once they've been through the first sign-in steps (/welcome). */
+  welcomed_at: string | null
 }
 
 /** A program the signed-in person belongs to, with the role they hold there. */
@@ -113,7 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const { data } = await supabase
       .from('users')
-      .select('id, email, full_name, role, status, cohort_year, must_change_password, teaching_only, active_site_id')
+      .select('id, email, full_name, role, status, cohort_year, must_change_password, teaching_only, active_site_id, phone, welcomed_at')
       .eq('id', userId)
       .single()
     const p = (data as Profile) ?? null

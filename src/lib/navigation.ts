@@ -306,6 +306,8 @@ export function toolForPath(pathname: string): string | undefined {
 export function groupForPath(groups: NavGroup[], pathname: string): NavGroup | undefined {
   const overview = pathname.match(/^\/s\/([^/]+)$/)
   if (overview) return groups.find((g) => g.id === overview[1])
+  // "Make a change" covers the clinic and teaching schedules; it lives with the clinic schedule
+  if (pathname === '/change' || pathname.startsWith('/change/')) return groups.find((g) => g.items.some((i) => i.to === '/clinic'))
   return groups.find((g) => g.items.some((i) => i.to === pathname))
     // A page below a menu item (/events/<id>) belongs to that item's area.
     ?? groups.find((g) => g.items.some((i) => pathname.startsWith(i.to + '/')))

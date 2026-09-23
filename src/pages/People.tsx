@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
-import { roleLabel } from '../lib/format'
-import { cohortYears } from '../lib/caseOptions'
+import { roleLabel, localToday } from '../lib/format'
+import { niceDay } from '../components/ui/Wizard'
 
 interface UserRow {
   id: string; email: string; full_name: string; role: string; status: string; cohort_year: string | null
   assistant_emails: string[] | null
   teaching_only: boolean
+  fellowship_start: string | null
+  fellowship_end: string | null
 }
 
 export default function People() {
@@ -17,20 +20,12 @@ export default function People() {
   const [users, setUsers] = useState<UserRow[]>([])
   const [msg, setMsg] = useState<string | null>(null)
 
-  const [fullName, setFullName] = useState('')
-  const [email, setEmail] = useState('')
-  const [role, setRole] = useState<'fellow' | 'supervisor' | 'director' | 'admin' | 'assistant'>('fellow')
-  const [cohort, setCohort] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [createdCred, setCreatedCred] = useState<{ user_id: string; email: string; password: string } | null>(null)
-  const [emailedCreate, setEmailedCreate] = useState(false)
-
   async function load() {
     // site_users: the people of THIS program, with the role they hold here
     // (someone can be a supervisor here and a fellow at another program).
     const { data, error } = await supabase
       .from('site_users')
-      .select('id, email, full_name, role, status, cohort_year, assistant_emails, teaching_only')
+      .select('id, email, full_name, role, status, cohort_year, assistant_emails, teaching_only, fellowship_start, fellowship_end')
       .order('full_name')
     if (error) setMsg(error.message)
     setUsers((data as UserRow[]) ?? [])
@@ -38,126 +33,25 @@ export default function People() {
 
   useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function createUser() {
-    if (!fullName.trim() || !email.trim()) { setMsg('Name and email are required.'); return }
-    setBusy(true); setMsg(null); setCreatedCred(null)
-    const { data, error } = await supabase.functions.invoke('admin-create-user', {
-      body: {
-        full_name: fullName.trim(),
-        email: email.trim().toLowerCase(),
-        role,
-        cohort_year: role === 'fellow' ? (cohort || null) : null,
-      },
-    })
-    setBusy(false)
-    if (error || data?.error) {
-      let detail = data?.error ?? error?.message ?? 'Could not create the account.'
-      // supabase.functions.invoke hides the response body on non-2xx; read it out
-      const ctx = (error as unknown as { context?: Response })?.context
-      if (ctx && typeof ctx.text === 'function') {
-        try {
-          const body = await ctx.text()
-          const parsed = JSON.parse(body)
-          if (parsed?.error) detail = parsed.error
-        } catch { /* keep the generic message */ }
-      }
-      setMsg(detail)
-      return
-    }
-    setCreatedCred({ user_id: data.user_id, email: data.email, password: data.temp_password })
-    setEmailedCreate(!!data.welcome_emailed)
-    setFullName(''); setEmail('')
-    load()
-  }
-
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-2xl font-bold text-ink">People</h1>
-        <p className="mt-1 text-sm text-muted">Fellows, supervisors, and program accounts</p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="font-display text-2xl font-bold text-ink">People</h1>
+          <p className="mt-1 text-sm text-muted">Fellows, supervisors, and program accounts</p>
+        </div>
+        {canManage && (
+          <Link to="/people/new"
+            className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90">
+            + Add people
+          </Link>
+        )}
       </div>
 
       {msg && (
         <div className="rounded-md border border-line bg-surface px-4 py-3 text-sm text-ink">
           {msg} <button className="ml-2 font-medium text-accent" onClick={() => setMsg(null)}>dismiss</button>
         </div>
-      )}
-
-      {canManage && (
-        <Card>
-          <CardHeader
-            title="Add a person"
-            sub="A temporary password is generated for them; they'll be required to set their own at first sign-in"
-          />
-          <div className="space-y-4 px-5 py-4">
-            <div className="flex flex-wrap items-end gap-2">
-              <div className="min-w-0 flex-1">
-                <label className="mb-1 block text-xs font-medium text-muted">Full name</label>
-                <input value={fullName} onChange={(e) => setFullName(e.target.value)}
-                  className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <label className="mb-1 block text-xs font-medium text-muted">Email</label>
-                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                  className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink" />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-muted">Role</label>
-                <select value={role} onChange={(e) => setRole(e.target.value as typeof role)}
-                  className="rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink">
-                  <option value="fellow">Fellow</option>
-                  <option value="supervisor">Supervisor</option>
-                  <option value="director">Director</option>
-                  <option value="admin">Admin</option>
-                  <option value="assistant">Administrative assistant</option>
-                </select>
-              </div>
-              {role === 'fellow' && (
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-muted">Cohort</label>
-                  <select value={cohort} onChange={(e) => setCohort(e.target.value)}
-                    className="rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink">
-                    <option value="">—</option>
-                    {cohortYears().map((y) => <option key={y} value={y}>{y}</option>)}
-                  </select>
-                </div>
-              )}
-              <button onClick={createUser} disabled={busy}
-                className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
-                {busy ? 'Creating…' : 'Create account'}
-              </button>
-            </div>
-
-            {createdCred && (
-              <div className="rounded-md border border-accent bg-accent-soft px-4 py-3 text-sm">
-                <p className="font-semibold text-ink">Account created</p>
-                <p className="mt-1 text-ink">
-                  {emailedCreate
-                    ? 'A welcome email with sign-in details was sent to them automatically. You can also share these directly:'
-                    : 'The welcome email couldn’t be sent automatically — share these sign-in details directly:'}
-                </p>
-                <p className="mt-1 text-ink">
-                  Email: <span className="font-mono">{createdCred.email}</span><br />
-                  Temporary password: <span className="font-mono font-semibold">{createdCred.password}</span>
-                </p>
-                <p className="mt-1 text-xs text-muted">
-                  This password is shown only once. They'll be prompted to choose their own the first time they sign in.
-                </p>
-                <button
-                  onClick={async () => {
-                    const { data, error } = await supabase.functions.invoke('admin-manage-user', {
-                      body: { action: 'email_temp_password', user_id: createdCred.user_id, temp_password: createdCred.password },
-                    })
-                    if (error || data?.error) { setMsg(data?.error ?? error?.message ?? 'Could not send the email.'); return }
-                    setEmailedCreate(true)
-                  }}
-                  className="mt-2 rounded-md border border-accent px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent-soft">
-                  {emailedCreate ? 'Resend login details' : 'Email login details to user'}
-                </button>
-              </div>
-            )}
-          </div>
-        </Card>
       )}
 
       {canManage && <AssistantsSection users={users} onError={setMsg} />}
@@ -222,6 +116,8 @@ function UserItem({ user, canManage, onChanged, onError }: {
         <div className="flex items-center gap-3">
           <span className="text-muted">
             {roleLabel(user.role)}{user.cohort_year ? ` · ${user.cohort_year}` : ''}
+            {user.role === 'fellow' && (user.fellowship_start || user.fellowship_end)
+              ? ` · ${niceDay(user.fellowship_start) || '?'} – ${niceDay(user.fellowship_end) || '?'}` : ''}
             {user.teaching_only ? ' · teaching only' : ''}{inactive ? ` · ${user.status}` : ''}
           </span>
           {canManage && (
@@ -251,6 +147,10 @@ function UserItem({ user, canManage, onChanged, onError }: {
               {busy === 'set_role' ? 'Saving…' : 'Save role'}
             </button>
           </div>
+
+          {user.role === 'fellow' && (
+            <FellowshipDates user={user} onChanged={onChanged} onError={onError} />
+          )}
 
           {user.role === 'supervisor' && (
             <TeachingOnlyToggle user={user} onChanged={onChanged} onError={onError} />
@@ -295,6 +195,152 @@ function UserItem({ user, canManage, onChanged, onError }: {
         </div>
       )}
     </li>
+  )
+}
+
+const REASONS: [string, string][] = [
+  ['initial', 'Setting the dates'],
+  ['extension', 'Extension'],
+  ['leave', 'Leave of absence'],
+  ['early_finish', 'Finishing early'],
+  ['correction', 'Correcting a mistake'],
+]
+const REASON_LABEL = Object.fromEntries(REASONS)
+
+interface DateChange {
+  id: string; old_start: string | null; old_end: string | null; new_start: string | null; new_end: string | null
+  reason: string; note: string | null; changed_by: string | null; changed_at: string
+}
+
+/**
+ * A fellow's start and end dates, and every change to them. Changes go
+ * through set_fellowship_dates(), which records who made them and why.
+ */
+function FellowshipDates({ user, onChanged, onError }: {
+  user: UserRow; onChanged: () => void; onError: (m: string) => void
+}) {
+  const hasDates = !!(user.fellowship_start || user.fellowship_end)
+  const [start, setStart] = useState(user.fellowship_start ?? '')
+  const [end, setEnd] = useState(user.fellowship_end ?? '')
+  const [reason, setReason] = useState(hasDates ? 'extension' : 'initial')
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [history, setHistory] = useState<DateChange[]>([])
+  const [names, setNames] = useState<Record<string, string>>({})
+  // clinic days left outside the dates after a save, offered for removal
+  const [outside, setOutside] = useState<string[]>([])
+  const [trimmed, setTrimmed] = useState<string | null>(null)
+
+  async function loadHistory() {
+    const { data } = await supabase.from('fellowship_changes')
+      .select('id, old_start, old_end, new_start, new_end, reason, note, changed_by, changed_at')
+      .eq('user_id', user.id).order('changed_at', { ascending: false })
+    const rows = (data as DateChange[]) ?? []
+    setHistory(rows)
+    const ids = Array.from(new Set(rows.map((r) => r.changed_by).filter((x): x is string => !!x)))
+    if (ids.length) {
+      const { data: n } = await supabase.rpc('profile_names', { ids })
+      setNames(Object.fromEntries(((n as { id: string; full_name: string }[]) ?? []).map((x) => [x.id, x.full_name])))
+    }
+  }
+  useEffect(() => { loadHistory() }, [user.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const changed = start !== (user.fellowship_start ?? '') || end !== (user.fellowship_end ?? '')
+
+  async function save() {
+    if (start && end && end < start) { onError('The fellowship ends before it starts.'); return }
+    setBusy(true); onError('')
+    const { error } = await supabase.rpc('set_fellowship_dates', {
+      p_user: user.id, p_start: start || null, p_end: end || null, p_reason: reason, p_note: note.trim() || null,
+    })
+    setBusy(false)
+    if (error) { onError(error.message); return }
+    setNote(''); setSaved(true); setTimeout(() => setSaved(false), 2000)
+    await loadHistory()
+    // the clinic schedule only runs inside the fellowship: anything left outside?
+    const today = localToday()
+    const { data: rows } = await supabase.from('clinic_rotations').select('rotation_date')
+      .eq('fellow_id', user.id).gte('rotation_date', today)
+    setOutside(((rows as { rotation_date: string }[]) ?? []).map((r) => r.rotation_date)
+      .filter((d) => (start && d < start) || (end && d > end)).sort())
+    setTrimmed(null)
+    onChanged()
+  }
+
+  async function trim() {
+    setBusy(true)
+    const { data, error } = await supabase.rpc('apply_clinic_changes', {
+      p_kind: 'fellowship',
+      p_summary: `${user.full_name}: clinic days outside the fellowship (${span(start || null, end || null)}) removed`,
+      p_ops: outside.map((d) => ({ fellow_id: user.id, date: d, mode: 'free' })),
+      p_setup: {}, p_notify: true,
+    })
+    setBusy(false)
+    if (error) { onError(error.message); return }
+    const r = data as { changed: number; told: number }
+    setOutside([])
+    setTrimmed(`Removed ${r.changed} clinic day${r.changed === 1 ? '' : 's'}${r.told ? ` and emailed ${r.told} ${r.told === 1 ? 'person' : 'people'}` : ''}.`)
+  }
+
+  const span = (a: string | null, b: string | null) => `${niceDay(a) || '—'} – ${niceDay(b) || '—'}`
+
+  return (
+    <div className="border-t border-line pt-3">
+      <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted">Fellowship dates</p>
+      <div className="flex flex-wrap items-end gap-2">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-muted" htmlFor={`fs-${user.id}`}>Starts</label>
+          <input id={`fs-${user.id}`} type="date" value={start} onChange={(e) => setStart(e.target.value)}
+            className="rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink" />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-muted" htmlFor={`fe-${user.id}`}>Ends</label>
+          <input id={`fe-${user.id}`} type="date" value={end} min={start || undefined} onChange={(e) => setEnd(e.target.value)}
+            className="rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink" />
+        </div>
+        {changed && <>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted" htmlFor={`fr-${user.id}`}>Why</label>
+            <select id={`fr-${user.id}`} value={reason} onChange={(e) => setReason(e.target.value)}
+              className="rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink">
+              {REASONS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </div>
+          <div className="min-w-[10rem] flex-1">
+            <label className="mb-1 block text-xs font-medium text-muted" htmlFor={`fn-${user.id}`}>Note (optional)</label>
+            <input id={`fn-${user.id}`} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. extended for research block"
+              className="w-full rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink" />
+          </div>
+        </>}
+        <button onClick={save} disabled={busy || !changed}
+          className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-accent hover:underline disabled:opacity-40">
+          {busy ? 'Saving…' : saved ? 'Saved ✓' : 'Save dates'}
+        </button>
+      </div>
+      {outside.length > 0 && (
+        <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
+          {outside.length} clinic day{outside.length === 1 ? ' is' : 's are'} on the schedule outside these dates ({outside.slice(0, 3).map((d) => niceDay(d)).join(', ')}{outside.length > 3 ? '…' : ''}).{' '}
+          <button type="button" onClick={trim} disabled={busy} className="font-semibold underline">Remove {outside.length === 1 ? 'it' : 'them'} and tell the people affected</button>
+        </div>
+      )}
+      {trimmed && <p className="mt-2 text-xs text-emerald-700 dark:text-emerald-300">{trimmed}</p>}
+      <Link to={`/change/fellowship?fellow=${user.id}`} className="mt-2 inline-block text-xs font-medium text-accent hover:underline">
+        Extended or finishing early? Make the change step by step →
+      </Link>
+      {history.length > 0 && (
+        <ul className="mt-2 space-y-0.5 text-xs text-muted">
+          {history.map((h) => (
+            <li key={h.id}>
+              {niceDay(h.changed_at.slice(0, 10))} · {REASON_LABEL[h.reason] ?? h.reason}:{' '}
+              {h.old_start || h.old_end ? `${span(h.old_start, h.old_end)} → ` : ''}{span(h.new_start, h.new_end)}
+              {h.changed_by && names[h.changed_by] ? ` · ${names[h.changed_by]}` : ''}
+              {h.note ? ` · “${h.note}”` : ''}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }
 
@@ -432,7 +478,7 @@ function AssistantsSection({ users, onError }: { users: UserRow[]; onError: (m: 
       />
       {assistants.length === 0 ? (
         <p className="px-5 py-4 text-sm text-muted">
-          No assistant accounts yet. Add one above with the "Administrative assistant" role, then link it to a provider here.
+          No assistant accounts yet. Use “Add people” with the “Administrative assistant” role — you can choose who they work for as you add them.
         </p>
       ) : (
         <ul className="divide-y divide-line">

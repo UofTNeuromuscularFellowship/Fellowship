@@ -189,7 +189,7 @@ function FellowProgress({ targets, onError }: { targets: Target[]; onError: (m: 
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    supabase.rpc('list_fellows').then(({ data }) => setFellows((data as FellowOpt[]) ?? []))
+    supabase.rpc('list_fellows', { p_all: true }).then(({ data }) => setFellows((data as FellowOpt[]) ?? []))
   }, [])
 
   async function pick(id: string) {

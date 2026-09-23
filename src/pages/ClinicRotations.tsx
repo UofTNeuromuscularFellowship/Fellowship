@@ -4,6 +4,9 @@ import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
 import { shortDate, localToday } from '../lib/format'
 import { useActingProvider, ActingForBar } from '../components/ActingFor'
+import { Link } from 'react-router-dom'
+import { RecentChanges } from '../components/change/ChangeKit'
+import { CLINIC_COLUMNS, inFellowship, dateLabel, plural } from '../lib/schedule'
 
 interface Rotation {
   id: string
@@ -21,9 +24,13 @@ interface Rotation {
   notes: string | null
 }
 interface AwayDate { fellow_id: string; away_date: string }
-interface ClinicCat { id: string; provider_name: string | null; provider_id: string | null; weekday: number; site_code: string; fellow_capacity: number; recurrence: 'weekly' | 'dates'; specific_dates: string[] | null }
+interface ClinicCat {
+  id: string; provider_name: string | null; provider_id: string | null; weekday: number; site_code: string; fellow_capacity: number
+  recurrence: 'weekly' | 'dates'; specific_dates: string[] | null
+  active_from?: string | null; active_until?: string | null; paused_dates?: string[] | null
+}
 interface ProviderOpt { id: string; full_name: string }
-interface FellowOpt { id: string; full_name: string }
+interface FellowOpt { id: string; full_name: string; fellowship_start?: string | null; fellowship_end?: string | null }
 interface Template { id: string; name: string; sort_order: number }
 interface TemplateSlot { id: string; template_id: string; weekday: number; slot_type: string; clinic_template_id: string | null; monthly_cap: number | null; fallback_clinic_template_id: string | null }
 interface TallyRow { fellow_id: string; fellow_label: string; provider_name: string; n: number }
@@ -61,6 +68,7 @@ const clinicKeyOf = (site: string | null, provider: string | null) =>
 export default function ClinicRotations() {
   const { profile } = useAuth()
   const isManager = profile?.role === 'director' || profile?.role === 'admin'
+  const isDirector = profile?.role === 'director'
   const isFellow = profile?.role === 'fellow'
   const isSupervisor = profile?.role === 'supervisor'
   const acting = useActingProvider(profile?.role, profile?.id)
@@ -76,6 +84,8 @@ export default function ClinicRotations() {
   const [showConfig, setShowConfig] = useState(false)
   const [editCell, setEditCell] = useState<{ fellowId: string; date: string; weekday: number } | null>(null)
   const [cancelTarget, setCancelTarget] = useState<Rotation | null>(null)
+  const [allDrafts, setAllDrafts] = useState(0)
+  const [setup, setSetup] = useState<{ patterns: number; starts: number; publishedThrough: string | null } | null>(null)
 
   const today = localToday()
 
@@ -96,10 +106,24 @@ export default function ClinicRotations() {
     if (isManager) {
       const { data: aw } = await supabase.from('fellow_away_dates').select('fellow_id, away_date').gte('away_date', today)
       setAway((aw as AwayDate[]) ?? [])
-      const { data: fl } = await supabase.rpc('list_fellows')
+      // the fellows in their fellowship at some point in the weeks shown
+      const { data: fl } = await supabase.rpc('list_fellows', { p_from: today, p_to: isoLocal(horizon) })
       setFellows((fl as FellowOpt[]) ?? [])
-      const { data: cat } = await supabase.from('clinic_template').select('id, provider_name, provider_id, weekday, site_code, fellow_capacity, recurrence, specific_dates')
+      const { data: cat } = await supabase.from('clinic_template').select(CLINIC_COLUMNS)
       setCatalog((cat as ClinicCat[]) ?? [])
+      // every draft, not just the ones in the weeks shown — publishing sends them all
+      const { count } = await supabase.from('clinic_rotations').select('id', { count: 'exact', head: true }).eq('is_draft', true)
+      setAllDrafts(count ?? 0)
+      const [{ count: nPatterns }, { data: starts }, { data: last }] = await Promise.all([
+        supabase.from('fellow_templates').select('id', { count: 'exact', head: true }),
+        supabase.from('fellow_rotation').select('fellow_id, start_template_id'),
+        supabase.from('clinic_rotations').select('rotation_date').eq('is_draft', false).order('rotation_date', { ascending: false }).limit(1),
+      ])
+      setSetup({
+        patterns: nPatterns ?? 0,
+        starts: ((starts as { start_template_id: string | null }[]) ?? []).filter((x) => x.start_template_id).length,
+        publishedThrough: (last as { rotation_date: string }[] | null)?.[0]?.rotation_date ?? null,
+      })
     } else if (isFellow && profile) {
       // Fellows see their own away dates rendered as "AWAY" on the grid.
       const { data: aw } = await supabase.from('fellow_away_dates')
@@ -171,9 +195,12 @@ export default function ClinicRotations() {
   // plus date-specific clinics that list this exact date.
   const cellOptions = editCell
     ? catalog.filter((c) =>
-        c.recurrence === 'dates'
+        (c.recurrence === 'dates'
           ? (c.specific_dates ?? []).includes(editCell.date)
           : c.weekday === editCell.weekday)
+        && (!c.active_from || c.active_from <= editCell.date)
+        && (!c.active_until || c.active_until >= editCell.date)
+        && !(c.paused_dates ?? []).includes(editCell.date))
     : []
   const editCellRotation = editCell ? byCell.get(`${editCell.fellowId}|${editCell.date}`) : undefined
   const editCellCancellable = Boolean(
@@ -226,14 +253,44 @@ export default function ClinicRotations() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-2xl font-bold text-ink">Clinic schedule</h1>
-        <p className="mt-1 text-sm text-muted">
-          {isFellow ? 'Your upcoming clinic assignments'
-            : (isSupervisor || isAssistant) ? 'The clinics this provider is running — cancel one if something comes up'
-            : 'Clinic assignments for the next 12 weeks'}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="font-display text-2xl font-bold text-ink">Clinic schedule</h1>
+          <p className="mt-1 text-sm text-muted">
+            {isFellow ? 'Your upcoming clinic assignments'
+              : (isSupervisor || isAssistant) ? 'The clinics this provider is running — cancel one if something comes up'
+              : setup?.publishedThrough ? `Published through ${dateLabel(setup.publishedThrough)} · the next 12 weeks are shown` : 'Clinic assignments for the next 12 weeks'}
+          </p>
+        </div>
+        {isManager && (
+          <div className="flex flex-wrap gap-2">
+            <Link to="/change" className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90">Make a change</Link>
+            {isDirector && <Link to="/clinic/setup?step=5" className="rounded-md border border-line px-4 py-2 text-sm font-medium text-ink hover:border-accent">Generate again</Link>}
+          </div>
+        )}
       </div>
+
+      {isManager && setup && catalog.length === 0 && (
+        <div className="rounded-lg border-2 border-accent bg-accent-soft/60 px-5 py-4">
+          <p className="font-display text-base font-semibold text-ink">Set up the clinic schedule</p>
+          <p className="mt-1 text-sm text-muted">Five short steps: the clinics, fellows’ weekly patterns, where each fellow starts, away dates, then a draft to check and publish.</p>
+          {isDirector
+            ? <Link to="/clinic/setup" className="mt-3 inline-block rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90">Start setup</Link>
+            : <p className="mt-2 text-sm text-muted">The fellowship director does the setup.</p>}
+        </div>
+      )}
+
+      {isManager && setup && catalog.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-line bg-surface px-4 py-2.5 text-sm">
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted">Setup</span>
+          <span className="text-ink">{plural(catalog.filter((c) => !c.active_until || c.active_until >= today).length, 'clinic')}</span>
+          <span className="text-ink">{plural(setup.patterns, 'weekly pattern')}</span>
+          <span className={setup.starts < fellows.length ? 'text-amber-700 dark:text-amber-300' : 'text-ink'}>
+            {setup.starts >= fellows.length ? plural(fellows.length, 'fellow') : `${fellows.length - setup.starts} of ${plural(fellows.length, 'fellow')} without a starting pattern`}
+          </span>
+          {isDirector && <Link to="/clinic/setup" className="ml-auto font-medium text-accent hover:underline">Edit setup</Link>}
+        </div>
+      )}
 
       {msg && (
         <div className="rounded-md border border-line bg-surface px-4 py-3 text-sm text-ink">
@@ -263,7 +320,7 @@ export default function ClinicRotations() {
           <div className="flex flex-wrap gap-3">
             <button onClick={() => setShowConfig(!showConfig)}
               className="rounded-md border border-line px-4 py-2 text-sm font-medium text-accent hover:bg-accent-soft">
-              {showConfig ? 'Hide schedule setup' : 'Schedule setup (clinics, templates, fellows)'}
+              {showConfig ? 'Hide setup details' : 'Setup details on one screen (clinics, patterns, fellows)'}
             </button>
           </div>
           {showConfig && (
@@ -273,7 +330,7 @@ export default function ClinicRotations() {
               <FellowAssignments onError={setMsg} />
             </>
           )}
-          <GeneratorToolbar draftCount={draftCount} onChanged={load} onError={setMsg} />
+          <GeneratorToolbar draftCount={Math.max(draftCount, allDrafts)} canPublish={isDirector} onChanged={load} onError={setMsg} />
         </>
       )}
 
@@ -314,6 +371,13 @@ export default function ClinicRotations() {
                     <tr key={f.id} className="border-t border-line align-top">
                       <td className="p-2 font-medium text-ink">{f.full_name}</td>
                       {dates.map((dt, i) => {
+                        if (isManager && (f.fellowship_start || f.fellowship_end) && !inFellowship({ fellowship_start: f.fellowship_start ?? null, fellowship_end: f.fellowship_end ?? null }, dt)) {
+                          return (
+                            <td key={dt} className="bg-paper p-2 text-xs text-muted" title="Outside their fellowship dates">
+                              {f.fellowship_start && dt < f.fellowship_start ? 'Starts later' : 'Finished'}
+                            </td>
+                          )
+                        }
                         const r = byCell.get(`${f.id}|${dt}`)
                         const fellowAway = awaySet.has(`${f.id}|${dt}`)
                         const conflictReason = conflictReasonFor(r, f.id, dt)
@@ -399,6 +463,7 @@ export default function ClinicRotations() {
       )}
 
       {isManager && <ClinicTally />}
+      {isManager && <RecentChanges area="clinic" />}
     </div>
   )
 }
@@ -659,8 +724,8 @@ function CancelClinicModal({ rotation, onClose, onDone, onError }: {
   )
 }
 
-function GeneratorToolbar({ draftCount, onChanged, onError }: {
-  draftCount: number; onChanged: () => void; onError: (m: string) => void
+function GeneratorToolbar({ draftCount, canPublish, onChanged, onError }: {
+  draftCount: number; canPublish: boolean; onChanged: () => void; onError: (m: string) => void
 }) {
   const today = localToday()
   const [from, setFrom] = useState(today)
@@ -687,7 +752,7 @@ function GeneratorToolbar({ draftCount, onChanged, onError }: {
     <Card>
       <CardHeader
         title="Schedule"
-        sub="Generates a draft across whatever range you choose — up to a full academic year. Each fellow follows their assigned template for 3 months, then automatically rotates to the next. Date-specific clinics are filled first on their listed dates, and providers who are away are auto-substituted with an alternate clinic."
+        sub="Generates a draft across whatever range you choose — up to a full academic year. Fellows are only placed between their fellowship start and end dates. Each fellow follows their pattern for 3 months from the day their fellowship starts, then moves to the next. Date-specific clinics are filled first on their listed dates, and providers who are away are auto-substituted with an alternate clinic."
       />
       <div className="flex flex-wrap items-end gap-2 px-5 py-4">
         <div>
@@ -704,16 +769,18 @@ function GeneratorToolbar({ draftCount, onChanged, onError }: {
           className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
           {busy === 'generate' ? 'Generating…' : 'Generate Draft Schedule'}
         </button>
-        <button onClick={() => run('publish')} disabled={busy !== null || draftCount === 0}
-          className="rounded-md border border-accent px-4 py-2 text-sm font-semibold text-accent hover:bg-accent-soft disabled:opacity-40">
-          {busy === 'publish' ? 'Publishing…' : 'Publish Schedule'}
-        </button>
-        <button onClick={() => run('discard')} disabled={busy !== null || draftCount === 0}
+        {canPublish && (
+          <button onClick={() => run('publish')} disabled={busy !== null || draftCount === 0}
+            className="rounded-md border border-accent px-4 py-2 text-sm font-semibold text-accent hover:bg-accent-soft disabled:opacity-40">
+            {busy === 'publish' ? 'Publishing…' : 'Publish Schedule'}
+          </button>
+        )}
+        {canPublish && <button onClick={() => run('discard')} disabled={busy !== null || draftCount === 0}
           className="rounded-md border border-line px-4 py-2 text-sm font-medium text-muted hover:text-ink disabled:opacity-40">
           {busy === 'discard' ? 'Clearing…' : 'Clear Draft Schedule'}
-        </button>
+        </button>}
         {draftCount > 0 && (
-          <span className="text-sm text-muted">{draftCount} draft day{draftCount === 1 ? '' : 's'} pending</span>
+          <span className="text-sm text-muted">{draftCount} draft day{draftCount === 1 ? '' : 's'} pending{canPublish ? '' : ' — the fellowship director publishes them'}</span>
         )}
       </div>
     </Card>
@@ -1090,7 +1157,7 @@ function FellowAssignments({ onError }: { onError: (m: string) => void }) {
 
   async function load() {
     const [{ data: f }, { data: t }, { data: r }] = await Promise.all([
-      supabase.rpc('list_fellows'),
+      supabase.rpc('list_fellows', { p_from: localToday(), p_to: (() => { const d = new Date(); d.setDate(d.getDate() + 400); return isoLocal(d) })() }),
       supabase.from('fellow_templates').select('id, name, sort_order').order('sort_order').order('created_at'),
       supabase.from('fellow_rotation').select('fellow_id, start_template_id'),
     ])

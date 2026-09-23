@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import ProgramChecklist from '../components/ProgramChecklist'
 import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
 import { shortDate, localToday } from '../lib/format'
@@ -22,7 +23,7 @@ interface Rotation {
   is_away: boolean | null
   status: string
 }
-interface Session { id: string; session_date: string; start_time: string; topic: string | null; provider_name: string | null; zoom_link: string | null; status: string }
+interface Session { id: string; session_date: string; start_time: string; topic: string | null; provider_name: string | null; zoom_link: string | null; status: string; assignment_draft?: boolean }
 interface Notification { id: string; title: string; body: string | null; link: string | null; created_at: string }
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -114,7 +115,7 @@ export default function Dashboard() {
 
     supabase
       .from('teaching_sessions')
-      .select('id, session_date, start_time, topic, provider_name, zoom_link, status')
+      .select('id, session_date, start_time, topic, provider_name, zoom_link, status, assignment_draft')
       .gte('session_date', from).lte('session_date', to)
       .eq('is_break', false)
       .order('session_date')
@@ -191,6 +192,8 @@ export default function Dashboard() {
 
       <GettingStartedCard userId={profile.id} role={profile.role} />
 
+      {isDirector && <ProgramChecklist />}
+
       {isDirector && (
         <Card>
           <CardHeader title="Director quick actions" />
@@ -200,7 +203,8 @@ export default function Dashboard() {
             </Link>
             <Link to="/my-teaching" className="font-medium text-accent hover:underline">Teaching assignments</Link>
             <Link to="/clinic" className="font-medium text-accent hover:underline">Clinic schedule</Link>
-            <Link to="/people" className="font-medium text-accent hover:underline">Add a user</Link>
+            <Link to="/people/new" className="font-medium text-accent hover:underline">Add people</Link>
+            <Link to="/change" className="font-medium text-accent hover:underline">Make a change</Link>
             <Link to="/settings" className="font-medium text-accent hover:underline">Settings & broadcasts</Link>
           </div>
         </Card>
@@ -244,7 +248,7 @@ export default function Dashboard() {
                     </span>
                   </div>
                   <div className="mt-0.5 flex items-center gap-3 text-muted">
-                    {s.provider_name && <span>{s.provider_name}</span>}
+                    {s.provider_name && (isManager || !s.assignment_draft) && <span>{s.provider_name}</span>}
                     {s.status !== 'cancelled' && s.zoom_link && (
                       <a href={s.zoom_link} target="_blank" rel="noreferrer" className="font-medium text-accent hover:underline">Join Zoom</a>
                     )}

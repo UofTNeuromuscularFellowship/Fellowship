@@ -46,6 +46,11 @@ const EventPublic = lazy(() => import('./pages/public/EventPublic'))
 const SpeakerDisclosure = lazy(() => import('./pages/public/SpeakerDisclosure'))
 const RegisterPublic = lazy(() => import('./pages/public/RegisterPublic'))
 const MyCourses = lazy(() => import('./pages/MyCourses'))
+const AddPeople = lazy(() => import('./pages/AddPeople'))
+const Welcome = lazy(() => import('./pages/Welcome'))
+const MakeChange = lazy(() => import('./pages/MakeChange'))
+const ClinicSetup = lazy(() => import('./pages/ClinicSetup'))
+const TeachingSetup = lazy(() => import('./pages/TeachingSetup'))
 const EventInPortal = lazy(() => import('./pages/public/EventPublic').then((m) => ({ default: m.EventInPortal })))
 
 function LazyPage({ children }: { children: React.ReactNode }) {
@@ -94,6 +99,7 @@ export default function App() {
           ChangePassword sends anyone with neither a token nor a session to
           /login itself. */}
       <Route path="/change-password" element={<ChangePassword />} />
+      <Route path="/welcome" element={<ProtectedRoute skipPasswordGate skipWelcome><LazyPage><Welcome /></LazyPage></ProtectedRoute>} />
       {/* Conference invitees and speakers are not portal members. These pages
           take a private token from their email and never ask anyone to sign
           in - see pages/public/EventPublic.tsx. (/speaker, not /s: /s/:groupId
@@ -113,6 +119,9 @@ export default function App() {
       <Route path="/s/:groupId" element={<Shell><SectionOverview /></Shell>} />
       <Route path="/teaching" element={<Shell><TeachingSchedule /></Shell>} />
       <Route path="/clinic" element={<Shell><ClinicRotations /></Shell>} />
+      <Route path="/clinic/setup" element={<Shell allow={['director']}><LazyPage><ClinicSetup /></LazyPage></Shell>} />
+      <Route path="/change" element={<Shell allow={['director', 'admin']}><LazyPage><MakeChange /></LazyPage></Shell>} />
+      <Route path="/change/:flow" element={<Shell allow={['director', 'admin']}><LazyPage><MakeChange /></LazyPage></Shell>} />
       <Route path="/cases" element={<Shell allow={['fellow', 'supervisor', 'director']}><Cases /></Shell>} />
       <Route path="/teaching-cases" element={<Shell allow={['supervisor', 'director']}><TeachingCases /></Shell>} />
       <Route path="/competency" element={<Shell allow={['fellow', 'director', 'admin']}><Competency /></Shell>} />
@@ -133,7 +142,9 @@ export default function App() {
       />
       <Route path="/handbook" element={<Shell><Handbook /></Shell>} />
       <Route path="/people" element={<Shell allow={['director', 'admin']}><People /></Shell>} />
+      <Route path="/people/new" element={<Shell allow={['director', 'admin']}><LazyPage><AddPeople /></LazyPage></Shell>} />
       <Route path="/my-teaching" element={<Shell allow={['fellow', 'supervisor', 'director', 'assistant']}><MyTeaching /></Shell>} />
+      <Route path="/my-teaching/setup" element={<Shell allow={['director']}><LazyPage><TeachingSetup /></LazyPage></Shell>} />
       <Route path="/rate-teaching" element={<Shell allow={['fellow']}><RateTeaching /></Shell>} />
       <Route path="/vacation" element={<Shell allow={['fellow', 'supervisor', 'director', 'assistant']}><Vacation /></Shell>} />
       <Route path="/evaluations" element={<Shell allow={['fellow', 'supervisor', 'director']}><Evaluations /></Shell>} />

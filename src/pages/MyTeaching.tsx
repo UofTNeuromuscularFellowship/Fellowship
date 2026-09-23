@@ -4,6 +4,8 @@ import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
 import { formatDate, sessionHasEnded } from '../lib/format'
 import { useActingProvider, ActingForBar } from '../components/ActingFor'
+import { Link } from 'react-router-dom'
+import { RecentChanges } from '../components/change/ChangeKit'
 
 interface Session {
   id: string
@@ -242,6 +244,7 @@ export default function MyTeaching() {
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
         <h1 className="font-display text-2xl font-bold text-ink">{isAssistant ? 'Teaching' : 'My Teaching'}</h1>
         <p className="mt-1 text-sm text-muted">
@@ -249,6 +252,13 @@ export default function MyTeaching() {
             : isAssistant ? 'Confirm, flag a conflict, cancel, or add a Zoom link on behalf of the provider you manage'
             : 'Your assigned sessions, delivery log, and feedback'}
         </p>
+      </div>
+      {isDirector && (
+        <div className="flex flex-wrap gap-2">
+          <Link to="/change" className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90">Make a change</Link>
+          <Link to="/my-teaching/setup" className="rounded-md border border-line px-4 py-2 text-sm font-medium text-ink hover:border-accent">Set up a teaching year</Link>
+        </div>
+      )}
       </div>
 
       {isAssistant && (
@@ -302,6 +312,7 @@ export default function MyTeaching() {
       </Card>
 
       {isDirector && <TopicSuggestions sessions={past} onError={setMsg} />}
+      {isDirector && <RecentChanges area="teaching" />}
     </div>
   )
 }
@@ -720,7 +731,7 @@ function AttendancePanel({ session, recorderId, onError }: { session: Session; r
 
   useEffect(() => {
     ;(async () => {
-      const { data: fl, error: fe } = await supabase.rpc('list_fellows')
+      const { data: fl, error: fe } = await supabase.rpc('list_fellows', { p_from: session.session_date })
       if (fe) { onError(fe.message); return }
       setFellows((fl as Person[]) ?? [])
       const { data: existing } = await supabase

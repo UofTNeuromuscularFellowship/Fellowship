@@ -7,11 +7,13 @@ interface Props {
   children: ReactNode
   allow?: ('fellow' | 'supervisor' | 'director' | 'admin' | 'assistant')[]
   skipPasswordGate?: boolean
+  /** The first sign-in steps themselves. */
+  skipWelcome?: boolean
   /** Platform admins only — the page is not part of any program. */
   platformOnly?: boolean
 }
 
-export function ProtectedRoute({ children, allow, skipPasswordGate, platformOnly }: Props) {
+export function ProtectedRoute({ children, allow, skipPasswordGate, skipWelcome, platformOnly }: Props) {
   const { session, profile, loading, profileReady, tools, isPlatformAdmin, site, sites } = useAuth()
   const location = useLocation()
 
@@ -38,6 +40,12 @@ export function ProtectedRoute({ children, allow, skipPasswordGate, platformOnly
         state={{ from: `${location.pathname}${location.search}` }}
       />
     )
+  }
+
+  // Someone new to a program goes through the first sign-in steps before
+  // anything else; those steps include changing a temporary password.
+  if (!skipWelcome && profile && !profile.welcomed_at && sites.length > 0) {
+    return <Navigate to="/welcome" replace />
   }
 
   if (!skipPasswordGate && profile?.must_change_password) {

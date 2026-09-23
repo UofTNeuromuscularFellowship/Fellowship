@@ -8,6 +8,17 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 // admin (who may only appoint a first director). If an account with this email
 // already exists it is NOT recreated — a membership at the target site is added
 // instead, which is how one login belongs to two programs.
+//
+// The "Add people" wizard (0036) also sends what it knows about the person's
+// role, applied here in the same request so nobody is left half set up:
+//   fellows      fellowship_start, fellowship_end (on the membership, with an
+//                'initial' entry in fellowship_changes), start_template_id
+//   supervisors  teaching_only; assistant_id (an assistant who manages them)
+//   directors,   assistant_emails (copied on every portal email)
+//   supervisors
+//   assistants   supports: the supervisors/directors whose schedules they run
+// send_welcome: false skips the welcome email (the temporary password is still
+// returned, to be passed on some other way).
 // ---------------------------------------------------------------------------
 
 const corsHeaders = {
@@ -41,6 +52,78 @@ function roleBlurb(role: string): string {
     default:
       return ''
   }
+}
+
+const ISO = /^\d{4}-\d{2}-\d{2}$/
+const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+
+// Everything role-specific the wizard collected. Each part is checked against
+// this program before it is written; anything that doesn't check out is
+// skipped and reported back rather than failing the whole request.
+async function configure(
+  admin: ReturnType<typeof createClient>, siteId: string, userId: string, role: string,
+  // deno-lint-ignore no-explicit-any
+  body: any, callerId: string, existingAccount: boolean,
+): Promise<string[]> {
+  const notes: string[] = []
+
+  if (role === 'fellow') {
+    if (existingAccount && body.cohort_year) await admin.from('users').update({ cohort_year: body.cohort_year }).eq('id', userId)
+    const start = body.fellowship_start ?? null
+    const end = body.fellowship_end ?? null
+    if (start || end) {
+      await admin.from('site_memberships').update({ fellowship_start: start, fellowship_end: end, updated_at: new Date().toISOString() })
+        .eq('site_id', siteId).eq('user_id', userId)
+      await admin.from('fellowship_changes').insert({
+        site_id: siteId, user_id: userId, new_start: start, new_end: end, reason: 'initial', changed_by: callerId,
+      })
+    }
+    if (body.start_template_id) {
+      const { data: t } = await admin.from('fellow_templates').select('id')
+        .eq('id', body.start_template_id).eq('site_id', siteId).maybeSingle()
+      if (t) {
+        const { error } = await admin.from('fellow_rotation')
+          .upsert({ fellow_id: userId, start_template_id: t.id, site_id: siteId }, { onConflict: 'fellow_id' })
+        if (error) notes.push('The starting clinic pattern could not be saved.')
+      } else notes.push('That clinic pattern is not in this program, so none was set.')
+    }
+  }
+
+  if (role === 'supervisor' && typeof body.teaching_only === 'boolean') {
+    await admin.from('users').update({ teaching_only: body.teaching_only }).eq('id', userId)
+  }
+
+  if (['supervisor', 'director'].includes(role) && Array.isArray(body.assistant_emails)) {
+    const add = body.assistant_emails.map((e: unknown) => String(e).trim().toLowerCase()).filter((e: string) => EMAIL.test(e))
+    if (add.length) {
+      const { data: u } = await admin.from('users').select('assistant_emails').eq('id', userId).maybeSingle()
+      const merged = Array.from(new Set([...(existingAccount ? (u?.assistant_emails ?? []) : []), ...add]))
+      await admin.from('users').update({ assistant_emails: merged }).eq('id', userId)
+    }
+  }
+
+  const activeHere = async (id: string, roles: string[]) => {
+    const { data } = await admin.from('site_memberships').select('role, status')
+      .eq('site_id', siteId).eq('user_id', id).maybeSingle()
+    return !!data && data.status === 'active' && roles.includes(data.role)
+  }
+
+  if (['supervisor', 'director'].includes(role) && body.assistant_id) {
+    if (await activeHere(String(body.assistant_id), ['assistant'])) {
+      await admin.from('provider_assistants')
+        .upsert({ provider_id: userId, assistant_id: body.assistant_id, site_id: siteId }, { onConflict: 'provider_id,assistant_id', ignoreDuplicates: true })
+    } else notes.push('That assistant is not an active assistant in this program, so they were not linked.')
+  }
+
+  if (role === 'assistant' && Array.isArray(body.supports)) {
+    for (const pid of body.supports.map(String)) {
+      if (await activeHere(pid, ['supervisor', 'director'])) {
+        await admin.from('provider_assistants')
+          .upsert({ provider_id: pid, assistant_id: userId, site_id: siteId }, { onConflict: 'provider_id,assistant_id', ignoreDuplicates: true })
+      } else notes.push('One of the chosen supervisors is not active in this program and was skipped.')
+    }
+  }
+  return notes
 }
 
 async function platformSettings(admin: ReturnType<typeof createClient>) {
@@ -85,6 +168,13 @@ Deno.serve(async (req: Request) => {
     const { email, full_name, role, cohort_year, phone } = body
     if (!email || !full_name || !role) return reply({ error: 'email, full_name, and role are required' }, 400)
     if (!['fellow', 'supervisor', 'director', 'admin', 'assistant'].includes(role)) return reply({ error: 'invalid role' }, 400)
+    for (const k of ['fellowship_start', 'fellowship_end']) {
+      if (body[k] != null && !ISO.test(String(body[k]))) return reply({ error: 'Fellowship dates must be real dates.' }, 400)
+    }
+    if (body.fellowship_start && body.fellowship_end && body.fellowship_end < body.fellowship_start) {
+      return reply({ error: 'The fellowship ends before it starts.' }, 400)
+    }
+    const sendWelcome = body.send_welcome !== false
 
     // ---- which site, and may the caller act there? ----
     const { data: callerRow } = await admin.from('users').select('active_site_id').eq('id', callerId).maybeSingle()
@@ -122,6 +212,7 @@ Deno.serve(async (req: Request) => {
       if (mErr) return reply({ error: mErr.message }, 400)
       // Someone whose only membership was inactive was banned; lift it.
       await admin.auth.admin.updateUserById(existing.id, { ban_duration: 'none' })
+      const notes = await configure(admin, siteId, existing.id, role, body, callerId, true)
 
       const html =
         `<div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:0 auto;color:#0F1B2D;line-height:1.5">` +
@@ -130,8 +221,11 @@ Deno.serve(async (req: Request) => {
         `<p>Your existing portal account (<strong>${emailLc}</strong>) now also belongs to <strong>${site.name}</strong>. ` +
         `Sign in as usual at <a href="${PORTAL}/login">${PORTAL}/login</a> — you will be asked which program to open.</p>` +
         roleBlurb(role) + `</div>`
-      const emailed = await sendEmail(admin, emailLc, `You have been added to ${site.name}`, html, 'added')
-      return reply({ ok: true, user_id: existing.id, email: emailLc, added_existing: true, welcome_emailed: emailed })
+      const emailed = sendWelcome ? await sendEmail(admin, emailLc, `You have been added to ${site.name}`, html, 'added') : false
+      return reply({
+        ok: true, user_id: existing.id, email: emailLc, full_name: existing.full_name,
+        added_existing: true, welcome_emailed: emailed, notes,
+      })
     }
 
     // ---- brand new account ----
@@ -153,6 +247,7 @@ Deno.serve(async (req: Request) => {
       full_name, cohort_year: cohort_year ?? null, phone: phone ?? null, must_change_password: true, active_site_id: siteId,
     }).eq('id', created.user.id)
     if (updErr) return reply({ error: updErr.message }, 400)
+    const notes = await configure(admin, siteId, created.user.id, role, body, callerId, false)
 
     const html =
       `<div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:0 auto;color:#0F1B2D;line-height:1.5">` +
@@ -167,9 +262,9 @@ Deno.serve(async (req: Request) => {
       roleBlurb(role) +
       `<p style="color:#5B6677;font-size:13px">Questions? Reply to this email.</p>` +
       `</div>`
-    const welcomeEmailed = await sendEmail(admin, emailLc, 'Your Neuromuscular Fellowship portal access', html, 'welcome')
+    const welcomeEmailed = sendWelcome ? await sendEmail(admin, emailLc, 'Your Neuromuscular Fellowship portal access', html, 'welcome') : false
 
-    return reply({ ok: true, user_id: created.user.id, email: emailLc, temp_password: tempPassword, welcome_emailed: welcomeEmailed })
+    return reply({ ok: true, user_id: created.user.id, email: emailLc, temp_password: tempPassword, welcome_emailed: welcomeEmailed, notes })
   } catch (e) {
     return reply({ error: String(e) }, 500)
   }
