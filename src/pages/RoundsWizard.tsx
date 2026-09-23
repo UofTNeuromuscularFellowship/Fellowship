@@ -72,8 +72,6 @@ export default function RoundsWizard() {
   const [inviteProgram, setInviteProgram] = useState(false)
   const [newList, setNewList] = useState('')
   const [newPeople, setNewPeople] = useState('')
-  const [leadMode, setLeadMode] = useState<'topic' | 'days'>('topic')
-  const [leadDays, setLeadDays] = useState(14)
 
   // credit & follow-up
   const [reminder, setReminder] = useState(true)
@@ -171,7 +169,7 @@ export default function RoundsWizard() {
       timezone: tz, duration_min: duration, recurrence: kind, recurrence_rule: { ...rule, weekdays: rule.weekdays },
       credit_hours: credit.trim() ? Number(credit) : null, credits_statement: clean(creditStatement),
       organizer_name: clean(organizerName), organizer_email: clean(organizerEmail), logo_url: logo,
-      invite_program: inviteProgram, invite_lead_days: leadMode === 'days' ? leadDays : null,
+      invite_program: inviteProgram, invite_lead_days: null,
       reminder_enabled: reminder, feedback_enabled: feedback,
     }).select('id').single()
     if (error || !ser) { setBusy(false); setErr(error?.message ?? 'The rounds couldn’t be saved.'); return }
@@ -369,7 +367,7 @@ export default function RoundsWizard() {
           )}
           {format !== 'in_person' && (
             <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_12rem]">
-              <Lbl text="Video link (Zoom, Teams…)" hint="Only shown to people who say they’re coming, so a forwarded invitation doesn’t give out the link. You can add it later.">
+              <Lbl text="Video link (Zoom, Teams…)" hint="Included in the invitation and reminder emails, so people can join even if they don’t RSVP. You can add it later.">
                 <input type="url" className={field} value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="https://" />
               </Lbl>
               <Lbl text="Passcode (optional)">
@@ -413,29 +411,17 @@ export default function RoundsWizard() {
               <p className="text-xs text-muted">Lists are kept for other rounds, and can be changed any time under Rounds → Mailing lists.</p>
             </div>
           </details>
-          <fieldset className="space-y-2">
-            <legend className={labelCls}>When invitations go out</legend>
-            <ChoiceCard name="lead" checked={leadMode === 'topic'} onChange={() => setLeadMode('topic')} title="As soon as a session has a topic">
-              Add a topic here or later, and that session’s invitation goes out within 15 minutes.
-            </ChoiceCard>
-            <ChoiceCard name="lead" checked={leadMode === 'days'} onChange={() => setLeadMode('days')} title="A set number of days before">
-              Better for a long weekly series, so people aren’t sent a term’s invitations at once. The session still needs a topic by then.
-            </ChoiceCard>
-            {leadMode === 'days' && (
-              <label className="flex items-center gap-2 pl-1 text-sm text-ink">
-                <input type="number" min={1} max={60} className="w-20 rounded-md border border-line bg-surface px-2 py-1.5"
-                  value={leadDays} onChange={(e) => setLeadDays(Math.max(1, Math.min(60, Number(e.target.value) || 14)))} />
-                days before each session
-              </label>
-            )}
-          </fieldset>
+          <Notice>
+            <strong>When invitations go out:</strong> the first session’s as soon as it has a topic; each later session’s one week
+            after the session before it (for weekly rounds, the day after). A session without a topic waits until one is added.
+          </Notice>
         </section>
       )}
 
       {step === 4 && (
         <section className="space-y-4">
           <Toggle checked={reminder} onChange={setReminder} title="Reminder the day before"
-            text="Everyone who said they’re coming gets a reminder about 24 hours before, with the room or the video link." />
+            text="About 24 hours before, everyone invited who hasn’t said no gets a reminder with the room or the video link — including people who never RSVP’d." />
           <Toggle checked={feedback} onChange={setFeedback} title="Ask for feedback afterwards"
             text="When a session ends, people who RSVP’d yes are emailed a short rating form. You see the results on the session." />
           <div className="grid gap-4 sm:grid-cols-[10rem_minmax(0,1fr)]">
@@ -462,14 +448,14 @@ export default function RoundsWizard() {
               <span className="text-muted">{plural(live.length, 'session')}{live.length ? `: ${niceDay(live[0].date)}${live.length > 1 ? ` to ${niceDay(live[live.length - 1].date)}` : ''}` : ''}</span></span>],
             ['Where', <span key="p">{FORMAT_LABEL[format]}{format !== 'virtual' && location ? ` · ${location}` : ''}{format !== 'in_person' ? (videoUrl ? ' · video link added' : ' · video link to add later') : ''}</span>],
             ['Invited', [inviteProgram ? 'Everyone in the program' : null, ...listNames].filter(Boolean).join(', ') || '—'],
-            ['Invitations', leadMode === 'topic'
-              ? `Sent once a session has a topic${withTopic ? ` — ${plural(withTopic, 'session')} already ${withTopic === 1 ? 'has' : 'have'} one` : ''}`
-              : `Sent ${leadDays} days before each session that has a topic`],
+            ['Invitations', `First session: once it has a topic. Each later one: a week after the session before it (the day after, for weekly rounds), once it has a topic.${withTopic ? ` ${plural(withTopic, 'session')} already ${withTopic === 1 ? 'has a topic' : 'have topics'}.` : ''}`],
             ['Follow-up', [reminder ? 'reminder the day before' : null, feedback ? 'feedback request' : null, credit.trim() ? `certificate (${credit} h)` : null].filter(Boolean).join(', ') || 'none'],
             ['Organizer', [organizerName, organizerEmail].filter(Boolean).join(' · ') || '—'],
           ]} />
-          {withTopic > 0 && leadMode === 'topic' && (
-            <Notice>Invitations for the {plural(withTopic, 'session')} with a topic go out within 15 minutes of saving.</Notice>
+          {live[0]?.topic.trim() ? (
+            <Notice>The first session has a topic, so its invitation goes out within 15 minutes of saving.</Notice>
+          ) : (
+            <Notice tone="warn">The first session has no topic yet — its invitation waits until you add one.</Notice>
           )}
         </section>
       )}

@@ -8,7 +8,7 @@ import { plural, toIso } from '../lib/schedule'
 import { useRoundsAccess, NotAllowed } from './Rounds'
 import { Toggle } from './RoundsWizard'
 import {
-  describeRule, FORMAT_LABEL, FORMAT_SHORT, inMyZone, rsvpLabel, sessionWhen, utcToZoned, zonedToUtc, zoneLabel, zoneOptions,
+  describeRule, FORMAT_LABEL, FORMAT_SHORT, inMyZone, inviteDue, rsvpLabel, sessionWhen, utcToZoned, zonedToUtc, zoneLabel, zoneOptions,
   type RoundsFormat, type RoundsInvite, type RoundsList, type RoundsSeries as Series, type RoundsSession,
 } from '../lib/rounds'
 
@@ -31,7 +31,7 @@ export default function RoundsSeries() {
   const [tab, setTab] = useState<'upcoming' | 'past' | 'cancelled'>('upcoming')
   const [open, setOpen] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
-  const [msg, setMsg] = useState<Msg>(qs.get('created') ? { tone: 'ok', text: 'Your rounds are set up. Add topics below — each session’s invitation goes out once it has one.' } : null)
+  const [msg, setMsg] = useState<Msg>(qs.get('created') ? { tone: 'ok', text: 'Your rounds are set up. Each session needs a topic: its invitation goes out a week after the session before it (the day after, for weekly rounds), or as soon as the topic is added if that date has passed.' } : null)
 
   const load = useCallback(async () => {
     const [s, ss] = await Promise.all([
@@ -108,7 +108,7 @@ export default function RoundsSeries() {
       ) : (
         <ul className="space-y-3">
           {shown.map((s) => (
-            <SessionItem key={s.id} s={s} series={series} c={counts[s.id]} open={open === s.id}
+            <SessionItem key={s.id} s={s} all={sessions} series={series} c={counts[s.id]} open={open === s.id}
               onToggle={() => setOpen(open === s.id ? null : s.id)}
               onChanged={(t) => { if (t) setMsg({ tone: 'ok', text: t }); load() }} />
           ))}
@@ -120,8 +120,8 @@ export default function RoundsSeries() {
 
 // ---------------------------------------------------------------- a session
 
-function SessionItem({ s, series, c, open, onToggle, onChanged }: {
-  s: RoundsSession; series: Series; c?: Counts[string]; open: boolean; onToggle: () => void; onChanged: (t?: string) => void
+function SessionItem({ s, all, series, c, open, onToggle, onChanged }: {
+  s: RoundsSession; all: RoundsSession[]; series: Series; c?: Counts[string]; open: boolean; onToggle: () => void; onChanged: (t?: string) => void
 }) {
   const past = new Date(s.ends_at).getTime() <= Date.now()
   const mine = inMyZone(s.starts_at, s.timezone)
@@ -140,10 +140,12 @@ function SessionItem({ s, series, c, open, onToggle, onChanged }: {
           {s.invite_sent_at
             ? <>{c?.invited ?? 0} invited · {c?.yes ?? 0} coming · {c?.no ?? 0} can’t</>
             : s.status === 'scheduled' && !past
-              ? (!s.topic ? 'Invitations wait for a topic'
-                : series.invite_lead_days && new Date(s.starts_at).getTime() - series.invite_lead_days * 86400000 > Date.now()
-                  ? `Invitations go out ${new Date(new Date(s.starts_at).getTime() - series.invite_lead_days * 86400000).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })}`
-                  : 'Invitations go out within 15 minutes')
+              ? (() => {
+                  const due = inviteDue(s, all)
+                  const when = due && due.getTime() > Date.now() ? due.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }) : null
+                  if (!s.topic) return when ? `Needs a topic — invitations due ${when}` : 'Needs a topic — invitations are waiting for one'
+                  return when ? `Invitations go out ${when}` : 'Invitations go out within 15 minutes'
+                })()
               : null}
           {past && c?.rated ? <span className="block">Rated {(c.ratingSum / c.rated).toFixed(1)} / 5 ({c.rated})</span> : null}
         </span>
@@ -200,9 +202,7 @@ function SessionEditor({ s, series, invited, onChanged }: { s: RoundsSession; se
       const { data, error: e2 } = await supabase.rpc('rounds_notify_change', { p_session: s.id })
       text = e2 ? `Saved, but the update email failed: ${e2.message}` : `Saved · ${plural((data as number) ?? 0, 'person', 'people')} emailed about the change.`
     } else if (!s.invite_sent_at && topic.trim()) {
-      text = series.invite_lead_days
-        ? `Saved. The invitation goes out ${series.invite_lead_days} days before, or send it now.`
-        : 'Saved. The invitation goes out within 15 minutes, or send it now.'
+      text = 'Saved. The invitation goes out on schedule (shown on the session), or send it now.'
     }
     setBusy(false)
     onChanged(text)
@@ -266,7 +266,7 @@ function SessionEditor({ s, series, invited, onChanged }: { s: RoundsSession; se
           <input type="checkbox" className="mt-1" checked={notify} onChange={(e) => setNotify(e.target.checked)} />
           <span>
             <span className="block font-semibold text-ink">Email the {plural(invited, 'person', 'people')} invited about the change</span>
-            <span className="block text-xs text-muted">Everyone except those who said they can’t come. Those coming get the new joining details, and a fresh reminder the day before.</span>
+            <span className="block text-xs text-muted">Everyone except those who said they can’t come, with the new details and joining link. A fresh reminder goes out the day before.</span>
           </span>
         </label>
       )}
@@ -406,7 +406,6 @@ function SeriesSettings({ series, onSaved }: { series: Series; onSaved: (t: stri
   const [d, setD] = useState(series)
   const [lists, setLists] = useState<RoundsList[]>([])
   const [chosen, setChosen] = useState<Set<string>>(new Set())
-  const [lead, setLead] = useState<string>(series.invite_lead_days ? String(series.invite_lead_days) : '')
   const [credit, setCredit] = useState(series.credit_hours == null ? '' : String(series.credit_hours))
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -433,7 +432,6 @@ function SeriesSettings({ series, onSaved }: { series: Series; onSaved: (t: stri
       title: d.title.trim(), description: clean(d.description), format: d.format, location: clean(d.location),
       video_url: clean(d.video_url), video_passcode: clean(d.video_passcode), organizer_name: clean(d.organizer_name),
       organizer_email: clean(d.organizer_email), logo_url: d.logo_url, invite_program: d.invite_program,
-      invite_lead_days: lead.trim() ? Math.max(1, Math.min(60, Number(lead))) : null,
       reminder_enabled: d.reminder_enabled, feedback_enabled: d.feedback_enabled,
       credit_hours: credit.trim() ? Number(credit) : null, credits_statement: clean(d.credits_statement),
       duration_min: d.duration_min, timezone: d.timezone, updated_at: new Date().toISOString(),
@@ -479,18 +477,12 @@ function SeriesSettings({ series, onSaved }: { series: Series; onSaved: (t: stri
           ))}
           <Link to="/rounds" className="text-xs font-medium text-accent hover:underline">Manage mailing lists</Link>
         </div>
-        <L text="Send invitations" hint="Leave blank to send as soon as a session has a topic.">
-          <span className="flex items-center gap-2">
-            <input type="number" min={1} max={60} className={field} value={lead} onChange={(e) => setLead(e.target.value)} placeholder="—" />
-            <span className="whitespace-nowrap text-sm text-muted">days before</span>
-          </span>
-        </L>
         <L text="Credit hours per session"><input inputMode="decimal" className={field} value={credit} onChange={(e) => setCredit(e.target.value)} /></L>
         <L text="Credit statement (printed on the certificate)" wide>
           <textarea rows={2} className={field} value={d.credits_statement ?? ''} onChange={(e) => set('credits_statement', e.target.value)} />
         </L>
         <div className="grid gap-2 sm:col-span-2 sm:grid-cols-2">
-          <Toggle checked={d.reminder_enabled} onChange={(v) => set('reminder_enabled', v)} title="Reminder the day before" text="To everyone coming." />
+          <Toggle checked={d.reminder_enabled} onChange={(v) => set('reminder_enabled', v)} title="Reminder the day before" text="To everyone invited who hasn’t said no, including people who never RSVP’d." />
           <Toggle checked={d.feedback_enabled} onChange={(v) => set('feedback_enabled', v)} title="Ask for feedback afterwards" text="Needed before a certificate can be downloaded." />
         </div>
       </div>

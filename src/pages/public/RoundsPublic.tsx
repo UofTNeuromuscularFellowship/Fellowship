@@ -6,7 +6,7 @@ import { inMyZone } from '../../lib/rounds'
 
 // ---------------------------------------------------------------------------
 // The page a rounds invitee opens from their email: RSVP (in person or
-// online, as the session allows), the joining link once they're coming,
+// online, as the session allows), the room or joining link,
 // feedback afterwards, and their certificate of attendance. No sign-in —
 // the token in the link is the whole key.
 //   /rsvp/:token               RSVP and feedback
@@ -66,7 +66,6 @@ export default function RoundsPublic() {
 function Details({ data }: { data: Payload }) {
   const s = data.session
   const mine = inMyZone(s.starts_at, s.timezone)
-  const coming = data.invite.response === 'in_person' || data.invite.response === 'virtual'
   return (
     <Panel>
       <dl className="space-y-2 text-sm">
@@ -77,9 +76,9 @@ function Details({ data }: { data: Payload }) {
           <div>
             <dt className="inline font-semibold">Online: </dt>
             <dd className="inline">
-              {coming && s.video_url
+              {s.video_url
                 ? <><a className="break-all text-accent hover:underline" href={s.video_url} target="_blank" rel="noreferrer">{s.video_url}</a>{s.video_passcode ? ` · passcode ${s.video_passcode}` : ''}</>
-                : coming ? 'The joining link will appear here once the organizer adds it.' : 'The joining link appears here once you say you’re coming.'}
+                : 'The organizer will share the joining link.'}
             </dd>
           </div>
         )}

@@ -27,6 +27,9 @@ import {
   savePoster,
   signPaths,
   updateCase,
+  addImages,
+  updateImage,
+  deleteImage,
   type Annotation,
   type CaseMedia as Case,
   type ConsentRecord,
@@ -168,7 +171,26 @@ function UploadForm({
   const [title, setTitle] = useState('')
   const [mediaKind, setMediaKind] = useState<MediaKind>('waveform')
   const [description, setDescription] = useState('')
-  const [file, setFile] = useState<File | null>(null)
+  // The first file is the case's own image or clip; any more are further
+  // images of the same case, added in order.
+  const [files, setFiles] = useState<File[]>([])
+  const [fileNote, setFileNote] = useState<string | null>(null)
+  const file = files[0] ?? null
+  function addFiles(list: FileList | null) {
+    const picked = Array.from(list ?? [])
+    if (!picked.length) return
+    const next = [...files]
+    let skipped = 0
+    for (const f of picked) {
+      const clip = f.type.startsWith('video/') || /\.(mp4|mov|webm|m4v|avi)$/i.test(f.name)
+      // A clip can only be the case's first file: it is annotated through a
+      // captured frame, which only the first file has.
+      if (clip && next.length > 0) { skipped++; continue }
+      next.push(f)
+    }
+    setFiles(next)
+    setFileNote(skipped ? `${skipped} clip${skipped === 1 ? '' : 's'} left out — only the first file of a case can be a clip. Add it as its own case.` : null)
+  }
   // Remounts the file inputs after a successful upload. They are uncontrolled,
   // so without this their value survives the reset and picking the same file
   // again fires no change event.
@@ -204,6 +226,15 @@ function UploadForm({
         { title, mediaKind, description, file, findings: chosen },
         authorId,
       )
+      if (files.length > 1) {
+        try {
+          created.images = await addImages(created, files.slice(1), authorId)
+        } catch (e) {
+          // The case itself is up; say which part didn't make it rather than
+          // losing the case.
+          onError(`The case was added, but not all of its extra images: ${e instanceof Error ? e.message : String(e)}`)
+        }
+      }
       // The case exists first, because the consent row references it. If the
       // consent write fails the case is removed again rather than left standing
       // without the permission it requires.
@@ -229,7 +260,8 @@ function UploadForm({
       onDone(created)
       setTitle('')
       setDescription('')
-      setFile(null)
+      setFiles([])
+      setFileNote(null)
       setFileKey((n) => n + 1)
       setConfirmed(false)
       setPatientName('')
@@ -306,20 +338,20 @@ function UploadForm({
           is why these are full-width labelled buttons with the input hidden
           inside them. */}
       <div>
-        <span className="text-xs font-semibold uppercase tracking-wide text-muted">Image or clip</span>
+        <span className="text-xs font-semibold uppercase tracking-wide text-muted">Images or clip</span>
         <div className="mt-1 grid gap-2 sm:grid-cols-2">
           <label className="flex min-h-[44px] cursor-pointer items-center justify-center gap-2 rounded-md border border-line bg-surface px-3 py-2.5 text-sm font-semibold text-ink hover:border-accent">
             <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
               <path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.2l1.1-1.7A1.5 1.5 0 0 1 9.05 4.6h5.9a1.5 1.5 0 0 1 1.25.7L17.3 7h2.2A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" />
               <circle cx="12" cy="12.8" r="3.4" />
             </svg>
-            Take a photo or video
+            {files.length ? 'Take another photo' : 'Take a photo or video'}
             <input
               key={`cam-${fileKey}`}
               type="file"
               accept="image/*,video/*"
               capture="environment"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => { addFiles(e.target.files); setFileKey((n) => n + 1) }}
               className="sr-only"
             />
           </label>
@@ -328,21 +360,37 @@ function UploadForm({
               <path d="M4 17.5V6.5A1.5 1.5 0 0 1 5.5 5h13A1.5 1.5 0 0 1 20 6.5v11a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z" />
               <path d="M4 15.5 8.8 11l3.4 3.2 2.5-2.2L20 16" />
             </svg>
-            Choose a file
+            {files.length ? 'Add more files' : 'Choose files'}
             <input
               key={`pick-${fileKey}`}
               type="file"
+              multiple
               accept="image/*,video/*"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => { addFiles(e.target.files); setFileKey((n) => n + 1) }}
               className="sr-only"
             />
           </label>
         </div>
-        <p className="mt-1 text-xs text-muted">
-          {file
-            ? `${file.name} · ${(file.size / 1024 / 1024).toFixed(1)} MB`
-            : 'Nothing chosen yet. The camera option opens straight into the camera on a phone or tablet.'}
-        </p>
+        {files.length === 0 ? (
+          <p className="mt-1 text-xs text-muted">
+            Nothing chosen yet. You can add several images of the same case; each can be annotated
+            separately. The camera option opens straight into the camera on a phone or tablet.
+          </p>
+        ) : (
+          <ol className="mt-2 divide-y divide-line rounded-md border border-line">
+            {files.map((f, i) => (
+              <li key={`${f.name}-${i}`} className="flex items-center justify-between gap-2 px-3 py-1.5 text-xs">
+                <span className="min-w-0 truncate text-ink">
+                  <span className="font-semibold">{i + 1}.</span> {f.name}
+                  <span className="text-muted"> · {(f.size / 1024 / 1024).toFixed(1)} MB{i === 0 && files.length > 1 ? ' · shown first' : ''}</span>
+                </span>
+                <button type="button" onClick={() => setFiles(files.filter((_, j) => j !== i))}
+                  className="shrink-0 font-semibold text-muted hover:text-ink" aria-label={`Remove ${f.name}`}>Remove</button>
+              </li>
+            ))}
+          </ol>
+        )}
+        {fileNote && <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">{fileNote}</p>}
       </div>
 
       {needsConsent && (
@@ -608,6 +656,8 @@ function CaseView({
   c,
   url,
   posterUrl,
+  imageUrls,
+  uploaderId,
   mayEdit,
   findings,
   authorName,
@@ -618,6 +668,10 @@ function CaseView({
   c: Case
   url: string | null
   posterUrl: string | null
+  /** Signed links for the case's further images, by storage path. */
+  imageUrls: Map<string, string>
+  /** Who is signed in, for the storage path of images they add. */
+  uploaderId: string
   mayEdit: boolean
   findings: Finding[]
   /** Who uploaded it, already resolved. */
@@ -626,8 +680,17 @@ function CaseView({
   onDeleted: (id: string) => void
   onError: (m: string) => void
 }) {
+  // Which image of the case is showing: 0 is the case's own file, 1.. its
+  // further images. Annotations belong to the image they were drawn on.
+  const [sel, setSel] = useState(0)
+  const extra = sel > 0 ? c.images[sel - 1] ?? null : null
+  const current: Annotation[] = extra ? extra.annotations : c.annotations
   const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState<Annotation[]>(c.annotations)
+  const [draft, setDraft] = useState<Annotation[]>(current)
+  // The freehand outline still being drawn: further strokes join it.
+  const [joinId, setJoinId] = useState<string | null>(null)
+  const [imgBusy, setImgBusy] = useState(false)
+  const addInput = useRef<HTMLInputElement>(null)
   const [tool, setTool] = useState<ShapeKind>('arrow')
   const [colour, setColour] = useState(COLOURS[0].id)
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -649,11 +712,16 @@ function CaseView({
   const [descDraft, setDescDraft] = useState(c.description ?? '')
   const [detailsBusy, setDetailsBusy] = useState(false)
 
+  useEffect(() => { setSel(0) }, [c.id])
   useEffect(() => {
-    setDraft(c.annotations)
+    if (sel > c.images.length) setSel(0)
+  }, [sel, c.images.length])
+  useEffect(() => {
+    setDraft(current)
     setEditing(false)
     setActiveId(null)
-  }, [c.id, c.annotations])
+    setJoinId(null)
+  }, [c.id, sel, current])
 
   useEffect(() => {
     setTagDraft(c.findings)
@@ -694,17 +762,26 @@ function CaseView({
     }
   }
 
-  const video = isVideo(c)
+  const video = !extra && isVideo(c)
+  const extraUrl = extra ? imageUrls.get(extra.storagePath) ?? null : null
+  const mediaUrl = extra ? extraUrl : url
   // A clip is annotated through a still captured from it; the still is what the
   // shapes are anchored to, so the drawing surface only ever shows an image.
-  const annotationSurface = video ? posterUrl : url
-  const shown = editing ? draft : c.annotations
+  const annotationSurface = extra ? extraUrl : video ? posterUrl : url
+  const shown = editing ? draft : current
+  const totalImages = 1 + c.images.length
 
   async function save() {
     setBusy(true)
     try {
-      onSaved(await updateCase(c.id, { annotations: draft }))
+      if (extra) {
+        const img = await updateImage(extra.id, draft)
+        onSaved({ ...c, images: c.images.map((i) => (i.id === img.id ? img : i)) })
+      } else {
+        onSaved(await updateCase(c.id, { annotations: draft }))
+      }
       setEditing(false)
+      setJoinId(null)
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -734,8 +811,38 @@ function CaseView({
     }
   }
 
+  async function addMore(list: FileList | null) {
+    const picked = Array.from(list ?? []).filter((f) => f.type.startsWith('image/'))
+    if (!picked.length) { if (list?.length) onError('Only images can be added to a case — a clip needs its own case.'); return }
+    setImgBusy(true)
+    try {
+      const added = await addImages(c, picked, uploaderId)
+      onSaved({ ...c, images: [...c.images, ...added] })
+      setSel(c.images.length + 1)
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setImgBusy(false)
+    }
+  }
+
+  async function removeImage() {
+    if (!extra) return
+    if (!window.confirm(`Remove image ${sel} and its annotations from this case? The file is permanently removed.`)) return
+    setImgBusy(true)
+    try {
+      await deleteImage(extra)
+      onSaved({ ...c, images: c.images.filter((i) => i.id !== extra.id) })
+      setSel(sel - 1)
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setImgBusy(false)
+    }
+  }
+
   async function remove() {
-    if (!window.confirm(`Delete "${c.title}"? The file is permanently removed.`)) return
+    if (!window.confirm(`Delete "${c.title}"${totalImages > 1 ? ` and all ${totalImages} of its images` : ''}? The files are permanently removed.`)) return
     try {
       await deleteCase(c)
       onDeleted(c.id)
@@ -790,8 +897,9 @@ function CaseView({
                   </button>
                   <button
                     onClick={() => {
-                      setDraft(c.annotations)
+                      setDraft(current)
                       setEditing(false)
+                      setJoinId(null)
                     }}
                     className="min-h-[38px] rounded-md border border-line px-3 py-1.5 text-xs font-semibold text-muted hover:text-ink"
                   >
@@ -816,7 +924,7 @@ function CaseView({
             {TOOLS.map((t) => (
               <button
                 key={t.id}
-                onClick={() => setTool(t.id)}
+                onClick={() => { setTool(t.id); setJoinId(null) }}
                 title={t.hint}
                 className={`min-h-[40px] rounded-md border px-2.5 text-sm font-semibold sm:min-h-0 sm:py-1.5 sm:text-xs ${
                   tool === t.id ? 'border-accent bg-accent-soft text-accent' : 'border-line text-muted hover:text-ink'
@@ -833,7 +941,7 @@ function CaseView({
             {COLOURS.map((col) => (
               <button
                 key={col.id}
-                onClick={() => setColour(col.id)}
+                onClick={() => { setColour(col.id); setJoinId(null) }}
                 title={col.name}
                 aria-label={col.name}
                 aria-pressed={colour === col.id}
@@ -849,20 +957,41 @@ function CaseView({
 
           <div className="grid grid-cols-2 gap-1 sm:flex sm:gap-2">
             <button
-              onClick={() => setDraft((d) => d.slice(0, -1))}
+              onClick={() => {
+                // In an outline of several strokes, take back the last stroke;
+                // otherwise the last shape.
+                const joined = joinId ? draft.find((a) => a.id === joinId) : undefined
+                if (joined?.strokes && joined.strokes.length > 1) {
+                  const strokes = joined.strokes.slice(0, -1)
+                  setDraft((d) => d.map((a) => (a.id === joined.id ? { ...a, strokes, points: strokes.flat() } : a)))
+                  return
+                }
+                setDraft((d) => d.slice(0, -1))
+                setJoinId(null)
+              }}
               disabled={draft.length === 0}
               className="min-h-[40px] rounded-md border border-line px-2.5 text-sm font-semibold text-muted hover:text-ink disabled:opacity-40 sm:min-h-0 sm:py-1.5 sm:text-xs"
             >
               Undo
             </button>
             <button
-              onClick={() => setDraft([])}
+              onClick={() => { setDraft([]); setJoinId(null) }}
               disabled={draft.length === 0}
               className="min-h-[40px] rounded-md border border-line px-2.5 text-sm font-semibold text-muted hover:text-ink disabled:opacity-40 sm:min-h-0 sm:py-1.5 sm:text-xs"
             >
               Clear all
             </button>
           </div>
+          {tool === 'freehand' && joinId && (
+            <div className="flex items-center gap-2 rounded-md border border-accent/40 bg-accent-soft/30 px-2.5 py-1.5 text-xs text-ink">
+              <span>
+                Drawing outline {draft.findIndex((a) => a.id === joinId) + 1} — lift and keep drawing to add to it.
+              </span>
+              <button onClick={() => setJoinId(null)} className="shrink-0 font-semibold text-accent hover:underline">
+                Finish outline
+              </button>
+            </div>
+          )}
           <p className="text-xs text-muted sm:ml-auto">
             <span className="sm:hidden">Draw on the image with a finger · name each shape below</span>
             <span className="hidden sm:inline">
@@ -924,13 +1053,13 @@ function CaseView({
         )}
 
         {/* ---- the media ---- */}
-        {!url ? (
+        {!mediaUrl ? (
           <p className="text-sm text-muted">Loading…</p>
         ) : video && !editing ? (
           <div className="space-y-2">
             <video
               ref={videoRef}
-              src={url}
+              src={mediaUrl}
               controls
               playsInline
               crossOrigin="anonymous"
@@ -972,15 +1101,69 @@ function CaseView({
             colour={colour}
             activeId={activeId}
             onActive={setActiveId}
+            joinId={tool === 'freehand' ? joinId : null}
+            onJoinChange={setJoinId}
           >
             <img src={annotationSurface} alt={c.title} className="block w-full" draggable={false} />
           </AnnotationEditor>
         ) : (
           <div className="relative">
             <AnnotatedMedia annotations={shown} activeId={activeId}>
-              <img src={url} alt={c.title} className="block w-full" />
+              <img src={mediaUrl} alt={totalImages > 1 ? `${c.title}, image ${sel + 1}` : c.title} className="block w-full" />
             </AnnotatedMedia>
-            <ExpandButton onClick={() => setExpanded({ src: url, annotations: shown })} />
+            <ExpandButton onClick={() => setExpanded({ src: mediaUrl, annotations: shown })} />
+          </div>
+        )}
+
+        {/* ---- the case's images ---- */}
+        {(totalImages > 1 || mayEdit) && (
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Images in this case">
+              {totalImages > 1 && [null, ...c.images].map((img, i) => {
+                const src = img ? imageUrls.get(img.storagePath) : (isVideo(c) ? posterUrl : url)
+                const n = img ? img.annotations.length : c.annotations.length
+                return (
+                  <button
+                    key={img?.id ?? 'main'}
+                    role="tab"
+                    aria-selected={sel === i}
+                    aria-label={`Image ${i + 1}${n ? `, ${n} annotation${n === 1 ? '' : 's'}` : ''}`}
+                    disabled={editing}
+                    onClick={() => setSel(i)}
+                    title={editing ? 'Save or cancel the annotations first' : `Image ${i + 1}`}
+                    className={`relative h-14 w-20 overflow-hidden rounded-md border-2 bg-black disabled:cursor-not-allowed ${sel === i ? 'border-accent' : 'border-line opacity-80 hover:opacity-100'}`}
+                  >
+                    {src
+                      ? <img src={src} alt="" className="h-full w-full object-cover" />
+                      : <KindIcon kind={c.mediaKind} className="mx-auto h-5 w-5 text-white/50" />}
+                    <span className="absolute left-0.5 top-0.5 rounded bg-black/70 px-1 text-[10px] font-semibold text-white">{i + 1}</span>
+                  </button>
+                )
+              })}
+              {mayEdit && !editing && (
+                <>
+                  <button
+                    onClick={() => addInput.current?.click()}
+                    disabled={imgBusy}
+                    className="flex h-14 min-w-20 items-center justify-center rounded-md border-2 border-dashed border-line px-3 text-xs font-semibold text-accent hover:border-accent disabled:opacity-50"
+                  >
+                    {imgBusy ? 'Uploading…' : '+ Add images'}
+                  </button>
+                  <input ref={addInput} type="file" accept="image/*" multiple className="sr-only" aria-label="Add images to this case"
+                    onChange={(e) => { void addMore(e.target.files); e.target.value = '' }} />
+                </>
+              )}
+            </div>
+            {totalImages > 1 && (
+              <p className="flex flex-wrap items-center gap-x-3 text-xs text-muted">
+                <span>Image {sel + 1} of {totalImages} · each image has its own annotations</span>
+                {mayEdit && extra && !editing && (
+                  <button onClick={() => void removeImage()} disabled={imgBusy} className="font-semibold text-red-600 hover:underline disabled:opacity-50">
+                    Remove this image
+                  </button>
+                )}
+              </p>
+            )}
           </div>
         )}
 
@@ -1045,7 +1228,7 @@ function CaseView({
         {(shown.length > 0 || editing) && (
           <div className="rounded-md border border-line">
             <p className="border-b border-line bg-paper/60 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted">
-              Legend
+              Legend{totalImages > 1 ? ` — image ${sel + 1}` : ''}
             </p>
             {shown.length === 0 ? (
               <p className="px-4 py-3 text-sm text-muted">
@@ -1104,7 +1287,7 @@ function CaseView({
       {expanded && (
         <Lightbox
           src={expanded.src}
-          alt={c.title}
+          alt={totalImages > 1 ? `${c.title}, image ${sel + 1}` : c.title}
           annotations={expanded.annotations}
           caption={c.description}
           onClose={() => setExpanded(null)}
@@ -1142,7 +1325,7 @@ export default function CaseMediaLibrary() {
     try {
       const rows = await listCases()
       setCases(rows)
-      setUrls(await signPaths(rows.flatMap((r) => [r.storagePath, r.posterPath ?? ''])))
+      setUrls(await signPaths(rows.flatMap((r) => [r.storagePath, r.posterPath ?? '', ...r.images.map((i) => i.storagePath)])))
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e))
     } finally {
@@ -1327,12 +1510,17 @@ export default function CaseMediaLibrary() {
                 c={open}
                 url={urls.get(open.storagePath) ?? null}
                 posterUrl={open.posterPath ? urls.get(open.posterPath) ?? null : null}
+                imageUrls={urls}
+                uploaderId={profile.id}
                 mayEdit={canEditCase(profile.role, profile.id, open)}
                 findings={vocabulary}
                 authorName={uploader(open)}
                 onSaved={(next) => {
                   setCases((all) => all.map((x) => (x.id === next.id ? next : x)))
-                  if (next.posterPath && !urls.has(next.posterPath)) void load()
+                  if ((next.posterPath && !urls.has(next.posterPath)) || next.images.some((i) => !urls.has(i.storagePath))) {
+                    void signPaths([next.posterPath ?? '', ...next.images.map((i) => i.storagePath)]).then((more) =>
+                      setUrls((cur) => new Map([...cur, ...more])))
+                  }
                 }}
                 onDeleted={(id) => {
                   setCases((all) => all.filter((x) => x.id !== id))
@@ -1427,6 +1615,11 @@ export default function CaseMediaLibrary() {
                                 Clip
                               </span>
                             )}
+                            {c.images.length > 0 && (
+                              <span className="absolute bottom-1.5 left-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                                {c.images.length + 1} images
+                              </span>
+                            )}
                           </span>
                           <span className="flex flex-1 flex-col gap-1 p-3">
                             <span className="flex items-start justify-between gap-2">
@@ -1445,9 +1638,10 @@ export default function CaseMediaLibrary() {
                             <span className="mt-auto pt-1 text-xs text-muted">
                               {who ? `Uploaded by ${who}` : 'Uploader unknown'}
                               {' · '}
-                              {c.annotations.length > 0
-                                ? `${c.annotations.length} annotation${c.annotations.length === 1 ? '' : 's'}`
-                                : 'no annotations'}
+                              {(() => {
+                                const n = c.annotations.length + c.images.reduce((a, i) => a + i.annotations.length, 0)
+                                return n > 0 ? `${n} annotation${n === 1 ? '' : 's'}` : 'no annotations'
+                              })()}
                             </span>
                           </span>
                         </button>
