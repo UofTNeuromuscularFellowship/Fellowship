@@ -35,6 +35,7 @@ export default function ConferenceBadges() {
         .badges-toolbar button { background: #0E7C86; color: #fff; border: 0; border-radius: 6px; padding: 8px 14px; font-weight: 600; cursor: pointer; }
         .badges-grid { display: grid; grid-template-columns: repeat(2, 4in); grid-auto-rows: 3in; gap: 0; justify-content: center; padding: 16px 0; }
         .badge { box-sizing: border-box; border: 1px dashed #bbb; padding: 0.3in; display: flex; flex-direction: column; justify-content: center; text-align: center; break-inside: avoid; }
+        .badge .lg { display: block; margin: 0 auto 8px; max-height: 0.45in; max-width: 2.4in; object-fit: contain; }
         .badge .ev { font-size: 9pt; letter-spacing: .08em; text-transform: uppercase; color: #5B6677; }
         .badge .nm { font-family: Georgia, serif; font-size: 24pt; line-height: 1.1; margin: 10px 0 6px; overflow-wrap: anywhere; }
         .badge .in { font-size: 11pt; color: #3a4a55; }
@@ -50,6 +51,7 @@ export default function ConferenceBadges() {
       <div className="badges-grid">
         {people.map((p) => (
           <div key={p.id} className="badge">
+            {event.logo_url && <img className="lg" src={event.logo_url} alt="" />}
             <div className="ev">{event.name}</div>
             <div className="nm">{p.full_name || p.email}</div>
             {p.institution && <div className="in">{p.institution}</div>}

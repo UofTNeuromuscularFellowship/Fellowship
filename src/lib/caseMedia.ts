@@ -183,6 +183,12 @@ export interface Annotation {
   /** Shown in the legend under the image. Empty is allowed while drawing. */
   label: string
   points: Array<[number, number]>
+  /**
+   * Freehand only: the separate pen strokes that make up ONE outline, so
+   * lifting the finger mid-drawing doesn't start a new numbered label.
+   * `points` then holds all of them joined, for anything that reads only it.
+   */
+  strokes?: Array<Array<[number, number]>>
 }
 
 export interface CaseMedia {
@@ -201,10 +207,38 @@ export interface CaseMedia {
   annotations: Annotation[]
   /** Codes from case_finding. Labels are resolved against the vocabulary. */
   findings: string[]
+  /** Images 2, 3… of the case, in order. Image 1 is the case's own file. */
+  images: CaseImage[]
   authorId: string
   authorName?: string | null
   createdAt: string
   updatedAt: string
+}
+
+/** A further image of the same case, with its own annotations. */
+export interface CaseImage {
+  id: string
+  caseId: string
+  position: number
+  fileName: string
+  storagePath: string
+  mimeType: string | null
+  sizeBytes: number | null
+  annotations: Annotation[]
+}
+
+const IMAGE_COLUMNS = 'id, case_id, position, file_name, storage_path, mime_type, size_bytes, annotations'
+
+interface ImageRow {
+  id: string; case_id: string; position: number; file_name: string; storage_path: string
+  mime_type: string | null; size_bytes: number | null; annotations: Annotation[] | null
+}
+
+function toImage(r: ImageRow): CaseImage {
+  return {
+    id: r.id, caseId: r.case_id, position: r.position, fileName: r.file_name, storagePath: r.storage_path,
+    mimeType: r.mime_type, sizeBytes: r.size_bytes, annotations: Array.isArray(r.annotations) ? r.annotations : [],
+  }
 }
 
 const COLUMNS =
@@ -215,7 +249,7 @@ const COLUMNS =
  * round trip. A second query per case would be a request per row on a page that
  * lists every case.
  */
-const COLUMNS_WITH_FINDINGS = `${COLUMNS}, case_media_finding ( finding_code )`
+const COLUMNS_WITH_FINDINGS = `${COLUMNS}, case_media_finding ( finding_code ), case_media_image ( ${IMAGE_COLUMNS} )`
 
 interface Row {
   id: string
@@ -233,6 +267,7 @@ interface Row {
   created_at: string
   updated_at: string
   case_media_finding?: Array<{ finding_code: string }> | null
+  case_media_image?: ImageRow[] | null
 }
 
 function toCase(r: Row): CaseMedia {
@@ -250,6 +285,9 @@ function toCase(r: Row): CaseMedia {
     annotations: Array.isArray(r.annotations) ? r.annotations : [],
     findings: Array.isArray(r.case_media_finding)
       ? r.case_media_finding.map((f) => f.finding_code)
+      : [],
+    images: Array.isArray(r.case_media_image)
+      ? r.case_media_image.map(toImage).sort((a, b) => a.position - b.position || a.id.localeCompare(b.id))
       : [],
     authorId: r.author_id,
     createdAt: r.created_at,
@@ -526,8 +564,56 @@ export async function savePoster(c: CaseMedia, blob: Blob): Promise<CaseMedia> {
   return toCase(data as unknown as Row)
 }
 
+/**
+ * Add further images to a case, after the ones it has. Each file is uploaded
+ * then recorded; a file whose row is refused is removed again, as for a case.
+ */
+export async function addImages(c: CaseMedia, files: File[], uploaderId: string): Promise<CaseImage[]> {
+  const out: CaseImage[] = []
+  let position = c.images.reduce((m, i) => Math.max(m, i.position), 0)
+  for (const file of files) {
+    const ext = file.name.includes('.') ? file.name.split('.').pop() : 'bin'
+    const path = `${uploaderId}/${crypto.randomUUID()}.${ext}`
+    const { error: upErr } = await supabase.storage
+      .from(BUCKET)
+      .upload(path, file, { contentType: file.type || undefined, upsert: false })
+    if (upErr) throw new Error(upErr.message)
+    position += 1
+    const { data, error } = await supabase
+      .from('case_media_image')
+      .insert({ case_id: c.id, position, file_name: file.name, storage_path: path, mime_type: file.type || null, size_bytes: file.size })
+      .select(IMAGE_COLUMNS)
+      .single()
+    if (error) {
+      await supabase.storage.from(BUCKET).remove([path])
+      throw new Error(error.message)
+    }
+    out.push(toImage(data as unknown as ImageRow))
+  }
+  return out
+}
+
+export async function updateImage(id: string, annotations: Annotation[]): Promise<CaseImage> {
+  const { data, error } = await supabase
+    .from('case_media_image')
+    .update({ annotations })
+    .eq('id', id)
+    .select(IMAGE_COLUMNS)
+    .single()
+  if (error) throw new Error(error.message)
+  return toImage(data as unknown as ImageRow)
+}
+
+export async function deleteImage(img: CaseImage): Promise<void> {
+  // The row first: once it is gone the file is no longer reachable by anyone
+  // but its uploader, so a failed file removal leaves nothing visible.
+  const { error } = await supabase.from('case_media_image').delete().eq('id', img.id)
+  if (error) throw new Error(error.message)
+  await supabase.storage.from(BUCKET).remove([img.storagePath])
+}
+
 export async function deleteCase(c: CaseMedia): Promise<void> {
-  const paths = [c.storagePath, c.posterPath].filter(Boolean) as string[]
+  const paths = [c.storagePath, c.posterPath, ...c.images.map((i) => i.storagePath)].filter(Boolean) as string[]
   await supabase.storage.from(BUCKET).remove(paths)
   const { error } = await supabase.from('case_media').delete().eq('id', c.id)
   if (error) throw new Error(error.message)
@@ -562,6 +648,7 @@ export function matchesQuery(
     kindLabel(c.mediaKind),
     c.authorName ?? '',
     ...c.annotations.map((a) => a.label),
+    ...c.images.flatMap((i) => i.annotations.map((a) => a.label)),
     ...c.findings.map((code) => findingLabels?.get(code) ?? code),
   ]
     .join('  ')

@@ -59,6 +59,15 @@ const PATHS: Record<IconName, React.ReactNode> = {
     </>
   ),
 
+  // A mortarboard — residents and students on rotation.
+  learners: (
+    <>
+      <path d="M2.8 9.5 12 5l9.2 4.5L12 14 2.8 9.5z" />
+      <path d="M6.5 11.4v4.3c1.4 1.3 3.3 2 5.5 2s4.1-.7 5.5-2v-4.3" />
+      <path d="M21.2 9.5v5.2" />
+    </>
+  ),
+
   // An open book — how the fellowship runs.
   program: (
     <>

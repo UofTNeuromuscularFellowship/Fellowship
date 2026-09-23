@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { Card, CardHeader } from '../ui/Card'
 import { friendly, input, primaryBtn, quietBtn, publishBlockers, type ConfEvent, type EventStatus } from '../../lib/conference'
 import { DeleteEvent } from './DeleteEvent'
+import { LogoPicker } from '../LogoPicker'
 
 const ZONES = [
   'America/Toronto', 'America/Vancouver', 'America/Edmonton', 'America/Winnipeg', 'America/Regina',
@@ -68,6 +69,7 @@ export function EventSettings({ event, onSaved, wizard = false, onContinue }: {
       public_registration: d.public_registration,
       organizer_name: clean(d.organizer_name), organizer_email: clean(d.organizer_email),
       organizer_address: clean(d.organizer_address),
+      logo_url: d.logo_url ?? null,
       tax_rate: rate, tax_label: (d.tax_label ?? '').trim().slice(0, 12) || 'HST',
       ...(nextStatus ? { status: nextStatus } : {}),
     }).eq('id', event.id)
@@ -133,6 +135,10 @@ export function EventSettings({ event, onSaved, wizard = false, onContinue }: {
             onChange={(e) => set('organizer_email', e.target.value)} />, 'Where replies and questions should go.')}
           {field('Mailing address', <input id="ev-org-addr" className={input} value={d.organizer_address ?? ''}
             onChange={(e) => set('organizer_address', e.target.value)} />, 'Shown in the footer of every email.', true)}
+          <div className="sm:col-span-2">
+            <LogoPicker value={d.logo_url ?? null} onChange={(url) => set('logo_url', url)}
+              help="Shown at the top of the invitation and reminder emails, the event and registration pages, name badges, participation letters and the financial report. PNG, JPEG or WebP, up to 2 MB." />
+          </div>
         </div>
       </Card>
 

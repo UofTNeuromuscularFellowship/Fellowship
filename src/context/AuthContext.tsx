@@ -57,6 +57,8 @@ interface AuthContextValue {
   profileReady: boolean
   /** Conference registrations (any program) linked to this login. */
   courseCount: number
+  /** The director has let this supervisor run rounds (always true for the director and admin). */
+  runsRounds: boolean
   refreshCourses: () => Promise<void>
   signIn: (email: string, password: string) => Promise<{ error: string | null }>
   signOut: () => Promise<void>
@@ -74,6 +76,7 @@ const AuthContext = createContext<AuthContextValue>({
   loading: true,
   profileReady: false,
   courseCount: 0,
+  runsRounds: false,
   refreshCourses: async () => {},
   signIn: async () => ({ error: 'not ready' }),
   signOut: async () => {},
@@ -91,6 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [readyFor, setReadyFor] = useState<string | null>(null)
   const [courseCount, setCourseCount] = useState(0)
+  const [runsRounds, setRunsRounds] = useState(false)
 
   const refreshCourses = useCallback(async () => {
     const { data, error } = await supabase.rpc('conf_my_courses')
@@ -123,15 +127,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(p)
 
     if (p?.active_site_id) {
-      const [{ data: s }, { data: t }] = await Promise.all([
+      const [{ data: s }, { data: t }, { data: ra }] = await Promise.all([
         supabase.from('sites').select('id, slug, name, short_name, institution').eq('id', p.active_site_id).maybeSingle(),
         supabase.from('site_tools').select('tool_key, enabled').eq('site_id', p.active_site_id),
+        supabase.rpc('rounds_my_access'),
       ])
+      setRunsRounds(!!(ra as { can_manage?: boolean } | null)?.can_manage)
       setSite((s as Site) ?? null)
       setTools(new Set(((t as { tool_key: string; enabled: boolean }[] | null) ?? []).filter((r) => r.enabled).map((r) => r.tool_key)))
     } else {
       setSite(null)
       setTools(new Set())
+      setRunsRounds(false)
     }
     await refreshCourses()
     setReadyFor(userId)
@@ -192,7 +199,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider value={{
-      session, profile, site, sites, tools, isPlatformAdmin, loading, profileReady, courseCount, refreshCourses,
+      session, profile, site, sites, tools, isPlatformAdmin, loading, profileReady, courseCount, runsRounds, refreshCourses,
       signIn, signOut, refreshProfile, switchSite,
     }}>
       {children}

@@ -40,6 +40,8 @@ export interface ConfEvent {
   organizer_name: string | null
   organizer_email: string | null
   organizer_address: string | null
+  /** Printed on the event's emails, pages, badges and letters. */
+  logo_url: string | null
   reminder_sent_at: string | null
   feedback_sent_at: string | null
   /** Custom invitation email; null means the standard wording. */

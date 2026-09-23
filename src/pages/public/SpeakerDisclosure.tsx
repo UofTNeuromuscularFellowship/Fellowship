@@ -38,6 +38,7 @@ interface Honorarium {
 interface Portal {
   speaker_name: string; event_name: string; when: string
   organizer_name: string | null; organizer_email: string | null; tax_label: string
+  logo_url?: string | null
   disclosure_status: DisclosureStatus; disclosure_text: string | null
   sessions: { title: string; role: SpeakerRole; session_date: string; start_time: string }[]
   honorarium: Honorarium | null
@@ -83,7 +84,7 @@ export default function SpeakerDisclosure() {
 
   const h = d.honorarium
   return (
-    <PublicFrame kicker="Speaker page" title={d.event_name} organizer={d.organizer_name} organizerEmail={d.organizer_email}>
+    <PublicFrame kicker="Speaker page" title={d.event_name} organizer={d.organizer_name} organizerEmail={d.organizer_email} logoUrl={d.logo_url}>
       <Panel>
         <p className="text-sm">Hi {greetingName(d.speaker_name)}, thank you for speaking at <strong>{d.event_name}</strong>, {d.when}.</p>
         {d.sessions.length > 0 && (

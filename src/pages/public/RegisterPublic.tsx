@@ -20,6 +20,7 @@ interface Info {
   name: string; description: string | null; starts_on: string; ends_on: string
   venue_name: string | null; venue_address: string | null; has_virtual: boolean; open: boolean
   organizer_name: string | null; organizer_email: string | null
+  logo_url?: string | null
 }
 
 export default function RegisterPublic() {
@@ -71,7 +72,7 @@ export default function RegisterPublic() {
 
   return (
     <PublicFrame kicker={eventWhen(info.starts_on, info.ends_on)} title={info.name}
-      organizer={info.organizer_name} organizerEmail={info.organizer_email}>
+      organizer={info.organizer_name} organizerEmail={info.organizer_email} logoUrl={info.logo_url}>
       <Panel>
         <dl className="grid gap-3 text-sm sm:grid-cols-[8rem_1fr]">
           <dt className="font-medium text-muted">When</dt>

@@ -9,7 +9,7 @@ import type { ReactNode } from 'react'
 // ---------------------------------------------------------------------------
 
 export function PublicFrame({
-  title, kicker, organizer, organizerEmail, children, footer, topRight,
+  title, kicker, organizer, organizerEmail, children, footer, topRight, logoUrl,
 }: {
   title?: string
   kicker?: string
@@ -19,12 +19,15 @@ export function PublicFrame({
   footer?: ReactNode
   /** e.g. "Signed in as … · My courses · Sign out" */
   topRight?: ReactNode
+  /** The event's or series' logo, above the title. */
+  logoUrl?: string | null
 }) {
   return (
     <div className="min-h-screen bg-paper text-ink">
       <header className="border-b border-line bg-surface print:hidden">
         <div className="mx-auto max-w-3xl px-4 py-5">
           {topRight && <div className="mb-3 flex justify-end">{topRight}</div>}
+          {logoUrl && <img src={logoUrl} alt="" className="mb-3 block max-h-14 max-w-[220px] object-contain" />}
           {kicker && <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">{kicker}</p>}
           {title && <h1 className="mt-1 font-display text-2xl font-semibold leading-tight sm:text-3xl">{title}</h1>}
         </div>

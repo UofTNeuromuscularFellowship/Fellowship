@@ -91,7 +91,10 @@ function badgeAt(a: Annotation, box: { w: number; h: number }): [number, number]
 
 function pathFor(a: Annotation): string {
   if (a.kind === 'freehand') {
-    return a.points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p[0] * 1000} ${p[1] * 1000}`).join(' ')
+    const strokes = a.strokes?.length ? a.strokes : [a.points]
+    return strokes
+      .map((s) => s.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p[0] * 1000} ${p[1] * 1000}`).join(' '))
+      .join(' ')
   }
   return ''
 }
@@ -245,6 +248,8 @@ export function AnnotationEditor({
   colour,
   activeId,
   onActive,
+  joinId = null,
+  onJoinChange,
   children,
 }: {
   annotations: Annotation[]
@@ -253,10 +258,26 @@ export function AnnotationEditor({
   colour: string
   activeId: string | null
   onActive: (id: string | null) => void
+  /**
+   * The freehand outline still being drawn. While it is set, a new freehand
+   * stroke joins it — lifting the finger to reposition does not start a new
+   * numbered label. The toolbar's "Finish outline" clears it.
+   */
+  joinId?: string | null
+  onJoinChange?: (id: string | null) => void
   children: React.ReactNode
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
-  const [draft, setDraft] = useState<Annotation | null>(null)
+  const [draft, setDraftState] = useState<Annotation | null>(null)
+  // The stroke in progress, readable synchronously by the gesture handlers.
+  // Committing the shape happens outside any state updater: an updater can be
+  // run twice (StrictMode, or React replaying a render), and a side effect in
+  // one adds the shape twice.
+  const draftRef = useRef<Annotation | null>(null)
+  const setDraft = (d: Annotation | null) => {
+    draftRef.current = d
+    setDraftState(d)
+  }
   const [box, setBox] = useState({ w: 0, h: 0 })
 
   const measure = useCallback(() => {
@@ -289,8 +310,8 @@ export function AnnotationEditor({
   // The gesture layer subscribes once; everything it needs that changes between
   // renders is read through refs, so a stroke is never interrupted by a
   // re-render tearing the listeners down.
-  const live = useRef({ tool, colour, annotations, onChange, onActive })
-  live.current = { tool, colour, annotations, onChange, onActive }
+  const live = useRef({ tool, colour, annotations, onChange, onActive, joinId, onJoinChange })
+  live.current = { tool, colour, annotations, onChange, onActive, joinId, onJoinChange }
 
   useDrawGestures(hostRef, {
     onStart(cx, cy) {
@@ -306,35 +327,57 @@ export function AnnotationEditor({
     },
     onMove(cx, cy) {
       const p = pointAt(cx, cy)
-      setDraft((d) => {
-        if (!d) return d
-        if (d.kind === 'freehand') {
-          // Sample rather than record every event: a 500-point squiggle is not
-          // more accurate than a 60-point one, and it has to fit in a jsonb row.
-          const last = d.points[d.points.length - 1]
-          const far = Math.hypot(p[0] - last[0], p[1] - last[1]) > 0.004
-          return far ? { ...d, points: [...d.points, p] } : d
-        }
-        return { ...d, points: [d.points[0], p] }
-      })
+      const d = draftRef.current
+      if (!d) return
+      if (d.kind === 'freehand') {
+        // Sample rather than record every event: a 500-point squiggle is not
+        // more accurate than a 60-point one, and it has to fit in a jsonb row.
+        const last = d.points[d.points.length - 1]
+        if (Math.hypot(p[0] - last[0], p[1] - last[1]) > 0.004) setDraft({ ...d, points: [...d.points, p] })
+        return
+      }
+      setDraft({ ...d, points: [d.points[0], p] })
     },
     onEnd() {
-      setDraft((d) => {
-        if (!d) return null
-        // A tap without a drag is not a shape. Without this every stray tap
-        // adds an invisible zero-length arrow to the legend.
-        const [a, b] = [d.points[0], d.points[d.points.length - 1]]
-        const moved = Math.hypot(b[0] - a[0], b[1] - a[1]) > 0.01
-        if (moved) {
-          live.current.onChange([...live.current.annotations, d])
-          live.current.onActive(d.id)
-        }
-        return null
-      })
+      const d = draftRef.current
+      setDraft(null)
+      if (!d) return
+      const L = live.current
+      // A tap without a drag is not a shape. Without this every stray tap
+      // adds an invisible zero-length arrow to the legend. (For freehand the
+      // stroke's length counts, so a small closed loop still registers.)
+      const span = d.kind === 'freehand'
+        ? d.points.reduce((acc, p, i) => (i ? acc + Math.hypot(p[0] - d.points[i - 1][0], p[1] - d.points[i - 1][1]) : 0), 0)
+        : Math.hypot(d.points[d.points.length - 1][0] - d.points[0][0], d.points[d.points.length - 1][1] - d.points[0][1])
+      if (span <= 0.01) return
+
+      // A further freehand stroke joins the outline still being drawn.
+      const target = d.kind === 'freehand' && L.joinId
+        ? L.annotations.find((a) => a.id === L.joinId && a.kind === 'freehand')
+        : undefined
+      if (target) {
+        const strokes = [...(target.strokes?.length ? target.strokes : [target.points]), d.points]
+        L.onChange(L.annotations.map((a) => (a.id === target.id ? { ...a, strokes, points: strokes.flat() } : a)))
+        L.onActive(target.id)
+        return
+      }
+      const shape = d.kind === 'freehand' ? { ...d, strokes: [d.points] } : d
+      L.onChange([...L.annotations, shape])
+      L.onActive(shape.id)
+      L.onJoinChange?.(shape.kind === 'freehand' ? shape.id : null)
     },
   })
 
-  const shown = useMemo(() => (draft ? [...annotations, draft] : annotations), [annotations, draft])
+  // While an outline is being added to, the new stroke is drawn as part of it.
+  const shown = useMemo(() => {
+    if (!draft) return annotations
+    const target = draft.kind === 'freehand' && joinId ? annotations.find((a) => a.id === joinId) : undefined
+    if (target) {
+      const strokes = [...(target.strokes?.length ? target.strokes : [target.points]), draft.points]
+      return annotations.map((a) => (a.id === target.id ? { ...a, strokes } : a))
+    }
+    return [...annotations, draft]
+  }, [annotations, draft, joinId])
 
   return (
     <div

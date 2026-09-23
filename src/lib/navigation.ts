@@ -43,6 +43,7 @@ export type IconName =
   | 'caselog'
   | 'emg'
   | 'program'
+  | 'learners'
   | 'events'
   | 'settings'
   | 'platform'
@@ -115,6 +116,14 @@ export const NAV: NavGroup[] = [
         blurb: 'Ratings across sessions and which topics are in demand.',
         allow: ['director', 'admin'],
       },
+      {
+        // The page itself checks rounds_my_access(): supervisors see it only
+        // once the director has let them run rounds.
+        to: '/rounds',
+        label: 'Rounds',
+        blurb: 'Set up rounds, invite mailing lists, collect RSVPs and feedback, and offer attendance certificates.',
+        allow: ['supervisor', 'director', 'admin'],
+      },
     ],
   },
   {
@@ -186,6 +195,32 @@ export const NAV: NavGroup[] = [
         label: 'Test your anatomy knowledge',
         blurb: 'Self-testing on muscles, nerves and root levels.',
         allow: ['fellow', 'supervisor', 'director'],
+      },
+    ],
+  },
+  {
+    id: 'learners',
+    label: 'Learners',
+    tagline: 'Residents and medical students on rotation',
+    icon: 'learners',
+    items: [
+      {
+        to: '/learners',
+        label: 'Learner schedule',
+        blurb: 'Draft learners into clinic places the fellows haven’t filled, then publish.',
+        allow: ['director', 'admin'],
+      },
+      {
+        to: '/learners/feedback',
+        label: 'Learner feedback',
+        blurb: 'What supervisors said at the end of each clinic day.',
+        allow: ['director', 'admin'],
+      },
+      {
+        to: '/learners/people',
+        label: 'Learner management',
+        blurb: 'Add residents and medical students, their rotation dates and days off.',
+        allow: ['director', 'admin'],
       },
     ],
   },
@@ -269,7 +304,7 @@ export const NAV: NavGroup[] = [
 /** The groups this role can see, with the items they cannot see removed. */
 export function navFor(
   role: UserRole | undefined,
-  opts?: { hideClinic?: boolean; tools?: Set<string>; platformAdmin?: boolean; courses?: boolean },
+  opts?: { hideClinic?: boolean; tools?: Set<string>; platformAdmin?: boolean; courses?: boolean; runsRounds?: boolean },
 ): NavGroup[] {
   return NAV.map((g) => ({
     ...g,
@@ -279,6 +314,8 @@ export function navFor(
       // schedule is noise for them. Everything teaching-related stays put.
       if (opts?.hideClinic && i.to === '/clinic') return false
       if (i.to === '/courses') return !!opts?.courses
+      // Supervisors run rounds only once the director has added them.
+      if (i.to === '/rounds' && role === 'supervisor' && !opts?.runsRounds) return false
       // A toolkit item the program has not been granted is not offered. (The
       // route and the database refuse it too; this only keeps the menu honest.)
       if (i.tool && opts?.tools && !opts.tools.has(i.tool)) return false

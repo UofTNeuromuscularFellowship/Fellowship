@@ -180,6 +180,24 @@ export async function buildFinanceReport(
   const tax = event.tax_label
 
   // ---------------------------------------------------------------- cover
+  if (event.logo_url) {
+    // The event's logo, top left. A logo that can't be fetched is left out
+    // rather than holding up the report.
+    try {
+      const res = await fetch(event.logo_url)
+      if (res.ok) {
+        const bytes = new Uint8Array(await res.arrayBuffer())
+        const flat = await normaliseImage(bytes, res.headers.get('content-type') || 'image/png')
+        if (flat) {
+          const img = await doc.embedJpg(flat)
+          const scale = Math.min(160 / img.width, 44 / img.height, 1)
+          const iw = img.width * scale, ih = img.height * scale
+          w.page.drawImage(img, { x: M, y: w.y - ih, width: iw, height: ih })
+          w.y -= ih + 14
+        }
+      }
+    } catch { /* no logo */ }
+  }
   w.text('FINANCIAL REPORT', { size: 9, bold: true, color: MUTED, gap: 4 })
   w.text(event.name, { size: 20, bold: true, gap: 6 })
   w.text(eventWhen(event.starts_on, event.ends_on), { size: 11, color: MUTED })

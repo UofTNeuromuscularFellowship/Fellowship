@@ -43,6 +43,7 @@ interface PubEvent {
   feedback_enabled: boolean; letters_enabled: boolean; presentations_enabled: boolean
   payment: { url: string; label: string | null; note: string | null } | null
   organizer_name: string | null; organizer_email: string | null
+  logo_url?: string | null
 }
 interface PubInvitee {
   full_name: string | null; email: string; institution: string | null; role_title: string | null
@@ -114,6 +115,7 @@ export default function EventPublic() {
       title={data.event.name}
       organizer={data.event.organizer_name}
       organizerEmail={data.event.organizer_email}
+      logoUrl={data.event.logo_url}
       topRight={bar}
       footer={
         <p>
@@ -883,7 +885,7 @@ function Letter({ token, data, onAuthed }: { token: string; data: Payload; onAut
   }, [token, uid])
 
   const frame = (body: React.ReactNode) => (
-    <PublicFrame kicker="Participation letter" title={data.event.name} organizer={data.event.organizer_name} organizerEmail={data.event.organizer_email}>
+    <PublicFrame kicker="Participation letter" title={data.event.name} organizer={data.event.organizer_name} organizerEmail={data.event.organizer_email} logoUrl={data.event.logo_url}>
       {body}
     </PublicFrame>
   )
@@ -911,6 +913,7 @@ function Letter({ token, data, onAuthed }: { token: string; data: Payload; onAut
         <button type="button" className={primaryBtn} onClick={() => window.print()}>Print or save as PDF</button>
       </div>
       <article className="mx-auto max-w-[8.5in] bg-white px-[0.9in] py-[0.9in] text-[#0F1B2D] shadow-sm print:shadow-none" style={{ fontFamily: 'Georgia, serif' }}>
+        {data.event.logo_url && <img src={data.event.logo_url} alt="" className="mb-6 block max-h-16 max-w-[240px] object-contain" />}
         <p className="text-sm uppercase tracking-[0.14em] text-[#5B6677]">{letter.organizer_name}</p>
         <h1 className="mt-6 text-3xl">Letter of participation</h1>
         <p className="mt-8">{letter.issued_on}</p>
@@ -953,7 +956,7 @@ function Unsubscribe({ token, data }: { token: string; data: Payload | null }) {
 
   const name = data?.event.name
   return (
-    <PublicFrame kicker="Email preferences" title={name ?? 'Unsubscribe'} organizer={data?.event.organizer_name} organizerEmail={data?.event.organizer_email}>
+    <PublicFrame kicker="Email preferences" title={name ?? 'Unsubscribe'} organizer={data?.event.organizer_name} organizerEmail={data?.event.organizer_email} logoUrl={data?.event.logo_url}>
       <Panel>
         {state === 'done' ? (
           <div className="space-y-2 text-sm">

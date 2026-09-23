@@ -17,11 +17,11 @@ import { navFor } from '../lib/navigation'
 
 export default function SectionOverview() {
   const { groupId } = useParams()
-  const { profile, tools, isPlatformAdmin, courseCount } = useAuth()
+  const { profile, tools, isPlatformAdmin, courseCount, runsRounds } = useAuth()
   if (!profile) return null
 
   const hideClinic = profile.role === 'supervisor' && profile.teaching_only === true
-  const groups = navFor(profile.role, { hideClinic, tools, platformAdmin: isPlatformAdmin, courses: courseCount > 0 })
+  const groups = navFor(profile.role, { hideClinic, tools, platformAdmin: isPlatformAdmin, courses: courseCount > 0, runsRounds })
   const group = groups.find((g) => g.id === groupId)
 
   // An unknown or forbidden area is not an error page — it is someone following
