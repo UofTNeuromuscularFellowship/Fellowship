@@ -6,6 +6,7 @@ import { shortDate, localToday } from '../lib/format'
 import { useActingProvider, ActingForBar } from '../components/ActingFor'
 import { Link } from 'react-router-dom'
 import { RecentChanges } from '../components/change/ChangeKit'
+import { AwayDatesButton } from '../components/AwayDatesButton'
 import { CLINIC_COLUMNS, inFellowship, dateLabel, plural } from '../lib/schedule'
 
 interface Rotation {
@@ -262,12 +263,13 @@ export default function ClinicRotations() {
               : setup?.publishedThrough ? `Published through ${dateLabel(setup.publishedThrough)} · the next 12 weeks are shown` : 'Clinic assignments for the next 12 weeks'}
           </p>
         </div>
-        {isManager && (
-          <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2">
+          <AwayDatesButton />
+          {isManager && <>
             <Link to="/change" className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90">Make a change</Link>
             {isDirector && <Link to="/clinic/setup?step=5" className="rounded-md border border-line px-4 py-2 text-sm font-medium text-ink hover:border-accent">Generate again</Link>}
-          </div>
-        )}
+          </>}
+        </div>
       </div>
 
       {isManager && setup && catalog.length === 0 && (

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import ProgramChecklist from '../components/ProgramChecklist'
+import { AwayDatesButton } from '../components/AwayDatesButton'
 import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
 import { shortDate, localToday } from '../lib/format'
@@ -164,13 +165,16 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-2xl font-bold text-ink">
-          Welcome, {profile.full_name.split(' ')[0]}
-        </h1>
-        <p className="mt-1 text-sm text-muted">
-          {isFellow ? 'Your week at a glance' : 'The fellowship week at a glance'}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="font-display text-2xl font-bold text-ink">
+            Welcome, {profile.full_name.split(' ')[0]}
+          </h1>
+          <p className="mt-1 text-sm text-muted">
+            {isFellow ? 'Your week at a glance' : 'The fellowship week at a glance'}
+          </p>
+        </div>
+        <AwayDatesButton />
       </div>
 
       {notifications.length > 0 && (
