@@ -217,25 +217,6 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
-    id: 'program',
-    label: 'Program',
-    tagline: 'How the fellowship runs',
-    icon: 'program',
-    items: [
-      {
-        to: '/handbook',
-        label: 'Handbook',
-        blurb: 'Housekeeping, EMG reporting, and site-by-site guides.',
-      },
-      {
-        to: '/people',
-        label: 'User management',
-        blurb: 'Accounts, roles, and who can run rounds.',
-        allow: ['director', 'admin'],
-      },
-    ],
-  },
-  {
     id: 'events',
     label: 'Events',
     tagline: 'Rounds, courses and conferences you host',
@@ -268,8 +249,27 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
+    id: 'program',
+    label: 'Program',
+    tagline: 'How the fellowship runs',
+    icon: 'program',
+    items: [
+      {
+        to: '/handbook',
+        label: 'Handbook',
+        blurb: 'Housekeeping, EMG reporting, and site-by-site guides.',
+      },
+      {
+        to: '/people',
+        label: 'User management',
+        blurb: 'Accounts, roles, and who can run rounds.',
+        allow: ['director', 'admin'],
+      },
+    ],
+  },
+  {
     id: 'settings',
-    label: 'Settings',
+    label: 'My Settings',
     tagline: 'Your account and your time away',
     icon: 'settings',
     items: [
