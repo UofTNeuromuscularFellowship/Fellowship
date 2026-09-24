@@ -136,9 +136,10 @@ export async function listFindings(): Promise<Finding[]> {
   }))
 }
 
-/** The terms offered for a given media kind. */
-export function findingsFor(all: Finding[], kind: MediaKind): Finding[] {
-  return all.filter((f) => f.appliesTo.includes(kind))
+/** The terms offered for a media kind, or for any of several. */
+export function findingsFor(all: Finding[], kind: MediaKind | MediaKind[]): Finding[] {
+  const kinds = Array.isArray(kind) ? kind : [kind]
+  return all.filter((f) => kinds.some((k) => f.appliesTo.includes(k)))
 }
 
 /**
@@ -194,7 +195,10 @@ export interface Annotation {
 export interface CaseMedia {
   id: string
   title: string
+  /** What image 1 shows first. */
   mediaKind: MediaKind
+  /** Anything else image 1 shows, e.g. an ultrasound beside the trace. */
+  extraKinds: MediaKind[]
   description: string | null
   fileName: string
   storagePath: string
@@ -225,24 +229,27 @@ export interface CaseImage {
   mimeType: string | null
   sizeBytes: number | null
   annotations: Annotation[]
+  /** What this image shows — one or more kinds. */
+  kinds: MediaKind[]
 }
 
-const IMAGE_COLUMNS = 'id, case_id, position, file_name, storage_path, mime_type, size_bytes, annotations'
+const IMAGE_COLUMNS = 'id, case_id, position, file_name, storage_path, mime_type, size_bytes, annotations, kinds'
 
 interface ImageRow {
   id: string; case_id: string; position: number; file_name: string; storage_path: string
-  mime_type: string | null; size_bytes: number | null; annotations: Annotation[] | null
+  mime_type: string | null; size_bytes: number | null; annotations: Annotation[] | null; kinds: MediaKind[] | null
 }
 
 function toImage(r: ImageRow): CaseImage {
   return {
     id: r.id, caseId: r.case_id, position: r.position, fileName: r.file_name, storagePath: r.storage_path,
     mimeType: r.mime_type, sizeBytes: r.size_bytes, annotations: Array.isArray(r.annotations) ? r.annotations : [],
+    kinds: Array.isArray(r.kinds) ? r.kinds : [],
   }
 }
 
 const COLUMNS =
-  'id, title, media_kind, description, file_name, storage_path, mime_type, size_bytes, poster_path, consent_signed_at, annotations, author_id, created_at, updated_at'
+  'id, title, media_kind, extra_kinds, description, file_name, storage_path, mime_type, size_bytes, poster_path, consent_signed_at, annotations, author_id, created_at, updated_at'
 
 /**
  * The same columns plus the findings, fetched through the foreign key in one
@@ -255,6 +262,7 @@ interface Row {
   id: string
   title: string
   media_kind: MediaKind
+  extra_kinds: MediaKind[] | null
   description: string | null
   file_name: string
   storage_path: string
@@ -275,6 +283,7 @@ function toCase(r: Row): CaseMedia {
     id: r.id,
     title: r.title,
     mediaKind: r.media_kind,
+    extraKinds: Array.isArray(r.extra_kinds) ? r.extra_kinds : [],
     description: r.description,
     fileName: r.file_name,
     storagePath: r.storage_path,
@@ -293,6 +302,17 @@ function toCase(r: Row): CaseMedia {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }
+}
+
+/** What image 1 shows. */
+export function mainKinds(c: Pick<CaseMedia, 'mediaKind' | 'extraKinds'>): MediaKind[] {
+  return [c.mediaKind, ...c.extraKinds.filter((k) => k !== c.mediaKind)]
+}
+
+/** Every kind any image in the case shows, in the order of MEDIA_KINDS. */
+export function caseKinds(c: Pick<CaseMedia, 'mediaKind' | 'extraKinds' | 'images'>): MediaKind[] {
+  const all = new Set<MediaKind>([...mainKinds(c), ...c.images.flatMap((i) => (i.kinds.length ? i.kinds : [c.mediaKind]))])
+  return MEDIA_KINDS.map((m) => m.id).filter((k) => all.has(k))
 }
 
 export function isVideo(c: Pick<CaseMedia, 'mimeType' | 'fileName'>): boolean {
@@ -341,6 +361,8 @@ export async function signPaths(paths: string[]): Promise<Map<string, string>> {
 export interface NewCase {
   title: string
   mediaKind: MediaKind
+  /** Anything else the first file shows. */
+  extraKinds?: MediaKind[]
   description: string
   file: File
   /** Codes from case_finding, applied right after the row is created. */
@@ -497,6 +519,7 @@ export async function createCase(input: NewCase, authorId: string): Promise<Case
     .insert({
       title: input.title.trim(),
       media_kind: input.mediaKind,
+      extra_kinds: (input.extraKinds ?? []).filter((k) => k !== input.mediaKind),
       description: input.description.trim() || null,
       file_name: input.file.name,
       storage_path: path,
@@ -528,12 +551,13 @@ export async function createCase(input: NewCase, authorId: string): Promise<Case
 
 export async function updateCase(
   id: string,
-  patch: Partial<Pick<CaseMedia, 'title' | 'description' | 'mediaKind' | 'annotations'>>,
+  patch: Partial<Pick<CaseMedia, 'title' | 'description' | 'mediaKind' | 'extraKinds' | 'annotations'>>,
 ): Promise<CaseMedia> {
   const row: Record<string, unknown> = {}
   if (patch.title !== undefined) row.title = patch.title
   if (patch.description !== undefined) row.description = patch.description
   if (patch.mediaKind !== undefined) row.media_kind = patch.mediaKind
+  if (patch.extraKinds !== undefined) row.extra_kinds = patch.extraKinds
   if (patch.annotations !== undefined) row.annotations = patch.annotations
 
   const { data, error } = await supabase
@@ -568,10 +592,14 @@ export async function savePoster(c: CaseMedia, blob: Blob): Promise<CaseMedia> {
  * Add further images to a case, after the ones it has. Each file is uploaded
  * then recorded; a file whose row is refused is removed again, as for a case.
  */
-export async function addImages(c: CaseMedia, files: File[], uploaderId: string): Promise<CaseImage[]> {
+export async function addImages(
+  c: CaseMedia, files: File[], uploaderId: string,
+  /** What each file shows, in the same order; the case's own kind if left out. */
+  kinds?: MediaKind[][],
+): Promise<CaseImage[]> {
   const out: CaseImage[] = []
   let position = c.images.reduce((m, i) => Math.max(m, i.position), 0)
-  for (const file of files) {
+  for (const [n, file] of files.entries()) {
     const ext = file.name.includes('.') ? file.name.split('.').pop() : 'bin'
     const path = `${uploaderId}/${crypto.randomUUID()}.${ext}`
     const { error: upErr } = await supabase.storage
@@ -581,7 +609,8 @@ export async function addImages(c: CaseMedia, files: File[], uploaderId: string)
     position += 1
     const { data, error } = await supabase
       .from('case_media_image')
-      .insert({ case_id: c.id, position, file_name: file.name, storage_path: path, mime_type: file.type || null, size_bytes: file.size })
+      .insert({ case_id: c.id, position, file_name: file.name, storage_path: path, mime_type: file.type || null, size_bytes: file.size,
+                kinds: kinds?.[n]?.length ? kinds[n] : [c.mediaKind] })
       .select(IMAGE_COLUMNS)
       .single()
     if (error) {
@@ -597,6 +626,17 @@ export async function updateImage(id: string, annotations: Annotation[]): Promis
   const { data, error } = await supabase
     .from('case_media_image')
     .update({ annotations })
+    .eq('id', id)
+    .select(IMAGE_COLUMNS)
+    .single()
+  if (error) throw new Error(error.message)
+  return toImage(data as unknown as ImageRow)
+}
+
+export async function setImageKinds(id: string, kinds: MediaKind[]): Promise<CaseImage> {
+  const { data, error } = await supabase
+    .from('case_media_image')
+    .update({ kinds })
     .eq('id', id)
     .select(IMAGE_COLUMNS)
     .single()
@@ -645,7 +685,7 @@ export function matchesQuery(
   const hay = [
     c.title,
     c.description ?? '',
-    kindLabel(c.mediaKind),
+    ...caseKinds(c).map(kindLabel),
     c.authorName ?? '',
     ...c.annotations.map((a) => a.label),
     ...c.images.flatMap((i) => i.annotations.map((a) => a.label)),

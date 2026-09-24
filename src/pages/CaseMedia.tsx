@@ -27,6 +27,9 @@ import {
   savePoster,
   signPaths,
   updateCase,
+  caseKinds,
+  mainKinds,
+  setImageKinds,
   addImages,
   updateImage,
   deleteImage,
@@ -79,7 +82,7 @@ function FindingPicker({
   disabled,
 }: {
   all: Finding[]
-  kind: MediaKind
+  kind: MediaKind | MediaKind[]
   selected: string[]
   onChange: (next: string[]) => void
   disabled?: boolean
@@ -147,6 +150,38 @@ function FindingChips({ codes, all }: { codes: string[]; all: Finding[] }) {
   )
 }
 
+/**
+ * What one image shows. More than one can be on: a screen with the needle EMG
+ * beside the ultrasound, or a photo of the sign next to its MRI.
+ */
+function KindChips({ value, onChange, disabled, size = 'sm' }: {
+  value: MediaKind[]; onChange: (next: MediaKind[]) => void; disabled?: boolean; size?: 'sm' | 'xs'
+}) {
+  return (
+    <div className="flex flex-wrap gap-1" role="group" aria-label="What this image shows">
+      {MEDIA_KINDS.map((k) => {
+        const on = value.includes(k.id)
+        return (
+          <button key={k.id} type="button" disabled={disabled} aria-pressed={on} title={k.hint}
+            onClick={() => {
+              const next = on ? value.filter((x) => x !== k.id) : [...value, k.id]
+              // An image always shows something.
+              if (next.length) onChange(MEDIA_KINDS.map((m) => m.id).filter((x) => next.includes(x)))
+            }}
+            className={`rounded-md border font-semibold disabled:opacity-50 ${size === 'xs' ? 'px-1.5 py-0.5 text-[10px]' : 'min-h-[32px] px-2.5 py-1 text-xs'} ${
+              on ? 'border-accent bg-accent-soft text-accent' : 'border-line text-muted hover:text-ink'}`}>
+            {k.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function Badges({ kinds }: { kinds: MediaKind[] }) {
+  return <span className="flex flex-wrap justify-end gap-1">{kinds.map((k) => <Badge key={k} kind={k} />)}</span>
+}
+
 function Badge({ kind }: { kind: MediaKind }) {
   return (
     <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${KIND_BADGE[kind]}`}>
@@ -174,12 +209,19 @@ function UploadForm({
   // The first file is the case's own image or clip; any more are further
   // images of the same case, added in order.
   const [files, setFiles] = useState<File[]>([])
+  // What each file shows, in the same order as files.
+  const [fileKinds, setFileKinds] = useState<MediaKind[][]>([])
   const [fileNote, setFileNote] = useState<string | null>(null)
   const file = files[0] ?? null
+  // Every kind in the case so far — what the finding terms and consent follow.
+  const allKinds: MediaKind[] = files.length
+    ? MEDIA_KINDS.map((m) => m.id).filter((k) => fileKinds.some((ks) => ks.includes(k)))
+    : [mediaKind]
   function addFiles(list: FileList | null) {
     const picked = Array.from(list ?? [])
     if (!picked.length) return
     const next = [...files]
+    const nextKinds = [...fileKinds]
     let skipped = 0
     for (const f of picked) {
       const clip = f.type.startsWith('video/') || /\.(mp4|mov|webm|m4v|avi)$/i.test(f.name)
@@ -187,8 +229,10 @@ function UploadForm({
       // captured frame, which only the first file has.
       if (clip && next.length > 0) { skipped++; continue }
       next.push(f)
+      nextKinds.push([mediaKind])
     }
     setFiles(next)
+    setFileKinds(nextKinds)
     setFileNote(skipped ? `${skipped} clip${skipped === 1 ? '' : 's'} left out — only the first file of a case can be a clip. Add it as its own case.` : null)
   }
   // Remounts the file inputs after a successful upload. They are uncontrolled,
@@ -207,7 +251,7 @@ function UploadForm({
   const [signerAuthority, setSignerAuthority] = useState('')
   const [chosen, setChosen] = useState<string[]>([])
 
-  const needsConsent = consentRequired(mediaKind)
+  const needsConsent = allKinds.some(consentRequired)
   // A representative signature is incomplete without both a name and an
   // authority — the database refuses one without the other, so the button is
   // disabled rather than letting the upload fail after the file is already up.
@@ -223,18 +267,9 @@ function UploadForm({
     setBusy(true)
     try {
       const created = await createCase(
-        { title, mediaKind, description, file, findings: chosen },
+        { title, mediaKind: (fileKinds[0] ?? [mediaKind])[0], extraKinds: (fileKinds[0] ?? []).slice(1), description, file, findings: chosen },
         authorId,
       )
-      if (files.length > 1) {
-        try {
-          created.images = await addImages(created, files.slice(1), authorId)
-        } catch (e) {
-          // The case itself is up; say which part didn't make it rather than
-          // losing the case.
-          onError(`The case was added, but not all of its extra images: ${e instanceof Error ? e.message : String(e)}`)
-        }
-      }
       // The case exists first, because the consent row references it. If the
       // consent write fails the case is removed again rather than left standing
       // without the permission it requires.
@@ -257,10 +292,22 @@ function UploadForm({
           throw e
         }
       }
+      // Further images go up after the consent is on file, so an examination
+      // photo among them is accepted.
+      if (files.length > 1) {
+        try {
+          created.images = await addImages(created, files.slice(1), authorId, fileKinds.slice(1))
+        } catch (e) {
+          // The case itself is up; say which part didn't make it rather than
+          // losing the case.
+          onError(`The case was added, but not all of its extra images: ${e instanceof Error ? e.message : String(e)}`)
+        }
+      }
       onDone(created)
       setTitle('')
       setDescription('')
       setFiles([])
+      setFileKinds([])
       setFileNote(null)
       setFileKey((n) => n + 1)
       setConfirmed(false)
@@ -290,7 +337,10 @@ function UploadForm({
       </label>
 
       <div>
-        <span className="text-xs font-semibold uppercase tracking-wide text-muted">What is it</span>
+        <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+          What it shows{' '}
+          <span className="font-normal normal-case">— given to each file you add; change any file below, and mix as many as you need</span>
+        </span>
         <div className="mt-1 flex flex-wrap gap-2">
           {MEDIA_KINDS.map((k) => (
             <button
@@ -300,9 +350,11 @@ function UploadForm({
                 // Terms are scoped to a kind. Switching from waveform to
                 // ultrasound must not leave "fibrillation potential" attached
                 // to an ultrasound image just because it was picked first.
-                setChosen((cur) =>
-                  cur.filter((c) => findingsFor(findings, k.id).some((f) => f.code === c)),
-                )
+                if (!files.length) {
+                  setChosen((cur) =>
+                    cur.filter((c) => findingsFor(findings, k.id).some((f) => f.code === c)),
+                  )
+                }
               }}
               title={k.hint}
               className={`min-h-[40px] rounded-md border px-3 py-2 text-sm font-semibold sm:min-h-0 sm:px-2.5 sm:py-1.5 sm:text-xs ${
@@ -317,7 +369,7 @@ function UploadForm({
         </div>
       </div>
 
-      <FindingPicker all={findings} kind={mediaKind} selected={chosen} onChange={setChosen} />
+      <FindingPicker all={findings} kind={allKinds} selected={chosen} onChange={setChosen} />
 
       <label className="block">
         <span className="text-xs font-semibold uppercase tracking-wide text-muted">
@@ -379,13 +431,17 @@ function UploadForm({
         ) : (
           <ol className="mt-2 divide-y divide-line rounded-md border border-line">
             {files.map((f, i) => (
-              <li key={`${f.name}-${i}`} className="flex items-center justify-between gap-2 px-3 py-1.5 text-xs">
-                <span className="min-w-0 truncate text-ink">
-                  <span className="font-semibold">{i + 1}.</span> {f.name}
-                  <span className="text-muted"> · {(f.size / 1024 / 1024).toFixed(1)} MB{i === 0 && files.length > 1 ? ' · shown first' : ''}</span>
-                </span>
-                <button type="button" onClick={() => setFiles(files.filter((_, j) => j !== i))}
-                  className="shrink-0 font-semibold text-muted hover:text-ink" aria-label={`Remove ${f.name}`}>Remove</button>
+              <li key={`${f.name}-${i}`} className="space-y-1.5 px-3 py-2 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 truncate text-ink">
+                    <span className="font-semibold">{i + 1}.</span> {f.name}
+                    <span className="text-muted"> · {(f.size / 1024 / 1024).toFixed(1)} MB{i === 0 && files.length > 1 ? ' · shown first' : ''}</span>
+                  </span>
+                  <button type="button" onClick={() => { setFiles(files.filter((_, j) => j !== i)); setFileKinds(fileKinds.filter((_, j) => j !== i)) }}
+                    className="shrink-0 font-semibold text-muted hover:text-ink" aria-label={`Remove ${f.name}`}>Remove</button>
+                </div>
+                <KindChips size="xs" value={fileKinds[i] ?? [mediaKind]}
+                  onChange={(next) => setFileKinds(fileKinds.map((k, j) => (j === i ? next : k)))} />
               </li>
             ))}
           </ol>
@@ -583,7 +639,7 @@ function ConsentBlock({ c }: { c: Case }) {
   }, [c.id, c.consentSignedAt])
 
   if (!c.consentSignedAt) {
-    if (!consentRequired(c.mediaKind)) return null
+    if (!caseKinds(c).some(consentRequired)) return null
     return (
       <div className="rounded-md border border-red-300 bg-red-50 px-4 py-3">
         <p className="text-sm text-ink">
@@ -685,6 +741,8 @@ function CaseView({
   const [sel, setSel] = useState(0)
   const extra = sel > 0 ? c.images[sel - 1] ?? null : null
   const current: Annotation[] = extra ? extra.annotations : c.annotations
+  const currentKinds: MediaKind[] = extra ? (extra.kinds.length ? extra.kinds : [c.mediaKind]) : mainKinds(c)
+  const [kindBusy, setKindBusy] = useState(false)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<Annotation[]>(current)
   // The freehand outline still being drawn: further strokes join it.
@@ -826,6 +884,26 @@ function CaseView({
     }
   }
 
+  async function saveKinds(next: MediaKind[]) {
+    if (next.includes('exam') && !currentKinds.includes('exam') && !c.consentSignedAt) {
+      onError('An examination photo needs the patient’s signed consent, and this case has none on file. Add it as a new case, where consent is taken.')
+      return
+    }
+    setKindBusy(true)
+    try {
+      if (extra) {
+        const img = await setImageKinds(extra.id, next)
+        onSaved({ ...c, images: c.images.map((i) => (i.id === img.id ? img : i)) })
+      } else {
+        onSaved(await updateCase(c.id, { mediaKind: next[0], extraKinds: next.slice(1) }))
+      }
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setKindBusy(false)
+    }
+  }
+
   async function removeImage() {
     if (!extra) return
     if (!window.confirm(`Remove image ${sel} and its annotations from this case? The file is permanently removed.`)) return
@@ -856,7 +934,7 @@ function CaseView({
       <CardHeader
         title={c.title}
         sub={[
-          kindLabel(c.mediaKind),
+          caseKinds(c).map(kindLabel).join(' + '),
           authorName ? `uploaded by ${authorName}` : null,
           `added ${new Date(c.createdAt).toLocaleDateString()}`,
         ]
@@ -1046,8 +1124,8 @@ function CaseView({
               </button>
             </div>
             <p className="text-xs text-muted">
-              The kind, the file itself and any signed consent are not changed here — a case whose
-              kind or media changed would no longer match the consent recorded against it.
+              The files and any signed consent are not changed here. What each image shows is set under
+              the image.
             </p>
           </div>
         )}
@@ -1137,6 +1215,9 @@ function CaseView({
                       ? <img src={src} alt="" className="h-full w-full object-cover" />
                       : <KindIcon kind={c.mediaKind} className="mx-auto h-5 w-5 text-white/50" />}
                     <span className="absolute left-0.5 top-0.5 rounded bg-black/70 px-1 text-[10px] font-semibold text-white">{i + 1}</span>
+                    <span className="absolute bottom-0.5 right-0.5 max-w-[4.6rem] truncate rounded bg-black/70 px-1 text-[9px] font-semibold text-white">
+                      {(img ? (img.kinds.length ? img.kinds : [c.mediaKind]) : mainKinds(c)).map((k) => kindLabel(k).split(' ')[0]).join(' + ')}
+                    </span>
                   </button>
                 )
               })}
@@ -1153,6 +1234,12 @@ function CaseView({
                     onChange={(e) => { void addMore(e.target.files); e.target.value = '' }} />
                 </>
               )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+              <span>{totalImages > 1 ? `Image ${sel + 1} shows:` : 'Shows:'}</span>
+              {mayEdit && !editing
+                ? <KindChips size="xs" value={currentKinds} disabled={kindBusy} onChange={(next) => void saveKinds(next)} />
+                : <Badges kinds={currentKinds} />}
             </div>
             {totalImages > 1 && (
               <p className="flex flex-wrap items-center gap-x-3 text-xs text-muted">
@@ -1177,7 +1264,7 @@ function CaseView({
           <div className="rounded-md border border-line px-4 py-3">
             <FindingPicker
               all={findings}
-              kind={c.mediaKind}
+              kind={caseKinds(c)}
               selected={tagDraft}
               onChange={setTagDraft}
               disabled={tagBusy}
@@ -1209,7 +1296,7 @@ function CaseView({
               ) : (
                 <span className="text-xs text-muted">Not tagged yet</span>
               )}
-              {mayEdit && findingsFor(findings, c.mediaKind).length > 0 && (
+              {mayEdit && findingsFor(findings, caseKinds(c)).length > 0 && (
                 <button
                   onClick={() => setTagging(true)}
                   className="min-h-[36px] text-xs font-semibold text-accent hover:underline"
@@ -1375,7 +1462,7 @@ export default function CaseMediaLibrary() {
     () =>
       cases.filter(
         (c) =>
-          (kindFilter === 'all' || c.mediaKind === kindFilter) &&
+          (kindFilter === 'all' || caseKinds(c).includes(kindFilter)) &&
           (findingFilter === 'all' || c.findings.includes(findingFilter)) &&
           matchesQuery(c, query, findingLabels),
       ),
@@ -1389,7 +1476,7 @@ export default function CaseMediaLibrary() {
       library. */
   const counts = useMemo(() => {
     const m = new Map<string, number>()
-    for (const c of cases) m.set(c.mediaKind, (m.get(c.mediaKind) ?? 0) + 1)
+    for (const c of cases) for (const k of caseKinds(c)) m.set(k, (m.get(k) ?? 0) + 1)
     return m
   }, [cases])
 
@@ -1626,7 +1713,7 @@ export default function CaseMediaLibrary() {
                               <span className="min-w-0 text-sm font-semibold leading-snug text-ink">
                                 {c.title}
                               </span>
-                              <Badge kind={c.mediaKind} />
+                              <Badges kinds={caseKinds(c)} />
                             </span>
                             {c.findings.length > 0 && (
                               <span className="text-xs leading-snug text-accent">
