@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
+import { WhoRunsRounds } from '../components/RoundsManagers'
 import { eventWhen, friendly, input, primaryBtn, quietBtn, type ConfEvent } from '../lib/conference'
 
 const STATUS_TONE = {
@@ -13,6 +14,9 @@ const STATUS_TONE = {
 
 export default function Conferences() {
   const { site } = useAuth()
+  // Rounds are run from Events too, so who may run them is set here as well
+  // as in User management and on the Rounds page.
+  const [tab, setTab] = useState<'events' | 'rounds'>('events')
   const navigate = useNavigate()
   const deleted = (useLocation().state as { deleted?: string } | null)?.deleted
   const [events, setEvents] = useState<(ConfEvent & { going: number })[]>([])
@@ -54,9 +58,20 @@ export default function Conferences() {
           <h1 className="font-display text-2xl font-bold text-ink">Events</h1>
           <p className="mt-1 text-sm text-muted">Courses, symposia and conferences — program, invitations, money and logistics.</p>
         </div>
-        {!creating && <button className={primaryBtn} onClick={() => setCreating(true)}>+ New event</button>}
+        {!creating && tab === 'events' && <button className={primaryBtn} onClick={() => setCreating(true)}>+ New event</button>}
       </div>
 
+      <div role="tablist" className="flex gap-1 border-b border-line">
+        {([['events', 'Conferences'], ['rounds', 'Who can run rounds']] as const).map(([k, l]) => (
+          <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${tab === k ? 'border-accent text-ink' : 'border-transparent text-muted hover:text-ink'}`}>{l}</button>
+        ))}
+        <Link to="/rounds" className="ml-auto px-3 py-2 text-sm font-medium text-accent hover:underline">Go to Rounds →</Link>
+      </div>
+
+      {tab === 'rounds' ? (
+        <WhoRunsRounds />
+      ) : <>
       {deleted && (
         <p className="rounded-md border border-line bg-surface px-4 py-3 text-sm text-ink" role="status">“{deleted}” was deleted.</p>
       )}
@@ -109,6 +124,7 @@ export default function Conferences() {
           </ul>
         )}
       </Card>
+      </>}
     </div>
   )
 }

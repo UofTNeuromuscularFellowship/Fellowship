@@ -229,8 +229,8 @@ export const NAV: NavGroup[] = [
       },
       {
         to: '/people',
-        label: 'People',
-        blurb: 'Fellows, supervisors and their accounts.',
+        label: 'User management',
+        blurb: 'Accounts, roles, and who can run rounds.',
         allow: ['director', 'admin'],
       },
     ],

@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
 import { roleLabel, localToday } from '../lib/format'
 import { niceDay } from '../components/ui/Wizard'
+import { RoundsToggle, useRoundsManagers, WhoRunsRounds } from '../components/RoundsManagers'
 
 interface UserRow {
   id: string; email: string; full_name: string; role: string; status: string; cohort_year: string | null
@@ -17,8 +18,12 @@ interface UserRow {
 export default function People() {
   const { profile } = useAuth()
   const canManage = profile?.role === 'director' || profile?.role === 'admin'
+  const isDirector = profile?.role === 'director'
   const [users, setUsers] = useState<UserRow[]>([])
   const [msg, setMsg] = useState<string | null>(null)
+  const [tab, setTab] = useState<'accounts' | 'permissions'>(() =>
+    new URLSearchParams(window.location.search).get('tab') === 'permissions' ? 'permissions' : 'accounts')
+  const rounds = useRoundsManagers()
 
   async function load() {
     // site_users: the people of THIS program, with the role they hold here
@@ -37,8 +42,8 @@ export default function People() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-display text-2xl font-bold text-ink">People</h1>
-          <p className="mt-1 text-sm text-muted">Fellows, supervisors, and program accounts</p>
+          <h1 className="font-display text-2xl font-bold text-ink">User management</h1>
+          <p className="mt-1 text-sm text-muted">Fellows, supervisors and program accounts, and what each of them can do</p>
         </div>
         {canManage && (
           <Link to="/people/new"
@@ -54,22 +59,45 @@ export default function People() {
         </div>
       )}
 
-      {canManage && <AssistantsSection users={users} onError={setMsg} />}
-
-      <Card>
-        <CardHeader title="All accounts" sub={`${users.length} people`} />
-        <ul className="divide-y divide-line">
-          {users.map((u) => (
-            <UserItem key={u.id} user={u} canManage={canManage} onChanged={load} onError={setMsg} />
+      {canManage && (
+        <div role="tablist" className="flex gap-1 border-b border-line">
+          {([['accounts', 'Accounts'], ['permissions', 'Permissions']] as const).map(([k, l]) => (
+            <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
+              className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${tab === k ? 'border-accent text-ink' : 'border-transparent text-muted hover:text-ink'}`}>{l}</button>
           ))}
-        </ul>
-      </Card>
+        </div>
+      )}
+
+      {canManage && tab === 'permissions' ? (
+        <div className="space-y-6">
+          <WhoRunsRounds />
+          <AssistantsSection users={users} onError={setMsg} />
+        </div>
+      ) : (
+        <Card>
+          <CardHeader title="All accounts" sub={`${users.length} people`} />
+          {rounds.error && <p className="px-5 pt-3 text-sm text-rose-700 dark:text-rose-300">{rounds.error}</p>}
+          <ul className="divide-y divide-line">
+            {users.map((u) => (
+              <UserItem key={u.id} user={u} canManage={canManage} onChanged={load} onError={setMsg}
+                runsRounds={!!rounds.managers?.has(u.id)}
+                roundsSlot={u.role === 'supervisor' && canManage
+                  ? <RoundsToggle userId={u.id} managers={rounds.managers} canEdit={isDirector} onSet={(id, on) => { void rounds.set(id, on) }} />
+                  : null} />
+            ))}
+          </ul>
+        </Card>
+      )}
     </div>
   )
 }
 
-function UserItem({ user, canManage, onChanged, onError }: {
+function UserItem({ user, canManage, onChanged, onError, runsRounds = false, roundsSlot = null }: {
   user: UserRow; canManage: boolean; onChanged: () => void; onError: (m: string) => void
+  /** Allowed to run rounds (shown beside the role). */
+  runsRounds?: boolean
+  /** The "Can run rounds" checkbox, for supervisors. */
+  roundsSlot?: React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
   const [role, setRole] = useState(user.role)
@@ -118,7 +146,7 @@ function UserItem({ user, canManage, onChanged, onError }: {
             {roleLabel(user.role)}{user.cohort_year ? ` · ${user.cohort_year}` : ''}
             {user.role === 'fellow' && (user.fellowship_start || user.fellowship_end)
               ? ` · ${niceDay(user.fellowship_start) || '?'} – ${niceDay(user.fellowship_end) || '?'}` : ''}
-            {user.teaching_only ? ' · teaching only' : ''}{inactive ? ` · ${user.status}` : ''}
+            {user.teaching_only ? ' · teaching only' : ''}{runsRounds ? ' · runs rounds' : ''}{inactive ? ` · ${user.status}` : ''}
           </span>
           {canManage && (
             <button onClick={() => setOpen(!open)} className="text-xs font-medium text-accent hover:underline">
@@ -155,6 +183,8 @@ function UserItem({ user, canManage, onChanged, onError }: {
           {user.role === 'supervisor' && (
             <TeachingOnlyToggle user={user} onChanged={onChanged} onError={onError} />
           )}
+
+          {roundsSlot}
 
           {user.role !== 'fellow' && user.role !== 'assistant' && (
             <AssistantEmailsEditor user={user} onChanged={onChanged} onError={onError} />

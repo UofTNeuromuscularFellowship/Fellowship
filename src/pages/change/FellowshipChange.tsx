@@ -121,7 +121,7 @@ export default function FellowshipChange() {
     return (
       <ChangeFrame title="A fellowship is extended or ends early" steps={STEPS} current={2}>
         <Applied changed={done.changed} told={done.told}>
-          <p className="text-sm text-ink">{fellow?.full_name}’s fellowship is now {rangeLabel(start || null, end || null)}. The change is kept in their record on the People page.</p>
+          <p className="text-sm text-ink">{fellow?.full_name}’s fellowship is now {rangeLabel(start || null, end || null)}. The change is kept in their record in User management.</p>
           {toGenerate && (
             <Link to={`/clinic/setup?step=5&from=${toGenerate.from}&to=${toGenerate.to}`} className="inline-block text-sm font-medium text-accent hover:underline">
               Make the clinic schedule for {rangeLabel(toGenerate.from, toGenerate.to)} →

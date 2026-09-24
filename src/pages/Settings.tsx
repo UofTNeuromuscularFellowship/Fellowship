@@ -456,7 +456,7 @@ function ProviderAssistantLogins({ providerId, onError }: { providerId: string; 
           </ul>
         )}
         {all.length === 0 ? (
-          <p className="text-sm text-muted">No assistant accounts exist yet. Ask the fellowship director to create one (People → Add a person → Administrative assistant), then link it here.</p>
+          <p className="text-sm text-muted">No assistant accounts exist yet. Ask the fellowship director to create one (User management → Add people → Administrative assistant), then link it here.</p>
         ) : (
           <div className="flex flex-wrap gap-2">
             <select value={choice} onChange={(e) => setChoice(e.target.value)}

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { Card, CardHeader } from '../components/ui/Card'
+import { Card } from '../components/ui/Card'
 import { Notice, primary, quiet, field } from '../components/ui/Wizard'
 import { plural } from '../lib/schedule'
+import { useAuth } from '../context/AuthContext'
+import { WhoRunsRounds } from '../components/RoundsManagers'
 import {
   describeRule, FORMAT_SHORT, parsePeople, sessionWhen,
   type RoundsList, type RoundsMember, type RoundsSeries, type RoundsSession,
@@ -41,10 +43,12 @@ type Tab = 'series' | 'lists' | 'who'
 
 export default function Rounds() {
   const access = useRoundsAccess()
-  const [tab, setTab] = useState<Tab>('series')
+  const { profile } = useAuth()
+  const [tab, setTab] = useState<Tab>(() => (new URLSearchParams(window.location.search).get('tab') === 'who' ? 'who' : 'series'))
+  const seesWho = !!access?.is_director || profile?.role === 'admin'
   if (!access) return <p className="text-sm text-muted">Loading…</p>
   if (!access.can_manage) return <NotAllowed />
-  const tabs: [Tab, string][] = [['series', 'Rounds'], ['lists', 'Mailing lists'], ...(access.is_director ? [['who', 'Who can run rounds'] as [Tab, string]] : [])]
+  const tabs: [Tab, string][] = [['series', 'Rounds'], ['lists', 'Mailing lists'], ...(seesWho ? [['who', 'Who can run rounds'] as [Tab, string]] : [])]
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -62,7 +66,7 @@ export default function Rounds() {
       </div>
       {tab === 'series' && <SeriesList />}
       {tab === 'lists' && <MailingLists />}
-      {tab === 'who' && access.is_director && <WhoRunsRounds />}
+      {tab === 'who' && seesWho && <WhoRunsRounds />}
     </div>
   )
 }
@@ -264,57 +268,6 @@ function ListCard({ list, members, unsub, open, onToggle, onChanged }: {
             </ul>
           )}
         </div>
-      )}
-    </Card>
-  )
-}
-
-// --------------------------------------------------------- who runs rounds
-
-function WhoRunsRounds() {
-  const [people, setPeople] = useState<{ id: string; full_name: string; email: string }[] | null>(null)
-  const [managers, setManagers] = useState<Set<string>>(new Set())
-  const [err, setErr] = useState<string | null>(null)
-  const load = useCallback(async () => {
-    const [p, m] = await Promise.all([
-      supabase.from('site_users').select('id, full_name, email').eq('role', 'supervisor').eq('status', 'active').order('full_name'),
-      supabase.from('rounds_managers').select('user_id'),
-    ])
-    setPeople((p.data as { id: string; full_name: string; email: string }[]) ?? [])
-    setManagers(new Set(((m.data as { user_id: string }[]) ?? []).map((x) => x.user_id)))
-  }, [])
-  useEffect(() => { load() }, [load])
-
-  async function toggle(id: string, on: boolean) {
-    setErr(null)
-    const { error } = on
-      ? await supabase.from('rounds_managers').insert({ user_id: id })
-      : await supabase.from('rounds_managers').delete().eq('user_id', id)
-    if (error) setErr(error.message)
-    load()
-  }
-
-  if (!people) return <p className="text-sm text-muted">Loading…</p>
-  return (
-    <Card>
-      <CardHeader title="Who can run rounds" sub="You always can. Supervisors you tick here can set up rounds, manage mailing lists, and see RSVPs and feedback." />
-      {err && <div className="px-5 pt-4"><Notice tone="bad">{err}</Notice></div>}
-      {people.length === 0 ? (
-        <p className="px-5 py-4 text-sm text-muted">No active supervisors yet. Add them under People.</p>
-      ) : (
-        <ul className="divide-y divide-line">
-          {people.map((p) => (
-            <li key={p.id}>
-              <label className="flex cursor-pointer items-center gap-3 px-5 py-3 text-sm">
-                <input type="checkbox" checked={managers.has(p.id)} onChange={(e) => toggle(p.id, e.target.checked)} />
-                <span>
-                  <span className="block font-medium text-ink">{p.full_name}</span>
-                  <span className="block text-xs text-muted">{p.email}</span>
-                </span>
-              </label>
-            </li>
-          ))}
-        </ul>
       )}
     </Card>
   )

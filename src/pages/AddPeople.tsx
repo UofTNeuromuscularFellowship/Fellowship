@@ -221,7 +221,7 @@ export default function AddPeople() {
     <div className="mx-auto max-w-3xl space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <Link to="/people" className="text-xs font-medium text-muted hover:text-ink">← People</Link>
+          <Link to="/people" className="text-xs font-medium text-muted hover:text-ink">← User management</Link>
           <h1 className="mt-1 font-display text-2xl font-bold text-ink">Add people</h1>
           <p className="mt-1 text-sm text-muted">
             {step < 3 ? `Step ${step + 1} of 3 · Nothing is created until the last step.` : `Added to ${site?.name ?? 'your program'}.`}
@@ -479,7 +479,7 @@ export default function AddPeople() {
                 className="flex items-center justify-between rounded-lg border border-line bg-surface px-4 py-3 text-left text-sm text-ink hover:border-accent">
                 Add more people <span className="text-muted">→</span>
               </button>
-              <NextLink to="/people">Back to People</NextLink>
+              <NextLink to="/people">Back to User management</NextLink>
             </div>
           </div>
         </div>

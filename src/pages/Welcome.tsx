@@ -40,13 +40,13 @@ const WHERE: Record<string, [string, string][]> = {
     ['Vacation & away dates', 'keep your away dates up to date'],
   ],
   director: [
-    ['People', 'add everyone in the program'],
+    ['User management', 'add everyone in the program'],
     ['Clinic schedule', 'set up and publish the rotation'],
     ['Teaching assignments', 'build and publish the teaching year'],
     ['Vacation & away dates', 'approve fellows’ requests'],
   ],
   admin: [
-    ['People', 'add and manage accounts'],
+    ['User management', 'add and manage accounts'],
     ['Competency', 'targets and progress'],
     ['Conferences', 'courses and events'],
     ['Feedback review', 'how teaching is landing'],

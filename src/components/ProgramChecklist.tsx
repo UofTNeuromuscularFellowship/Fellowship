@@ -42,7 +42,7 @@ export default function ProgramChecklist() {
           done: fellows.length > 0 && list.some((p) => p.role === 'supervisor'),
         },
         {
-          key: 'dates', title: 'Give each fellow their fellowship dates', to: '/people', action: 'Open People',
+          key: 'dates', title: 'Give each fellow their fellowship dates', to: '/people', action: 'Open User management',
           detail: fellows.length === 0 ? 'No fellows yet' : noDates ? `${noDates} fellow${noDates === 1 ? '' : 's'} without start and end dates — schedules use them` : 'Every fellow has dates',
           done: fellows.length > 0 && noDates === 0,
         },
