@@ -59,6 +59,8 @@ interface AuthContextValue {
   courseCount: number
   /** The director has let this supervisor run rounds (always true for the director and admin). */
   runsRounds: boolean
+  /** The director has let this person run conferences (always true for the director and admin). */
+  runsConferences: boolean
   refreshCourses: () => Promise<void>
   signIn: (email: string, password: string) => Promise<{ error: string | null }>
   signOut: () => Promise<void>
@@ -77,6 +79,7 @@ const AuthContext = createContext<AuthContextValue>({
   profileReady: false,
   courseCount: 0,
   runsRounds: false,
+  runsConferences: false,
   refreshCourses: async () => {},
   signIn: async () => ({ error: 'not ready' }),
   signOut: async () => {},
@@ -95,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [readyFor, setReadyFor] = useState<string | null>(null)
   const [courseCount, setCourseCount] = useState(0)
   const [runsRounds, setRunsRounds] = useState(false)
+  const [runsConferences, setRunsConferences] = useState(false)
 
   const refreshCourses = useCallback(async () => {
     const { data, error } = await supabase.rpc('conf_my_courses')
@@ -130,15 +134,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const [{ data: s }, { data: t }, { data: ra }] = await Promise.all([
         supabase.from('sites').select('id, slug, name, short_name, institution').eq('id', p.active_site_id).maybeSingle(),
         supabase.from('site_tools').select('tool_key, enabled').eq('site_id', p.active_site_id),
-        supabase.rpc('rounds_my_access'),
+        supabase.rpc('my_permissions'),
       ])
-      setRunsRounds(!!(ra as { can_manage?: boolean } | null)?.can_manage)
+      const perms = ra as { rounds?: boolean; conferences?: boolean } | null
+      setRunsRounds(!!perms?.rounds)
+      setRunsConferences(!!perms?.conferences)
       setSite((s as Site) ?? null)
       setTools(new Set(((t as { tool_key: string; enabled: boolean }[] | null) ?? []).filter((r) => r.enabled).map((r) => r.tool_key)))
     } else {
       setSite(null)
       setTools(new Set())
       setRunsRounds(false)
+      setRunsConferences(false)
     }
     await refreshCourses()
     setReadyFor(userId)
@@ -199,7 +206,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider value={{
-      session, profile, site, sites, tools, isPlatformAdmin, loading, profileReady, courseCount, runsRounds, refreshCourses,
+      session, profile, site, sites, tools, isPlatformAdmin, loading, profileReady, courseCount, runsRounds, runsConferences, refreshCourses,
       signIn, signOut, refreshProfile, switchSite,
     }}>
       {children}

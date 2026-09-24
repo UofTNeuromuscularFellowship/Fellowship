@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
 import { roleLabel, localToday } from '../lib/format'
 import { niceDay } from '../components/ui/Wizard'
-import { RoundsToggle, useRoundsManagers, WhoRunsRounds } from '../components/RoundsManagers'
+import { PermissionsBlock, usePermissions, WhoRunsEvents } from '../components/RoundsManagers'
 
 interface UserRow {
   id: string; email: string; full_name: string; role: string; status: string; cohort_year: string | null
@@ -23,7 +23,7 @@ export default function People() {
   const [msg, setMsg] = useState<string | null>(null)
   const [tab, setTab] = useState<'accounts' | 'permissions'>(() =>
     new URLSearchParams(window.location.search).get('tab') === 'permissions' ? 'permissions' : 'accounts')
-  const rounds = useRoundsManagers()
+  const perms = usePermissions()
 
   async function load() {
     // site_users: the people of THIS program, with the role they hold here
@@ -70,19 +70,19 @@ export default function People() {
 
       {canManage && tab === 'permissions' ? (
         <div className="space-y-6">
-          <WhoRunsRounds />
+          <WhoRunsEvents />
           <AssistantsSection users={users} onError={setMsg} />
         </div>
       ) : (
         <Card>
           <CardHeader title="All accounts" sub={`${users.length} people`} />
-          {rounds.error && <p className="px-5 pt-3 text-sm text-rose-700 dark:text-rose-300">{rounds.error}</p>}
+          {perms.error && <p className="px-5 pt-3 text-sm text-rose-700 dark:text-rose-300">{perms.error}</p>}
           <ul className="divide-y divide-line">
             {users.map((u) => (
               <UserItem key={u.id} user={u} canManage={canManage} onChanged={load} onError={setMsg}
-                runsRounds={!!rounds.managers?.has(u.id)}
-                roundsSlot={u.role === 'supervisor' && canManage
-                  ? <RoundsToggle userId={u.id} managers={rounds.managers} canEdit={isDirector} onSet={(id, on) => { void rounds.set(id, on) }} />
+                runs={[perms.holders?.rounds.has(u.id) ? 'runs rounds' : null, perms.holders?.conferences.has(u.id) ? 'runs conferences' : null].filter(Boolean).join(' · ')}
+                roundsSlot={['supervisor', 'fellow', 'assistant'].includes(u.role) && canManage
+                  ? <PermissionsBlock userId={u.id} holders={perms.holders} canEdit={isDirector} onSet={(k, id, on) => { void perms.set(k, id, on) }} />
                   : null} />
             ))}
           </ul>
@@ -92,11 +92,11 @@ export default function People() {
   )
 }
 
-function UserItem({ user, canManage, onChanged, onError, runsRounds = false, roundsSlot = null }: {
+function UserItem({ user, canManage, onChanged, onError, runs = '', roundsSlot = null }: {
   user: UserRow; canManage: boolean; onChanged: () => void; onError: (m: string) => void
-  /** Allowed to run rounds (shown beside the role). */
-  runsRounds?: boolean
-  /** The "Can run rounds" checkbox, for supervisors. */
+  /** What they may run, e.g. "runs rounds · runs conferences" (shown beside the role). */
+  runs?: string
+  /** The "Can run rounds / conferences" checkboxes. */
   roundsSlot?: React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
@@ -146,7 +146,7 @@ function UserItem({ user, canManage, onChanged, onError, runsRounds = false, rou
             {roleLabel(user.role)}{user.cohort_year ? ` · ${user.cohort_year}` : ''}
             {user.role === 'fellow' && (user.fellowship_start || user.fellowship_end)
               ? ` · ${niceDay(user.fellowship_start) || '?'} – ${niceDay(user.fellowship_end) || '?'}` : ''}
-            {user.teaching_only ? ' · teaching only' : ''}{runsRounds ? ' · runs rounds' : ''}{inactive ? ` · ${user.status}` : ''}
+            {user.teaching_only ? ' · teaching only' : ''}{runs ? ` · ${runs}` : ''}{inactive ? ` · ${user.status}` : ''}
           </span>
           {canManage && (
             <button onClick={() => setOpen(!open)} className="text-xs font-medium text-accent hover:underline">

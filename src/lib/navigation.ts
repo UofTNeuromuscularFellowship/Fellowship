@@ -242,6 +242,7 @@ export const NAV: NavGroup[] = [
     icon: 'events',
     items: [
       {
+        // Also shown to anyone the director has let run conferences - see navFor.
         to: '/events',
         tool: 'conference',
         label: 'Conferences',
@@ -304,7 +305,7 @@ export const NAV: NavGroup[] = [
 /** The groups this role can see, with the items they cannot see removed. */
 export function navFor(
   role: UserRole | undefined,
-  opts?: { hideClinic?: boolean; tools?: Set<string>; platformAdmin?: boolean; courses?: boolean; runsRounds?: boolean },
+  opts?: { hideClinic?: boolean; tools?: Set<string>; platformAdmin?: boolean; courses?: boolean; runsRounds?: boolean; runsConferences?: boolean },
 ): NavGroup[] {
   return NAV.map((g) => ({
     ...g,
@@ -314,8 +315,14 @@ export function navFor(
       // schedule is noise for them. Everything teaching-related stays put.
       if (opts?.hideClinic && i.to === '/clinic') return false
       if (i.to === '/courses') return !!opts?.courses
-      // Supervisors run rounds only once the director has added them.
-      if (i.to === '/rounds' && role === 'supervisor' && !opts?.runsRounds) return false
+      // Others run rounds or conferences only once the director has added them.
+      if (role !== 'director' && role !== 'admin') {
+        if (i.to === '/rounds') return !!opts?.runsRounds
+        if (i.to === '/events') {
+          if (!opts?.runsConferences) return false
+          return !(i.tool && opts?.tools && !opts.tools.has(i.tool))
+        }
+      }
       // A toolkit item the program has not been granted is not offered. (The
       // route and the database refuse it too; this only keeps the menu honest.)
       if (i.tool && opts?.tools && !opts.tools.has(i.tool)) return false

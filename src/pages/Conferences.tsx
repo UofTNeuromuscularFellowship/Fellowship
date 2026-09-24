@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { Card, CardHeader } from '../components/ui/Card'
-import { WhoRunsRounds } from '../components/RoundsManagers'
+import { WhoRunsEvents } from '../components/RoundsManagers'
 import { eventWhen, friendly, input, primaryBtn, quietBtn, type ConfEvent } from '../lib/conference'
 
 const STATUS_TONE = {
@@ -13,7 +13,8 @@ const STATUS_TONE = {
 } as const
 
 export default function Conferences() {
-  const { site } = useAuth()
+  const { site, profile } = useAuth()
+  const seesWho = profile?.role === 'director' || profile?.role === 'admin'
   // Rounds are run from Events too, so who may run them is set here as well
   // as in User management and on the Rounds page.
   const [tab, setTab] = useState<'events' | 'rounds'>('events')
@@ -62,7 +63,7 @@ export default function Conferences() {
       </div>
 
       <div role="tablist" className="flex gap-1 border-b border-line">
-        {([['events', 'Conferences'], ['rounds', 'Who can run rounds']] as const).map(([k, l]) => (
+        {([['events', 'Conferences'], ...(seesWho ? [['rounds', 'Who can run events']] : [])] as ['events' | 'rounds', string][]).map(([k, l]) => (
           <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
             className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${tab === k ? 'border-accent text-ink' : 'border-transparent text-muted hover:text-ink'}`}>{l}</button>
         ))}
@@ -70,7 +71,7 @@ export default function Conferences() {
       </div>
 
       {tab === 'rounds' ? (
-        <WhoRunsRounds />
+        <WhoRunsEvents />
       ) : <>
       {deleted && (
         <p className="rounded-md border border-line bg-surface px-4 py-3 text-sm text-ink" role="status">“{deleted}” was deleted.</p>

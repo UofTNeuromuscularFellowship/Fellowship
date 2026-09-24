@@ -5,7 +5,7 @@ import { Card } from '../components/ui/Card'
 import { Notice, primary, quiet, field } from '../components/ui/Wizard'
 import { plural } from '../lib/schedule'
 import { useAuth } from '../context/AuthContext'
-import { WhoRunsRounds } from '../components/RoundsManagers'
+import { WhoRunsEvents } from '../components/RoundsManagers'
 import {
   describeRule, FORMAT_SHORT, parsePeople, sessionWhen,
   type RoundsList, type RoundsMember, type RoundsSeries, type RoundsSession,
@@ -48,7 +48,7 @@ export default function Rounds() {
   const seesWho = !!access?.is_director || profile?.role === 'admin'
   if (!access) return <p className="text-sm text-muted">Loading…</p>
   if (!access.can_manage) return <NotAllowed />
-  const tabs: [Tab, string][] = [['series', 'Rounds'], ['lists', 'Mailing lists'], ...(seesWho ? [['who', 'Who can run rounds'] as [Tab, string]] : [])]
+  const tabs: [Tab, string][] = [['series', 'Rounds'], ['lists', 'Mailing lists'], ...(seesWho ? [['who', 'Who can run events'] as [Tab, string]] : [])]
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -66,7 +66,7 @@ export default function Rounds() {
       </div>
       {tab === 'series' && <SeriesList />}
       {tab === 'lists' && <MailingLists />}
-      {tab === 'who' && seesWho && <WhoRunsRounds />}
+      {tab === 'who' && seesWho && <WhoRunsEvents />}
     </div>
   )
 }

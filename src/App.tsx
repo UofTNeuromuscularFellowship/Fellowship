@@ -4,6 +4,7 @@ import { ProtectedRoute } from './components/ProtectedRoute'
 import { AppShell } from './components/AppShell'
 import { CoursesFrame } from './components/AttendeeShell'
 import { useAuth } from './context/AuthContext'
+import { RequireConferences } from './components/RequirePermission'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
 import ChangePassword from './pages/ChangePassword'
@@ -61,6 +62,13 @@ const LearnerPeople = lazy(() => import('./pages/LearnerPeople'))
 const LearnerWizard = lazy(() => import('./pages/LearnerWizard'))
 const LearnerFeedbackForm = lazy(() => import('./pages/public/LearnerFeedbackForm'))
 const EventInPortal = lazy(() => import('./pages/public/EventPublic').then((m) => ({ default: m.EventInPortal })))
+
+/**
+ * Rounds and conferences: the director and admin, and anyone the director has
+ * let run them. The route lets any member in; each page then checks the
+ * permission (and the database enforces it on every table).
+ */
+const EVENT_RUNNERS: ('fellow' | 'supervisor' | 'director' | 'admin' | 'assistant')[] = ['fellow', 'supervisor', 'director', 'admin', 'assistant']
 
 function LazyPage({ children }: { children: React.ReactNode }) {
   return (
@@ -161,9 +169,9 @@ export default function App() {
       <Route path="/my-teaching/setup" element={<Shell allow={['director']}><LazyPage><TeachingSetup /></LazyPage></Shell>} />
       {/* Rounds: the director, and supervisors the director has added
           (checked in the pages and by can_manage_rounds() in the database). */}
-      <Route path="/rounds" element={<Shell allow={['supervisor', 'director', 'admin']}><LazyPage><Rounds /></LazyPage></Shell>} />
-      <Route path="/rounds/new" element={<Shell allow={['supervisor', 'director', 'admin']}><LazyPage><RoundsWizard /></LazyPage></Shell>} />
-      <Route path="/rounds/:id" element={<Shell allow={['supervisor', 'director', 'admin']}><LazyPage><RoundsSeries /></LazyPage></Shell>} />
+      <Route path="/rounds" element={<Shell allow={EVENT_RUNNERS}><LazyPage><Rounds /></LazyPage></Shell>} />
+      <Route path="/rounds/new" element={<Shell allow={EVENT_RUNNERS}><LazyPage><RoundsWizard /></LazyPage></Shell>} />
+      <Route path="/rounds/:id" element={<Shell allow={EVENT_RUNNERS}><LazyPage><RoundsSeries /></LazyPage></Shell>} />
       {/* Learners: residents and medical students — director and program admin. */}
       <Route path="/learners" element={<Shell allow={['director', 'admin']}><LazyPage><LearnerSchedule /></LazyPage></Shell>} />
       <Route path="/learners/feedback" element={<Shell allow={['director', 'admin']}><LazyPage><LearnerFeedback /></LazyPage></Shell>} />
@@ -190,12 +198,12 @@ export default function App() {
       {/* Conference management: the fellowship director or a program admin,
           matching is_director_or_admin() behind every conf_* table. Gated on
           the 'conference' toolkit entry like the other optional modules. */}
-      <Route path="/events" element={<Shell allow={['director', 'admin']}><LazyPage><Conferences /></LazyPage></Shell>} />
-      <Route path="/events/:id" element={<Shell allow={['director', 'admin']}><LazyPage><ConferenceEvent /></LazyPage></Shell>} />
+      <Route path="/events" element={<Shell allow={EVENT_RUNNERS}><LazyPage><RequireConferences><Conferences /></RequireConferences></LazyPage></Shell>} />
+      <Route path="/events/:id" element={<Shell allow={EVENT_RUNNERS}><LazyPage><RequireConferences><ConferenceEvent /></RequireConferences></LazyPage></Shell>} />
       {/* Printable sheet: signed in, but without the portal frame around it. */}
       <Route
         path="/events/:id/badges"
-        element={<ProtectedRoute allow={['director', 'admin']}><LazyPage><ConferenceBadges /></LazyPage></ProtectedRoute>}
+        element={<ProtectedRoute allow={EVENT_RUNNERS}><LazyPage><RequireConferences><ConferenceBadges /></RequireConferences></LazyPage></ProtectedRoute>}
       />
       <Route path="/settings" element={<Shell><Settings /></Shell>} />
       {/* Platform admin only: the programs using this portal. Not part of any
