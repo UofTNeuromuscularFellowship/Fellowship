@@ -195,10 +195,12 @@ export interface Annotation {
 export interface CaseMedia {
   id: string
   title: string
-  /** What image 1 shows first. */
+  /** The case's designation: what it is filed under first… */
   mediaKind: MediaKind
-  /** Anything else image 1 shows, e.g. an ultrasound beside the trace. */
+  /** …and anything else it is filed under. Any combination. */
   extraKinds: MediaKind[]
+  /** What image 1 itself shows. */
+  mainKinds: MediaKind[]
   description: string | null
   fileName: string
   storagePath: string
@@ -249,7 +251,7 @@ function toImage(r: ImageRow): CaseImage {
 }
 
 const COLUMNS =
-  'id, title, media_kind, extra_kinds, description, file_name, storage_path, mime_type, size_bytes, poster_path, consent_signed_at, annotations, author_id, created_at, updated_at'
+  'id, title, media_kind, extra_kinds, main_kinds, description, file_name, storage_path, mime_type, size_bytes, poster_path, consent_signed_at, annotations, author_id, created_at, updated_at'
 
 /**
  * The same columns plus the findings, fetched through the foreign key in one
@@ -263,6 +265,7 @@ interface Row {
   title: string
   media_kind: MediaKind
   extra_kinds: MediaKind[] | null
+  main_kinds: MediaKind[] | null
   description: string | null
   file_name: string
   storage_path: string
@@ -284,6 +287,7 @@ function toCase(r: Row): CaseMedia {
     title: r.title,
     mediaKind: r.media_kind,
     extraKinds: Array.isArray(r.extra_kinds) ? r.extra_kinds : [],
+    mainKinds: Array.isArray(r.main_kinds) ? r.main_kinds : [],
     description: r.description,
     fileName: r.file_name,
     storagePath: r.storage_path,
@@ -304,14 +308,22 @@ function toCase(r: Row): CaseMedia {
   }
 }
 
-/** What image 1 shows. */
-export function mainKinds(c: Pick<CaseMedia, 'mediaKind' | 'extraKinds'>): MediaKind[] {
+/** The case's own designation, as chosen for it. */
+export function caseTypes(c: Pick<CaseMedia, 'mediaKind' | 'extraKinds'>): MediaKind[] {
   return [c.mediaKind, ...c.extraKinds.filter((k) => k !== c.mediaKind)]
 }
 
-/** Every kind any image in the case shows, in the order of MEDIA_KINDS. */
-export function caseKinds(c: Pick<CaseMedia, 'mediaKind' | 'extraKinds' | 'images'>): MediaKind[] {
-  const all = new Set<MediaKind>([...mainKinds(c), ...c.images.flatMap((i) => (i.kinds.length ? i.kinds : [c.mediaKind]))])
+/** What image 1 shows. */
+export function mainKinds(c: Pick<CaseMedia, 'mediaKind' | 'extraKinds' | 'mainKinds'>): MediaKind[] {
+  return c.mainKinds.length ? c.mainKinds : caseTypes(c)
+}
+
+/**
+ * Everything the case is filed under: its designation, plus whatever any of
+ * its images is tagged with. In the order of MEDIA_KINDS.
+ */
+export function caseKinds(c: Pick<CaseMedia, 'mediaKind' | 'extraKinds' | 'mainKinds' | 'images'>): MediaKind[] {
+  const all = new Set<MediaKind>([...caseTypes(c), ...mainKinds(c), ...c.images.flatMap((i) => (i.kinds.length ? i.kinds : [c.mediaKind]))])
   return MEDIA_KINDS.map((m) => m.id).filter((k) => all.has(k))
 }
 
@@ -361,8 +373,10 @@ export async function signPaths(paths: string[]): Promise<Map<string, string>> {
 export interface NewCase {
   title: string
   mediaKind: MediaKind
-  /** Anything else the first file shows. */
+  /** Anything else the case is filed under. */
   extraKinds?: MediaKind[]
+  /** What the first file shows. */
+  mainKinds?: MediaKind[]
   description: string
   file: File
   /** Codes from case_finding, applied right after the row is created. */
@@ -520,6 +534,7 @@ export async function createCase(input: NewCase, authorId: string): Promise<Case
       title: input.title.trim(),
       media_kind: input.mediaKind,
       extra_kinds: (input.extraKinds ?? []).filter((k) => k !== input.mediaKind),
+      main_kinds: input.mainKinds?.length ? input.mainKinds : [input.mediaKind],
       description: input.description.trim() || null,
       file_name: input.file.name,
       storage_path: path,
@@ -551,13 +566,14 @@ export async function createCase(input: NewCase, authorId: string): Promise<Case
 
 export async function updateCase(
   id: string,
-  patch: Partial<Pick<CaseMedia, 'title' | 'description' | 'mediaKind' | 'extraKinds' | 'annotations'>>,
+  patch: Partial<Pick<CaseMedia, 'title' | 'description' | 'mediaKind' | 'extraKinds' | 'mainKinds' | 'annotations'>>,
 ): Promise<CaseMedia> {
   const row: Record<string, unknown> = {}
   if (patch.title !== undefined) row.title = patch.title
   if (patch.description !== undefined) row.description = patch.description
   if (patch.mediaKind !== undefined) row.media_kind = patch.mediaKind
   if (patch.extraKinds !== undefined) row.extra_kinds = patch.extraKinds
+  if (patch.mainKinds !== undefined) row.main_kinds = patch.mainKinds
   if (patch.annotations !== undefined) row.annotations = patch.annotations
 
   const { data, error } = await supabase
@@ -631,6 +647,24 @@ export async function updateImage(id: string, annotations: Annotation[]): Promis
     .single()
   if (error) throw new Error(error.message)
   return toImage(data as unknown as ImageRow)
+}
+
+/** One case, fresh from the database. */
+export async function getCase(id: string): Promise<CaseMedia> {
+  const { data, error } = await supabase.from('case_media').select(COLUMNS_WITH_FINDINGS).eq('id', id).single()
+  if (error) throw new Error(error.message)
+  return toCase(data as unknown as Row)
+}
+
+/**
+ * Put a case's images in a new order. `order` lists every image once: the
+ * case's own id stands for the current image 1, image ids for the rest.
+ * Whichever comes first becomes image 1.
+ */
+export async function reorderImages(c: CaseMedia, order: string[]): Promise<CaseMedia> {
+  const { error } = await supabase.rpc('case_media_reorder', { p_case: c.id, p_order: order })
+  if (error) throw new Error(error.message)
+  return getCase(c.id)
 }
 
 export async function setImageKinds(id: string, kinds: MediaKind[]): Promise<CaseImage> {

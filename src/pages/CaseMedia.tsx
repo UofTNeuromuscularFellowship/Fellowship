@@ -28,7 +28,9 @@ import {
   signPaths,
   updateCase,
   caseKinds,
+  caseTypes,
   mainKinds,
+  reorderImages,
   setImageKinds,
   addImages,
   updateImage,
@@ -150,6 +152,41 @@ function FindingChips({ codes, all }: { codes: string[]; all: Finding[] }) {
   )
 }
 
+function moveItem<T>(list: T[], from: number, to: number): T[] {
+  const next = [...list]
+  const [x] = next.splice(from, 1)
+  next.splice(to, 0, x)
+  return next
+}
+
+function isClipFile(f: File | undefined): boolean {
+  return !!f && (f.type.startsWith('video/') || /\.(mp4|mov|webm|m4v|avi)$/i.test(f.name))
+}
+
+/**
+ * Move an image earlier or later. A clip must stay first (it is annotated
+ * through a frame captured from it), so with a clip in first place nothing
+ * moves above it, and the clip itself doesn't move.
+ */
+function MoveButtons({ index, count, locked, onMove, label, disabled }: {
+  index: number; count: number; locked: boolean; onMove: (to: number) => void; label: string; disabled?: boolean
+}) {
+  const min = locked ? 1 : 0
+  const canUp = !disabled && index > min
+  const canDown = !disabled && index < count - 1 && !(locked && index === 0)
+  const btn = 'flex h-7 w-7 items-center justify-center rounded border border-line text-muted hover:border-accent hover:text-ink disabled:opacity-30'
+  return (
+    <span className="flex gap-1">
+      <button type="button" className={btn} disabled={!canUp} onClick={() => onMove(index - 1)} aria-label={`Move ${label} earlier`} title="Move earlier">
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
+      </button>
+      <button type="button" className={btn} disabled={!canDown} onClick={() => onMove(index + 1)} aria-label={`Move ${label} later`} title="Move later">
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+      </button>
+    </span>
+  )
+}
+
 /**
  * What one image shows. More than one can be on: a screen with the needle EMG
  * beside the ultrasound, or a photo of the sign next to its MRI.
@@ -204,7 +241,8 @@ function UploadForm({
   onError: (m: string) => void
 }) {
   const [title, setTitle] = useState('')
-  const [mediaKind, setMediaKind] = useState<MediaKind>('waveform')
+  // What the case is filed under — any combination.
+  const [types, setTypes] = useState<MediaKind[]>(['waveform'])
   const [description, setDescription] = useState('')
   // The first file is the case's own image or clip; any more are further
   // images of the same case, added in order.
@@ -213,10 +251,9 @@ function UploadForm({
   const [fileKinds, setFileKinds] = useState<MediaKind[][]>([])
   const [fileNote, setFileNote] = useState<string | null>(null)
   const file = files[0] ?? null
-  // Every kind in the case so far — what the finding terms and consent follow.
-  const allKinds: MediaKind[] = files.length
-    ? MEDIA_KINDS.map((m) => m.id).filter((k) => fileKinds.some((ks) => ks.includes(k)))
-    : [mediaKind]
+  // Everything in the case so far — what the finding terms and consent follow.
+  const allKinds: MediaKind[] = MEDIA_KINDS.map((m) => m.id)
+    .filter((k) => types.includes(k) || fileKinds.some((ks) => ks.includes(k)))
   function addFiles(list: FileList | null) {
     const picked = Array.from(list ?? [])
     if (!picked.length) return
@@ -229,7 +266,8 @@ function UploadForm({
       // captured frame, which only the first file has.
       if (clip && next.length > 0) { skipped++; continue }
       next.push(f)
-      nextKinds.push([mediaKind])
+      // A new file starts as the case's first type; change it on its row.
+      nextKinds.push([types[0]])
     }
     setFiles(next)
     setFileKinds(nextKinds)
@@ -267,7 +305,10 @@ function UploadForm({
     setBusy(true)
     try {
       const created = await createCase(
-        { title, mediaKind: (fileKinds[0] ?? [mediaKind])[0], extraKinds: (fileKinds[0] ?? []).slice(1), description, file, findings: chosen },
+        {
+          title, mediaKind: types[0], extraKinds: types.slice(1), mainKinds: fileKinds[0] ?? [types[0]],
+          description, file, findings: chosen,
+        },
         authorId,
       )
       // The case exists first, because the consent row references it. If the
@@ -308,6 +349,7 @@ function UploadForm({
       setDescription('')
       setFiles([])
       setFileKinds([])
+      setTypes(['waveform'])
       setFileNote(null)
       setFileKey((n) => n + 1)
       setConfirmed(false)
@@ -338,34 +380,17 @@ function UploadForm({
 
       <div>
         <span className="text-xs font-semibold uppercase tracking-wide text-muted">
-          What it shows{' '}
-          <span className="font-normal normal-case">— given to each file you add; change any file below, and mix as many as you need</span>
+          What the case is{' '}
+          <span className="font-normal normal-case">— choose as many as apply; each image can be tagged on its own below</span>
         </span>
-        <div className="mt-1 flex flex-wrap gap-2">
-          {MEDIA_KINDS.map((k) => (
-            <button
-              key={k.id}
-              onClick={() => {
-                setMediaKind(k.id)
-                // Terms are scoped to a kind. Switching from waveform to
-                // ultrasound must not leave "fibrillation potential" attached
-                // to an ultrasound image just because it was picked first.
-                if (!files.length) {
-                  setChosen((cur) =>
-                    cur.filter((c) => findingsFor(findings, k.id).some((f) => f.code === c)),
-                  )
-                }
-              }}
-              title={k.hint}
-              className={`min-h-[40px] rounded-md border px-3 py-2 text-sm font-semibold sm:min-h-0 sm:px-2.5 sm:py-1.5 sm:text-xs ${
-                mediaKind === k.id
-                  ? 'border-accent bg-accent-soft text-accent'
-                  : 'border-line text-muted hover:text-ink'
-              }`}
-            >
-              {k.label}
-            </button>
-          ))}
+        <div className="mt-1">
+          <KindChips value={types} onChange={(next) => {
+            setTypes(next)
+            // Terms are scoped to kinds: dropping ultrasound must not leave an
+            // ultrasound term attached to a case that no longer has one.
+            const keep = MEDIA_KINDS.map((m) => m.id).filter((k) => next.includes(k) || fileKinds.some((ks) => ks.includes(k)))
+            setChosen((cur) => cur.filter((c) => findingsFor(findings, keep).some((f) => f.code === c)))
+          }} />
         </div>
       </div>
 
@@ -437,10 +462,15 @@ function UploadForm({
                     <span className="font-semibold">{i + 1}.</span> {f.name}
                     <span className="text-muted"> · {(f.size / 1024 / 1024).toFixed(1)} MB{i === 0 && files.length > 1 ? ' · shown first' : ''}</span>
                   </span>
-                  <button type="button" onClick={() => { setFiles(files.filter((_, j) => j !== i)); setFileKinds(fileKinds.filter((_, j) => j !== i)) }}
-                    className="shrink-0 font-semibold text-muted hover:text-ink" aria-label={`Remove ${f.name}`}>Remove</button>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <MoveButtons index={i} count={files.length} locked={isClipFile(files[0])} onMove={(to) => {
+                      setFiles(moveItem(files, i, to)); setFileKinds(moveItem(fileKinds, i, to))
+                    }} label={f.name} />
+                    <button type="button" onClick={() => { setFiles(files.filter((_, j) => j !== i)); setFileKinds(fileKinds.filter((_, j) => j !== i)) }}
+                      className="font-semibold text-muted hover:text-ink" aria-label={`Remove ${f.name}`}>Remove</button>
+                  </span>
                 </div>
-                <KindChips size="xs" value={fileKinds[i] ?? [mediaKind]}
+                <KindChips size="xs" value={fileKinds[i] ?? [types[0]]}
                   onChange={(next) => setFileKinds(fileKinds.map((k, j) => (j === i ? next : k)))} />
               </li>
             ))}
@@ -796,9 +826,13 @@ function CaseView({
   async function saveDetails() {
     const title = titleDraft.trim()
     if (!title) return
+    if (typesDraft.includes('exam') && !caseKinds(c).includes('exam') && !c.consentSignedAt) {
+      onError('An examination photo needs the patient’s signed consent, and this case has none on file. Add it as a new case, where consent is taken.')
+      return
+    }
     setDetailsBusy(true)
     try {
-      onSaved(await updateCase(c.id, { title, description: descDraft.trim() || null }))
+      onSaved(await updateCase(c.id, { title, description: descDraft.trim() || null, mediaKind: typesDraft[0], extraKinds: typesDraft.slice(1) }))
       setEditingDetails(false)
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e))
@@ -895,7 +929,7 @@ function CaseView({
         const img = await setImageKinds(extra.id, next)
         onSaved({ ...c, images: c.images.map((i) => (i.id === img.id ? img : i)) })
       } else {
-        onSaved(await updateCase(c.id, { mediaKind: next[0], extraKinds: next.slice(1) }))
+        onSaved(await updateCase(c.id, { mainKinds: next }))
       }
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e))
@@ -903,6 +937,25 @@ function CaseView({
       setKindBusy(false)
     }
   }
+
+  /** Move the image showing now to another place in the case. */
+  async function moveImage(to: number) {
+    const order = [c.id, ...c.images.map((i) => i.id)]
+    const next = moveItem(order, sel, to)
+    setImgBusy(true)
+    try {
+      onSaved(await reorderImages(c, next))
+      setSel(to)
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setImgBusy(false)
+    }
+  }
+
+  // The case's designation, edited in "Edit details".
+  const [typesDraft, setTypesDraft] = useState<MediaKind[]>(caseTypes(c))
+  useEffect(() => { setTypesDraft(caseTypes(c)) }, [c.id, c.mediaKind, c.extraKinds]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function removeImage() {
     if (!extra) return
@@ -1093,6 +1146,12 @@ function CaseView({
                 className="mt-1 w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
               />
             </label>
+            <div>
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+                What the case is <span className="font-normal normal-case">— any combination; the library also lists it under whatever its images are tagged with</span>
+              </span>
+              <div className="mt-1"><KindChips value={typesDraft} onChange={setTypesDraft} /></div>
+            </div>
             <label className="block">
               <span className="text-xs font-semibold uppercase tracking-wide text-muted">
                 Description <span className="font-normal normal-case">— appears under the image</span>
@@ -1116,6 +1175,7 @@ function CaseView({
                 onClick={() => {
                   setTitleDraft(c.title)
                   setDescDraft(c.description ?? '')
+                  setTypesDraft(caseTypes(c))
                   setEditingDetails(false)
                 }}
                 className="min-h-[38px] rounded-md border border-line px-3 py-1.5 text-xs font-semibold text-muted hover:text-ink"
@@ -1244,6 +1304,13 @@ function CaseView({
             {totalImages > 1 && (
               <p className="flex flex-wrap items-center gap-x-3 text-xs text-muted">
                 <span>Image {sel + 1} of {totalImages} · each image has its own annotations</span>
+                {mayEdit && !editing && (
+                  <span className="flex items-center gap-1.5">
+                    <MoveButtons index={sel} count={totalImages} locked={isVideo(c)} disabled={imgBusy}
+                      onMove={(to) => void moveImage(to)} label={`image ${sel + 1}`} />
+                    <span>{sel === 0 ? 'Shown first' : 'Move'}</span>
+                  </span>
+                )}
                 {mayEdit && extra && !editing && (
                   <button onClick={() => void removeImage()} disabled={imgBusy} className="font-semibold text-red-600 hover:underline disabled:opacity-50">
                     Remove this image
