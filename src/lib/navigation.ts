@@ -116,14 +116,6 @@ export const NAV: NavGroup[] = [
         blurb: 'Ratings across sessions and which topics are in demand.',
         allow: ['director', 'admin'],
       },
-      {
-        // The page itself checks rounds_my_access(): supervisors see it only
-        // once the director has let them run rounds.
-        to: '/rounds',
-        label: 'Rounds',
-        blurb: 'Set up rounds, invite mailing lists, collect RSVPs and feedback, and offer attendance certificates.',
-        allow: ['supervisor', 'director', 'admin'],
-      },
     ],
   },
   {
@@ -246,7 +238,7 @@ export const NAV: NavGroup[] = [
   {
     id: 'events',
     label: 'Events',
-    tagline: 'Courses and conferences you host',
+    tagline: 'Rounds, courses and conferences you host',
     icon: 'events',
     items: [
       {
@@ -255,6 +247,14 @@ export const NAV: NavGroup[] = [
         label: 'Conferences',
         blurb: 'Itinerary, invitations and RSVPs, speakers, logistics, feedback and participation letters.',
         allow: ['director', 'admin'],
+      },
+      {
+        // The page itself checks rounds_my_access(): supervisors see it only
+        // once the director has let them run rounds.
+        to: '/rounds',
+        label: 'Rounds',
+        blurb: 'Set up rounds, invite mailing lists, collect RSVPs and feedback, and offer attendance certificates.',
+        allow: ['supervisor', 'director', 'admin'],
       },
       {
         // Shown only to someone registered for or invited to a course, in
