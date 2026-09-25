@@ -163,6 +163,14 @@ function SessionItem({ s, all, series, c, open, onToggle, onChanged }: {
 function SessionEditor({ s, series, invited, onChanged }: { s: RoundsSession; series: Series; invited: number; onChanged: (t?: string) => void }) {
   const start = utcToZoned(s.starts_at, s.timezone)
   const [topic, setTopic] = useState(s.topic ?? '')
+  // Where and how this week: open whenever the session has a topic (that's
+  // when its details get settled) or already has its own place, so it isn't
+  // missed. Closing it by hand is respected.
+  const [placeOpen, setPlaceOpen] = useState(!!(s.topic?.trim() || s.format || s.location || s.video_url))
+  const [placeTouched, setPlaceTouched] = useState(false)
+  useEffect(() => {
+    if (!placeTouched && topic.trim()) setPlaceOpen(true)
+  }, [topic, placeTouched])
   const [speaker, setSpeaker] = useState(s.speaker ?? '')
   const [details, setDetails] = useState(s.details ?? '')
   const [date, setDate] = useState(start.date)
@@ -248,8 +256,14 @@ function SessionEditor({ s, series, invited, onChanged }: { s: RoundsSession; se
           </select>
         </L>
       </div>
-      <details open={!!(s.format || s.location || s.video_url)}>
-        <summary className="cursor-pointer text-sm font-medium text-accent">Different place or format this time</summary>
+      <details open={placeOpen} onToggle={(e) => {
+        const open = (e.currentTarget as HTMLDetailsElement).open
+        if (open !== placeOpen) { setPlaceOpen(open); setPlaceTouched(true) }
+      }}>
+        <summary className="cursor-pointer text-sm font-medium text-accent">
+          Different place or format this time
+          <span className="ml-1 font-normal text-muted">— leave blank to use the usual {series.format === 'virtual' ? 'video link' : series.format === 'hybrid' ? 'room and video link' : 'room'}</span>
+        </summary>
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
           <L text="Format">
             <select className={field} value={format} onChange={(e) => setFormat(e.target.value as RoundsFormat | '')}>
