@@ -365,6 +365,14 @@ export function eventWhen(start: string, end: string): string {
 }
 
 export const hhmm = (t: string) => t.slice(0, 5)
+/** "13:30" or "13:30:00" → "1:30 PM", for showing a time (inputs keep 24-hour values). */
+export function time12(t: string | null | undefined): string {
+  if (!t) return ''
+  const [h, m] = t.split(':').map(Number)
+  if (Number.isNaN(h)) return t
+  return `${h % 12 || 12}:${String(m || 0).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
+}
+export const timeRange12 = (a: string, b: string) => `${time12(a)}–${time12(b)}`
 
 /** Today as YYYY-MM-DD on the viewer's own calendar (not UTC). */
 export function localIsoDate(d: Date = new Date()): string {

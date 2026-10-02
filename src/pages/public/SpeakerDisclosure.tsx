@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { publicClient, FUNCTIONS_URL, PUBLIC_ANON_KEY } from '../../lib/publicClient'
 import {
-  input, primaryBtn, quietBtn, prettyDay, money, fmtHst, DISCLOSURE_LABEL, CLAIM_CATEGORY_LABEL,
+  input, primaryBtn, quietBtn, prettyDay, time12, money, fmtHst, DISCLOSURE_LABEL, CLAIM_CATEGORY_LABEL,
   type DisclosureStatus, type SpeakerRole, type ClaimCategory, type ClaimStatus,
 } from '../../lib/conference'
 import { PublicFrame, Panel, Notice, Invalid, rpcMessage } from './PublicFrame'
@@ -91,7 +91,7 @@ export default function SpeakerDisclosure() {
           <ul className="mt-3 space-y-1 text-sm">
             {d.sessions.map((s, i) => (
               <li key={i}>
-                <span className="text-muted">{ROLE[s.role]} · {prettyDay(s.session_date)}, {s.start_time} · </span>
+                <span className="text-muted">{ROLE[s.role]} · {prettyDay(s.session_date)}, {time12(s.start_time)} · </span>
                 {s.title}
               </li>
             ))}

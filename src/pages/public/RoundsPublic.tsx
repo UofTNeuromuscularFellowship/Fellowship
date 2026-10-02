@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { publicClient as supabase } from '../../lib/publicClient'
 import { PublicFrame, Panel, Notice, Invalid, rpcMessage } from './PublicFrame'
 import { inMyZone } from '../../lib/rounds'
+import { downloadIcsEntry, type CalEntry } from '../../lib/calendarLinks'
+import { AddToCalendar } from '../../components/AddToCalendar'
 
 // ---------------------------------------------------------------------------
 // The page a rounds invitee opens from their email: RSVP (in person or
@@ -12,6 +14,7 @@ import { inMyZone } from '../../lib/rounds'
 //   /rsvp/:token               RSVP and feedback
 //   /rsvp/:token/certificate   printable certificate
 //   /rsvp/:token/unsubscribe   stop rounds emails
+//   /rsvp/:token/calendar      downloads the .ics (linked from the RSVP email)
 // ---------------------------------------------------------------------------
 
 interface Payload {
@@ -49,6 +52,8 @@ export default function RoundsPublic() {
   if (view === 'unsubscribe') return <Unsubscribe token={token} data={data} />
 
   const s = data.session
+  const coming = data.invite.response === 'in_person' || data.invite.response === 'virtual'
+  const live = s.status !== 'cancelled' && !s.ended
   return (
     <PublicFrame kicker={data.series.title} title={s.topic ?? data.series.title} logoUrl={data.series.logo_url}
       organizer={data.series.organizer_name} organizerEmail={data.series.organizer_email}
@@ -59,7 +64,39 @@ export default function RoundsPublic() {
         : s.ended
           ? <After token={token} data={data} onDone={setData} />
           : <Rsvp token={token} data={data} onDone={setData} />}
+      {live && (coming || view === 'calendar') && <Calendar token={token} data={data} auto={view === 'calendar'} />}
     </PublicFrame>
+  )
+}
+
+function calEntry(token: string, data: Payload): CalEntry {
+  const s = data.session
+  const video = s.format !== 'in_person' ? s.video_url : null
+  const location = s.format === 'virtual' || (data.invite.response === 'virtual' && video)
+    ? video ?? ''
+    : s.location ?? video ?? ''
+  const page = `${window.location.origin}/rsvp/${token}`
+  return {
+    title: data.series.title + (s.topic ? `: ${s.topic}` : ''),
+    start: new Date(s.starts_at), end: new Date(s.ends_at), location,
+    details: [[s.topic, s.speaker].filter(Boolean).join(' — '),
+      video ? `Join online: ${video}${s.video_passcode ? ` (passcode ${s.video_passcode})` : ''}` : '',
+      `Details and RSVP: ${page}`].filter(Boolean).join('\n'),
+  }
+}
+
+function Calendar({ token, data, auto }: { token: string; data: Payload; auto: boolean }) {
+  const entry = calEntry(token, data)
+  const download = useCallback(() => downloadIcsEntry({
+    ...entry, uid: `rounds-${token.slice(0, 20)}@neuromuscular.ca`, url: `${window.location.origin}/rsvp/${token}`,
+  }, entry.title), [entry, token])
+  // Arriving from the email's .ics link starts the download straight away.
+  const done = useRef(false)
+  useEffect(() => { if (auto && !done.current) { done.current = true; download() } }, [auto, download])
+  return (
+    <Panel title="Add it to your calendar" sub={auto ? 'Your calendar file should be downloading. Open it to add the session, or pick your calendar below.' : undefined}>
+      <AddToCalendar entry={entry} onDownload={download} />
+    </Panel>
   )
 }
 
@@ -103,7 +140,7 @@ function Rsvp({ token, data, onDone }: { token: string; data: Payload; onDone: (
     setBusy(false)
     if (error) { setMsg({ tone: 'bad', text: rpcMessage(error, 'Your answer couldn’t be saved.') }); return }
     onDone(d as Payload)
-    setMsg({ tone: 'ok', text: response === 'declined' ? 'Thanks for letting us know.' : 'You’re on the list. You’ll get a reminder the day before.' })
+    setMsg({ tone: 'ok', text: response === 'declined' ? 'Thanks for letting us know.' : data.unsubscribed ? 'You’re on the list.' : 'You’re on the list. We’ve emailed you the details, with links to add it to your calendar.' })
   }
 
   const btn = (on: boolean) => `rounded-md border px-4 py-2.5 text-sm font-semibold disabled:opacity-50 ${on ? 'border-accent bg-accent text-white' : 'border-line bg-surface text-ink hover:border-accent'}`

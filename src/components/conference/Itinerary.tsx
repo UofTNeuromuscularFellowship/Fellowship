@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { Card, CardHeader } from '../ui/Card'
 import { RecordTable } from './RecordTable'
 import {
-  friendly, input, primaryBtn, quietBtn, FORMAT_LABEL, prettyDay, hhmm,
+  friendly, input, primaryBtn, quietBtn, FORMAT_LABEL, prettyDay, hhmm, timeRange12,
   type ConfEvent, type ConfRoom, type ConfSession, type ConfSpeaker, type ConfSessionSpeaker,
   type SessionFormat, type SpeakerRole,
 } from '../../lib/conference'
@@ -269,7 +269,7 @@ export function Itinerary({ event }: { event: ConfEvent }) {
                       const who = links.filter((l) => l.session_id === s.id)
                       return (
                         <li key={s.id} className="flex flex-wrap items-start gap-x-4 gap-y-1">
-                          <span className="w-24 flex-none text-sm tabular-nums text-muted">{hhmm(s.start_time)}–{hhmm(s.end_time)}</span>
+                          <span className="w-36 flex-none text-sm tabular-nums text-muted">{timeRange12(s.start_time, s.end_time)}</span>
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium text-ink">
                               {s.title}

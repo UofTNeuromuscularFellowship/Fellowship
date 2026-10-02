@@ -130,11 +130,11 @@ export function utcToZoned(iso: string, tz: string): { date: string; time: strin
   return { date: `${p.year}-${z(p.month)}-${z(p.day)}`, time: `${z(p.hour % 24)}:${z(p.minute)}` }
 }
 
-/** "Thu, Oct 15, 2026 · 12:00–13:00 EDT" in the session's zone. */
+/** "Thu, Oct 15, 2026 · 12:00 PM–1:00 PM EDT" in the session's zone. */
 export function sessionWhen(startIso: string, endIso: string, tz: string): string {
   const s = new Date(startIso), e = new Date(endIso)
   const day = s.toLocaleDateString('en-CA', { timeZone: tz, weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
-  const t = (d: Date) => d.toLocaleTimeString('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit' })
+  const t = (d: Date) => d.toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit', hour12: true })
   const abbr = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'short' }).formatToParts(s).find((p) => p.type === 'timeZoneName')?.value ?? tz
   return `${day} · ${t(s)}–${t(e)} ${abbr}`
 }
@@ -147,7 +147,7 @@ export function inMyZone(startIso: string, tz: string): string | null {
   const a = utcToZoned(startIso, tz), b = utcToZoned(startIso, mine)
   if (a.date === b.date && a.time === b.time) return null
   const s = new Date(startIso)
-  return `${s.toLocaleDateString('en-CA', { timeZone: mine, weekday: 'short', month: 'short', day: 'numeric' })} ${s.toLocaleTimeString('en-GB', { timeZone: mine, hour: '2-digit', minute: '2-digit' })} your time`
+  return `${s.toLocaleDateString('en-CA', { timeZone: mine, weekday: 'short', month: 'short', day: 'numeric' })} ${s.toLocaleTimeString('en-US', { timeZone: mine, hour: 'numeric', minute: '2-digit', hour12: true })} your time`
 }
 
 // --------------------------------------------------------------- repeats

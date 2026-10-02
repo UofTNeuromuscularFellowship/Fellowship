@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { supabase, FUNCTIONS_URL, PUBLIC_ANON_KEY } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import {
-  eventWhen, prettyDay, safeUrl, input, primaryBtn, quietBtn, FORMAT_LABEL,
+  eventWhen, prettyDay, safeUrl, time12, timeRange12, input, primaryBtn, quietBtn, FORMAT_LABEL,
   type RsvpStatus, type SessionFormat, type SpeakerRole,
 } from '../../lib/conference'
 import { PublicFrame, Panel, Notice, Invalid, rpcMessage } from './PublicFrame'
+import { icsStamp, icsText, saveIcs, type CalEntry } from '../../lib/calendarLinks'
+import { AddToCalendar } from '../../components/AddToCalendar'
 
 // ---------------------------------------------------------------------------
 // An invitee's side of a conference.
@@ -171,6 +173,7 @@ function EventBody({ token, view, data, load, base }: {
 }) {
   if (view === 'feedback') return <Feedback token={token} data={data} onSaved={load} />
   if (view === 'presentations') return <Presentations token={token} data={data} onAuthed={load} />
+  if (view === 'calendar') return <><CalendarDownload token={token} data={data} /><Overview token={token} data={data} onChanged={load} base={base} /></>
   return <Overview token={token} data={data} onChanged={load} base={base} />
 }
 
@@ -230,8 +233,9 @@ function Overview({ token, data, onChanged, base }: {
                 {ev.zoom_passcode && <span className="block text-muted">Passcode: {ev.zoom_passcode}</span>}
               </p>
             )}
-            <div className="flex flex-wrap gap-2">
-              <button type="button" className={quietBtn} onClick={() => downloadIcs(token, data)}>Add to my calendar</button>
+            <div>
+              <p className="mb-2 font-medium">Add it to your calendar</p>
+              <AddToCalendar entry={eventCalEntry(token, data)} onDownload={() => downloadIcs(token, data)} />
             </div>
           </div>
         </Panel>
@@ -689,8 +693,8 @@ function Itinerary({ sessions, eventZoom }: { sessions: PubSession[]; eventZoom:
                 const quiet = NON_TEACHING.includes(s.format)
                 const sessionZoom = safeUrl(s.zoom_url)
                 return (
-                  <li key={s.id} className={`grid gap-1 px-3 py-3 text-sm sm:grid-cols-[7.5rem_1fr] ${quiet ? 'bg-paper' : ''}`}>
-                    <div className="tabular-nums text-muted">{s.start_time}–{s.end_time}</div>
+                  <li key={s.id} className={`grid gap-1 px-3 py-3 text-sm sm:grid-cols-[10rem_1fr] ${quiet ? 'bg-paper' : ''}`}>
+                    <div className="tabular-nums text-muted">{timeRange12(s.start_time, s.end_time)}</div>
                     <div>
                       <p className={quiet ? 'text-muted' : 'font-medium'}>
                         {s.title}
@@ -753,7 +757,7 @@ function Feedback({ token, data, onSaved }: { token: string; data: Payload; onSa
       </Panel>
       {rateable.map((s) => (
         <FeedbackItem key={s.id} token={token} sessionId={s.id} done={given.has(s.id)} onSaved={onSaved}
-          title={s.title} sub={`${prettyDay(s.session_date)}, ${s.start_time}–${s.end_time}${s.speakers.length ? ' · ' + s.speakers.map((p) => p.name).join(', ') : ''}`} />
+          title={s.title} sub={`${prettyDay(s.session_date)}, ${timeRange12(s.start_time, s.end_time)}${s.speakers.length ? ' · ' + s.speakers.map((p) => p.name).join(', ') : ''}`} />
       ))}
       <FeedbackItem token={token} sessionId={null} done={given.has('event')} onSaved={onSaved}
         title="The event overall" sub="What worked, and what would you change next time?" />
@@ -852,7 +856,7 @@ function Presentations({ token, data, onAuthed }: { token: string; data: Payload
       {order.map((k) => {
         const s = titleFor.get(k)
         return (
-          <Panel key={k || 'general'} title={s ? s.title : 'General materials'} sub={s ? `${prettyDay(s.session_date)}, ${s.start_time}` : undefined}>
+          <Panel key={k || 'general'} title={s ? s.title : 'General materials'} sub={s ? `${prettyDay(s.session_date)}, ${time12(s.start_time)}` : undefined}>
             <ul className="space-y-2 text-sm">
               {groups.get(k)!.map((f) => (
                 <li key={f.id} className="flex flex-wrap items-baseline justify-between gap-2">
@@ -1006,28 +1010,15 @@ function zonedToUtc(date: string, time: string, tz: string): Date {
   return new Date(utc)
 }
 
-const icsStamp = (d: Date) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
-const icsText = (s: string) => s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n')
-function fold(line: string): string {
-  const out: string[] = []
-  let rest = line
-  while (rest.length > 73) { out.push(rest.slice(0, 73)); rest = ' ' + rest.slice(73) }
-  out.push(rest)
-  return out.join('\r\n')
-}
-
 /**
  * One calendar entry per conference day, first session to last, rather than
  * one per talk: attendees want the day blocked, and forty entries would bury
  * their own calendar. The description links back here for the detail.
  */
 async function downloadIcs(token: string, data: Payload) {
-  const { event: ev, invitee: me } = data
+  const { event: ev } = data
   const page = `${window.location.origin}/e/${token}`
-  const zoom = me.rsvp_status === 'virtual' || me.rsvp_status === 'in_person' ? safeUrl(ev.zoom_url) : null
-  const location = me.rsvp_status === 'virtual' && zoom
-    ? zoom
-    : [ev.venue_name, ev.venue_address].filter(Boolean).join(', ') || zoom || ''
+  const { zoom, location } = eventPlace(data)
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token))
   const uidBase = [...new Uint8Array(digest)].slice(0, 10).map((b) => b.toString(16).padStart(2, '0')).join('')
 
@@ -1061,12 +1052,46 @@ async function downloadIcs(token: string, data: Payload) {
     }
   }
   lines.push('END:VCALENDAR')
-  const blob = new Blob([lines.map(fold).join('\r\n') + '\r\n'], { type: 'text/calendar;charset=utf-8' })
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = `${ev.name.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 60) || 'event'}.ics`
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+  saveIcs(lines, ev.name)
+}
+
+function eventPlace(data: Payload) {
+  const { event: ev, invitee: me } = data
+  const zoom = me.rsvp_status === 'virtual' || me.rsvp_status === 'in_person' ? safeUrl(ev.zoom_url) : null
+  const location = me.rsvp_status === 'virtual' && zoom
+    ? zoom
+    : [ev.venue_name, ev.venue_address].filter(Boolean).join(', ') || zoom || ''
+  return { zoom, location }
+}
+
+/**
+ * For Google and Outlook: a one-day course is a timed entry, first session
+ * to last; a longer one is whole days (the .ics has each day's hours).
+ */
+function eventCalEntry(token: string, data: Payload): CalEntry {
+  const { event: ev } = data
+  const { zoom, location } = eventPlace(data)
+  const page = `${window.location.origin}/e/${token}`
+  const details = (ev.description ? ev.description.slice(0, 600) + '\n\n' : '')
+    + (zoom ? `Zoom: ${zoom}${ev.zoom_passcode ? ` (passcode ${ev.zoom_passcode})` : ''}\n` : '')
+    + `Itinerary and details: ${page}`
+  const days = [...new Set(data.sessions.map((s) => s.session_date))]
+  if (days.length === 1) {
+    const list = data.sessions
+    const start = list.reduce((m, s) => (s.start_time < m ? s.start_time : m), list[0].start_time)
+    const end = list.reduce((m, s) => (s.end_time > m ? s.end_time : m), list[0].end_time)
+    return { title: ev.name, start: zonedToUtc(days[0], start, ev.timezone), end: zonedToUtc(days[0], end, ev.timezone), location, details }
+  }
+  return { title: ev.name, fromDate: ev.starts_on, toDate: ev.ends_on, location, details }
+}
+
+/** /e/<token>/calendar, the link in the confirmation email: download straight away. */
+function CalendarDownload({ token, data }: { token: string; data: Payload }) {
+  const done = useRef(false)
+  useEffect(() => { if (!done.current) { done.current = true; void downloadIcs(token, data) } }, [token, data])
+  return (
+    <Panel title="Add it to your calendar" sub="Your calendar file should be downloading. Open it to add the course, or pick your calendar below.">
+      <AddToCalendar entry={eventCalEntry(token, data)} onDownload={() => downloadIcs(token, data)} />
+    </Panel>
+  )
 }

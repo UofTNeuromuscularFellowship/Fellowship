@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { Card, CardHeader } from '../ui/Card'
-import { hhmm, prettyDay, type ConfEvent, type ConfFeedback, type ConfSession } from '../../lib/conference'
+import { time12, prettyDay, type ConfEvent, type ConfFeedback, type ConfSession } from '../../lib/conference'
 
 export function FeedbackResults({ event }: { event: ConfEvent }) {
   const [rows, setRows] = useState<ConfFeedback[]>([])
@@ -19,7 +19,7 @@ export function FeedbackResults({ event }: { event: ConfEvent }) {
 
   const groups = [
     { id: null as string | null, title: 'The event overall', meta: '' },
-    ...sessions.map((s) => ({ id: s.id as string | null, title: s.title, meta: `${prettyDay(s.session_date)}, ${hhmm(s.start_time)}` })),
+    ...sessions.map((s) => ({ id: s.id as string | null, title: s.title, meta: `${prettyDay(s.session_date)}, ${time12(s.start_time)}` })),
   ]
 
   return (

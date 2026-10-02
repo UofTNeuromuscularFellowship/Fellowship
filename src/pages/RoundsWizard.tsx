@@ -6,6 +6,7 @@ import { StepBar, ChoiceCard, Notice, primary, quiet, field, label as labelCls, 
 import { SummaryList } from '../components/change/ChangeKit'
 import { LogoPicker } from '../components/LogoPicker'
 import { plural, toIso, addDays } from '../lib/schedule'
+import { time12 } from '../lib/conference'
 import { useRoundsAccess, NotAllowed } from './Rounds'
 import {
   describeRule, expandRule, FORMAT_LABEL, MAX_SESSIONS, NTH, parsePeople, WEEKDAYS, zonedToUtc, zoneLabel, zoneOptions,
@@ -444,7 +445,7 @@ export default function RoundsWizard() {
         <section className="space-y-4">
           <SummaryList items={[
             ['Rounds', <span key="t" className="flex items-center gap-3">{logo && <img src={logo} alt="" className="h-8 max-w-[5rem] object-contain" />}{title}</span>],
-            ['When', <span key="w">{describeRule(kind, rule)} · {rule.time}, {duration} min · {zoneLabel(tz)}<br />
+            ['When', <span key="w">{describeRule(kind, rule)} · {time12(rule.time)}, {duration} min · {zoneLabel(tz)}<br />
               <span className="text-muted">{plural(live.length, 'session')}{live.length ? `: ${niceDay(live[0].date)}${live.length > 1 ? ` to ${niceDay(live[live.length - 1].date)}` : ''}` : ''}</span></span>],
             ['Where', <span key="p">{FORMAT_LABEL[format]}{format !== 'virtual' && location ? ` · ${location}` : ''}{format !== 'in_person' ? (videoUrl ? ' · video link added' : ' · video link to add later') : ''}</span>],
             ['Invited', [inviteProgram ? 'Everyone in the program' : null, ...listNames].filter(Boolean).join(', ') || '—'],
