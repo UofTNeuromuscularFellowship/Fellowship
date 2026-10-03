@@ -4,6 +4,8 @@ import { supabase } from '../lib/supabase'
 import { Card, CardHeader } from '../components/ui/Card'
 import { Notice, primary, quiet, field, label as labelCls } from '../components/ui/Wizard'
 import { LogoPicker } from '../components/LogoPicker'
+import { RecordTable } from '../components/conference/RecordTable'
+import { ROUNDS_SPONSOR_COLUMNS } from '../lib/sponsors'
 import { plural, toIso } from '../lib/schedule'
 import { useRoundsAccess, NotAllowed } from './Rounds'
 import { Toggle } from './RoundsWizard'
@@ -31,6 +33,7 @@ export default function RoundsSeries() {
   const [tab, setTab] = useState<'upcoming' | 'past' | 'cancelled'>('upcoming')
   const [open, setOpen] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
+  const [sponsoring, setSponsoring] = useState(false)
   const [msg, setMsg] = useState<Msg>(qs.get('created') ? { tone: 'ok', text: 'Your rounds are set up. Each session needs a topic: its invitation goes out a week after the session before it (the day after, for weekly rounds), or as soon as the topic is added if that date has passed.' } : null)
 
   const load = useCallback(async () => {
@@ -83,10 +86,20 @@ export default function RoundsSeries() {
               </p>
             </div>
           </div>
-          <button className={quiet} onClick={() => setEditing(!editing)}>{editing ? 'Close settings' : 'Settings'}</button>
+          <div className="flex flex-wrap gap-2">
+            <button className={quiet} aria-expanded={sponsoring} onClick={() => setSponsoring(!sponsoring)}>{sponsoring ? 'Close sponsors' : 'Sponsors'}</button>
+            <button className={quiet} onClick={() => setEditing(!editing)}>{editing ? 'Close settings' : 'Settings'}</button>
+          </div>
         </div>
       </div>
       {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
+      {sponsoring && (
+        <RecordTable table="rounds_sponsors" parentKey="series_id" eventId={series.id} orderBy="name"
+          title="Sponsors" sub="Logos and levels shown on every session's RSVP page and at the foot of every email for this series, higher levels first and larger."
+          empty="No sponsors yet." addLabel="+ Add a sponsor"
+          defaults={{ level: 'supporter', acknowledged: true }}
+          columns={ROUNDS_SPONSOR_COLUMNS} />
+      )}
       {editing && <SeriesSettings series={series} onSaved={(t) => { setMsg({ tone: 'ok', text: t }); setEditing(false); load() }} />}
 
       <div className="flex flex-wrap items-center justify-between gap-3">

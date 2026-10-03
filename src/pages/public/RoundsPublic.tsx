@@ -5,6 +5,8 @@ import { PublicFrame, Panel, Notice, Invalid, rpcMessage } from './PublicFrame'
 import { inMyZone } from '../../lib/rounds'
 import { downloadIcsEntry, type CalEntry } from '../../lib/calendarLinks'
 import { AddToCalendar } from '../../components/AddToCalendar'
+import { SponsorShowcase } from '../../components/SponsorShowcase'
+import type { PublicSponsor } from '../../lib/sponsors'
 
 // ---------------------------------------------------------------------------
 // The page a rounds invitee opens from their email: RSVP (in person or
@@ -35,6 +37,7 @@ interface Payload {
     attended: boolean | null; rating: number | null; comments: string | null; feedback_at: string | null; certificate: boolean
   }
   unsubscribed: boolean
+  sponsors?: PublicSponsor[]
 }
 
 export default function RoundsPublic() {
@@ -65,6 +68,9 @@ export default function RoundsPublic() {
           ? <After token={token} data={data} onDone={setData} />
           : <Rsvp token={token} data={data} onDone={setData} />}
       {live && (coming || view === 'calendar') && <Calendar token={token} data={data} auto={view === 'calendar'} />}
+      {(data.sponsors?.length ?? 0) > 0 && (
+        <Panel title="With thanks to our sponsors"><SponsorShowcase sponsors={data.sponsors!} /></Panel>
+      )}
     </PublicFrame>
   )
 }

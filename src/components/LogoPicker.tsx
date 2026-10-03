@@ -15,11 +15,13 @@ const BUCKET = 'branding'
 const MAX_BYTES = 2 * 1024 * 1024
 const TYPES = ['image/png', 'image/jpeg', 'image/webp']
 
-export function LogoPicker({ value, onChange, label = 'Logo', help }: {
+export function LogoPicker({ value, onChange, label = 'Logo', help, reuse = 'program' }: {
   value: string | null
   onChange: (url: string | null) => void
   label?: string
   help?: string
+  /** Which logos to offer again: the program's own, or sponsors' used before. */
+  reuse?: 'program' | 'sponsors'
 }) {
   const { site } = useAuth()
   const [busy, setBusy] = useState(false)
@@ -30,14 +32,19 @@ export function LogoPicker({ value, onChange, label = 'Logo', help }: {
   // Logos already in use in this program, newest first, to pick again.
   useEffect(() => {
     ;(async () => {
-      const [ev, rs] = await Promise.all([
-        supabase.from('conf_events').select('logo_url, created_at').not('logo_url', 'is', null).order('created_at', { ascending: false }).limit(20),
-        supabase.from('rounds_series').select('logo_url, created_at').not('logo_url', 'is', null).order('created_at', { ascending: false }).limit(20),
-      ])
+      const [ev, rs] = reuse === 'sponsors'
+        ? await Promise.all([
+          supabase.from('conf_sponsors').select('logo_url').not('logo_url', 'is', null).limit(40),
+          supabase.from('rounds_sponsors').select('logo_url, created_at').not('logo_url', 'is', null).order('created_at', { ascending: false }).limit(40),
+        ])
+        : await Promise.all([
+          supabase.from('conf_events').select('logo_url, created_at').not('logo_url', 'is', null).order('created_at', { ascending: false }).limit(20),
+          supabase.from('rounds_series').select('logo_url, created_at').not('logo_url', 'is', null).order('created_at', { ascending: false }).limit(20),
+        ])
       const urls = [...((ev.data as { logo_url: string }[]) ?? []), ...((rs.data as { logo_url: string }[]) ?? [])].map((r) => r.logo_url)
       setUsed(Array.from(new Set(urls)).slice(0, 8))
     })()
-  }, [])
+  }, [reuse])
 
   async function upload(file: File) {
     setErr(null)

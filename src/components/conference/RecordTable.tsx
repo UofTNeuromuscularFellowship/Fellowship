@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { supabase } from '../../lib/supabase'
 import { Card, CardHeader } from '../ui/Card'
 import { friendly, input, primaryBtn, quietBtn, money, safeUrl } from '../../lib/conference'
+import { LogoPicker } from '../LogoPicker'
 
 // ---------------------------------------------------------------------------
 // One editable list, driven by a column spec.
@@ -13,7 +14,7 @@ import { friendly, input, primaryBtn, quietBtn, money, safeUrl } from '../../lib
 // readable and writable only by the program's own director or admin.
 // ---------------------------------------------------------------------------
 
-export type ColType = 'text' | 'textarea' | 'number' | 'money' | 'date' | 'select' | 'checkbox' | 'email' | 'url'
+export type ColType = 'text' | 'textarea' | 'number' | 'money' | 'date' | 'select' | 'checkbox' | 'email' | 'url' | 'logo'
 
 export interface Column {
   key: string
@@ -24,15 +25,19 @@ export interface Column {
   /** Shown in the editor but not as a list column. */
   formOnly?: boolean
   placeholder?: string
+  /** A line of help under the field in the editor. */
+  hint?: string
 }
 
 type Row = Record<string, unknown> & { id: string }
 
 export function RecordTable({
-  table, eventId, columns, title, sub, empty, addLabel, defaults = {}, orderBy = 'id', footer, onChange,
+  table, eventId, columns, title, sub, empty, addLabel, defaults = {}, orderBy = 'id', footer, onChange, parentKey = 'event_id',
 }: {
   table: string
   eventId: string
+  /** The column holding eventId: event_id for a course, series_id for rounds. */
+  parentKey?: string
   columns: Column[]
   title: string
   sub?: string
@@ -50,7 +55,7 @@ export function RecordTable({
   const [msg, setMsg] = useState<string | null>(null)
 
   async function load() {
-    const { data, error } = await supabase.from(table).select('*').eq('event_id', eventId).order(orderBy)
+    const { data, error } = await supabase.from(table).select('*').eq(parentKey, eventId).order(orderBy)
     if (error) setMsg(friendly(error.message))
     setRows((data as Row[]) ?? [])
   }
@@ -83,7 +88,7 @@ export function RecordTable({
       payload[c.key] = v ?? null
     }
     const res = editing === 'new'
-      ? await supabase.from(table).insert({ ...payload, event_id: eventId })
+      ? await supabase.from(table).insert({ ...payload, [parentKey]: eventId })
       : await supabase.from(table).update(payload).eq('id', (editing as Row).id)
     setBusy(false)
     if (res.error) { setMsg(friendly(res.error.message)); return }
@@ -105,6 +110,7 @@ export function RecordTable({
   function show(c: Column, v: unknown): ReactNode {
     if (v == null || v === '') return <span className="text-muted">—</span>
     if (c.type === 'checkbox') return v ? 'Yes' : 'No'
+    if (c.type === 'logo') return <img src={String(v)} alt="" className="h-8 max-w-[6rem] rounded bg-white object-contain p-0.5" />
     if (c.type === 'money') return money(Number(v))
     if (c.type === 'date') {
       const [y, m, d] = String(v).slice(0, 10).split('-').map(Number)
@@ -133,7 +139,12 @@ export function RecordTable({
       {editing && (
         <div className="border-b border-line bg-paper px-5 py-4">
           <div className="grid gap-3 sm:grid-cols-2">
-            {columns.map((c) => (
+            {columns.map((c) => c.type === 'logo' ? (
+              <div key={c.key} className="sm:col-span-2">
+                <LogoPicker value={(draft[c.key] as string | null) ?? null} label={c.label} reuse="sponsors" help={c.hint}
+                  onChange={(url) => setDraft((d) => ({ ...d, [c.key]: url }))} />
+              </div>
+            ) : (
               <label key={c.key} className={`block ${c.type === 'textarea' ? 'sm:col-span-2' : ''}`}>
                 <span className="mb-1 block text-xs font-medium text-muted">
                   {c.label}{c.required && ' *'}
@@ -157,6 +168,7 @@ export function RecordTable({
                     value={draft[c.key] == null ? '' : String(draft[c.key])}
                     onChange={(e) => setDraft({ ...draft, [c.key]: e.target.value })} />
                 )}
+                {c.hint && <span className="mt-1 block text-xs text-muted">{c.hint}</span>}
               </label>
             ))}
           </div>

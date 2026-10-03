@@ -15,6 +15,7 @@ import { Segmented } from '../components/conference/Segmented'
 import { SetupWizard } from '../components/conference/SetupWizard'
 import { EventOverview } from '../components/conference/EventOverview'
 import { Money } from '../components/conference/money/Money'
+import { COURSE_SPONSOR_COLUMNS } from '../lib/sponsors'
 
 // ---------------------------------------------------------------------------
 // One event. A new event opens in the guided setup (SetupWizard); once that
@@ -240,21 +241,10 @@ function Logistics({ event, view, setView }: { event: ConfEvent; view: string; s
 
       {v === 'sponsors' && (
         <RecordTable table="conf_sponsors" eventId={event.id} orderBy="name"
-          title="Sponsors and exhibitors" sub="Those marked acknowledged are listed on attendees' event pages. Record what they pay under Money → Costs & income."
+          title="Sponsors and exhibitors" sub="Add each sponsor's logo and level. Those shown to attendees appear on the event page, the course materials and the foot of every email about this event, grouped by level. Record what they pay under Money → Costs & income."
           empty="No sponsors or exhibitors yet." addLabel="+ Add"
-          defaults={{ kind: 'sponsor', acknowledged: false }}
-          columns={[
-            { key: 'name', label: 'Name', required: true },
-            { key: 'kind', label: 'Type', type: 'select', options: [{ value: 'sponsor', label: 'Sponsor' }, { value: 'exhibitor', label: 'Exhibitor' }] },
-            { key: 'tier', label: 'Tier', placeholder: 'e.g. Gold' },
-            { key: 'amount', label: 'Pledged', type: 'money' },
-            { key: 'table_no', label: 'Table' },
-            { key: 'acknowledged', label: 'Acknowledged', type: 'checkbox' },
-            { key: 'contact_name', label: 'Contact' },
-            { key: 'contact_email', label: 'Email', type: 'email', formOnly: true },
-            { key: 'contact_phone', label: 'Phone', formOnly: true },
-            { key: 'notes', label: 'Notes', type: 'textarea', formOnly: true },
-          ]} />
+          defaults={{ kind: 'sponsor', level: 'supporter', acknowledged: true }}
+          columns={COURSE_SPONSOR_COLUMNS} />
       )}
 
       {v === 'todo' && (

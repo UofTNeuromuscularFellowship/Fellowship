@@ -9,6 +9,8 @@ import {
 import { PublicFrame, Panel, Notice, Invalid, rpcMessage } from './PublicFrame'
 import { icsStamp, icsText, saveIcs, type CalEntry } from '../../lib/calendarLinks'
 import { AddToCalendar } from '../../components/AddToCalendar'
+import { SponsorShowcase } from '../../components/SponsorShowcase'
+import type { PublicSponsor } from '../../lib/sponsors'
 
 // ---------------------------------------------------------------------------
 // An invitee's side of a conference.
@@ -57,7 +59,6 @@ interface PubAccommodation {
   hotel_name: string; address: string | null; booking_url: string | null; group_code: string | null
   nightly_rate: string | null; cutoff_date: string | null; contact_phone: string | null
 }
-interface PubSponsor { name: string; tier: string | null; kind: 'sponsor' | 'exhibitor' }
 interface PubMessage { subject: string; body: string; sent_at: string }
 interface Account {
   /** An account is linked to this invitation. */
@@ -70,7 +71,7 @@ interface Account {
 interface Payload {
   account: Account
   event: PubEvent; invitee: PubInvitee; sessions: PubSession[]
-  accommodations: PubAccommodation[]; sponsors: PubSponsor[]; feedback_given: string[]
+  accommodations: PubAccommodation[]; sponsors: PublicSponsor[]; feedback_given: string[]
   messages: PubMessage[]
 }
 
@@ -297,21 +298,8 @@ function Overview({ token, data, onChanged, base }: {
       )}
 
       {data.sponsors.length > 0 && (
-        <Panel title="With thanks to">
-          {(['sponsor', 'exhibitor'] as const).map((k) => {
-            const list = data.sponsors.filter((s) => s.kind === k)
-            if (list.length === 0) return null
-            return (
-              <div key={k} className="mb-2 last:mb-0">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted">{k === 'sponsor' ? 'Sponsors' : 'Exhibitors'}</p>
-                <p className="mt-1 text-sm">
-                  {list.map((s, i) => (
-                    <span key={s.name + i}>{i > 0 && ' · '}{s.name}{s.tier && <span className="text-muted"> ({s.tier})</span>}</span>
-                  ))}
-                </p>
-              </div>
-            )
-          })}
+        <Panel title="With thanks to our sponsors">
+          <SponsorShowcase sponsors={data.sponsors} />
         </Panel>
       )}
     </>
@@ -868,6 +856,11 @@ function Presentations({ token, data, onAuthed }: { token: string; data: Payload
           </Panel>
         )
       })}
+      {data.sponsors.length > 0 && (
+        <Panel title="With thanks to our sponsors">
+          <SponsorShowcase sponsors={data.sponsors} compact />
+        </Panel>
+      )}
     </>
   )
 }
