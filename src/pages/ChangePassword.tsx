@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
+import { homePath } from '../lib/navigation'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { Waveform } from '../components/ui/Waveform'
@@ -48,7 +49,7 @@ export default function ChangePassword() {
     await supabase.rpc('clear_must_change_password')
     await refreshProfile()
     setBusy(false)
-    navigate('/dashboard')
+    navigate(homePath())
   }
 
   // This route is deliberately outside ProtectedRoute so a reset link can reach

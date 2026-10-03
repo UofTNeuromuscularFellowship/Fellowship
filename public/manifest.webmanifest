@@ -3,7 +3,7 @@
   "name": "Neuromuscular Fellowship Portal",
   "short_name": "NM Fellowship",
   "description": "Citywide Neuromuscular Fellowship portal — University of Toronto",
-  "start_url": "/dashboard",
+  "start_url": "/menu",
   "scope": "/",
   "display": "standalone",
   "background_color": "#F7F8FA",

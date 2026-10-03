@@ -164,7 +164,7 @@ export async function setFindings(caseId: string, codes: string[]): Promise<void
   if (error) throw new Error(error.message)
 }
 
-export type ShapeKind = 'arrow' | 'ellipse' | 'freehand'
+export type ShapeKind = 'arrow' | 'ellipse' | 'freehand' | 'text'
 
 /**
  * One drawn shape.
@@ -176,6 +176,8 @@ export type ShapeKind = 'arrow' | 'ellipse' | 'freehand'
  *   arrow     [tail, head]
  *   ellipse   [corner, opposite corner] of the bounding box
  *   freehand  every sampled point along the path
+ *   text      [where the text starts]; the text itself is `label`, written
+ *             on the image rather than numbered in the legend
  */
 export interface Annotation {
   id: string

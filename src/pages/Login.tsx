@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import { homePath } from '../lib/navigation'
 import { Waveform } from '../components/ui/Waveform'
 
 export default function Login() {
@@ -27,7 +28,7 @@ export default function Login() {
   // Shown only when this login belongs to more than one program. A person with
   // a single program never sees it — they land straight in the portal.
   const [choose, setChoose] = useState<{ id: string; name: string; role: string; is_active: boolean }[] | null>(null)
-  const [dest, setDest] = useState<string>('/dashboard')
+  const [dest, setDest] = useState<string>(homePath)
 
   async function sendReset() {
     if (!email.trim()) { setError('Enter your email address first.'); return }
@@ -58,7 +59,7 @@ export default function Login() {
         .single()
       mustChange = Boolean(row?.must_change_password)
     }
-    const target = mustChange ? '/change-password' : (from ?? '/dashboard')
+    const target = mustChange ? '/change-password' : (from ?? homePath())
     // More than one program on this login: ask which to open. Exactly one:
     // AuthContext points the account at it and we go straight in.
     const { data: mine } = await supabase.rpc('my_sites')

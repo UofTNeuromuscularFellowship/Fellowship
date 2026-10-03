@@ -1,12 +1,13 @@
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
+import { useNavGroups } from './nav/useNavGroups'
 import type { ReactNode } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { roleLabel } from '../lib/format'
 import { Waveform } from './ui/Waveform'
 import { NavIcon } from './nav/NavIcon'
 import { AccountMenu } from './nav/AccountMenu'
-import { groupForPath, landingPath, navFor, overviewPath, type NavGroup } from '../lib/navigation'
+import { MENU_PATH, groupForPath, landingPath, overviewPath } from '../lib/navigation'
 
 // ---------------------------------------------------------------------------
 // The shell.
@@ -16,8 +17,9 @@ import { groupForPath, landingPath, navFor, overviewPath, type NavGroup } from '
 // panel collapses, because someone deep in the 3D atlas wants the width back.
 //
 // Mobile: the same model, walked one screen at a time. The rail becomes a home
-// screen of tiles, a tile opens the area's list, and the list opens the tool.
-// Back is always one tap and always goes up exactly one level.
+// screen of large tiles (/menu, pages/MobileMenu.tsx), a tile opens the area's
+// tools as smaller tiles, and a small tile opens the tool. Signing in on a
+// phone lands on that home screen, and "Menu" in the header goes back to it.
 //
 // Both read from lib/navigation.ts. Neither has a list of its own, which is
 // what stops the two drifting apart.
@@ -44,18 +46,14 @@ function useCollapsedPanel() {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { profile, signOut, site, sites, tools, isPlatformAdmin, switchSite, courseCount, runsRounds, runsConferences } = useAuth()
+  const { profile, signOut, site, sites, isPlatformAdmin, switchSite } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const role = profile?.role
   const [panelOpen, setPanelOpen] = useCollapsedPanel()
-  const [mobileNav, setMobileNav] = useState(false)
-
-  const hideClinic = role === 'supervisor' && profile?.teaching_only === true
   // A platform admin with no program sees only the Platform area.
-  const groups = site
-    ? navFor(role, { hideClinic, tools, platformAdmin: isPlatformAdmin, courses: courseCount > 0, runsRounds, runsConferences })
-    : navFor(undefined, { platformAdmin: isPlatformAdmin }).filter((g) => g.id === 'platform')
+  const groups = useNavGroups()
+  const onMenu = location.pathname === MENU_PATH || location.pathname.startsWith(MENU_PATH + '/')
   const siteName = site?.short_name ?? site?.name ?? (isPlatformAdmin ? 'Platform' : '')
   const switchable = sites.length > 1 ? sites.map((s) => ({ id: s.id, name: s.name, active: s.is_active })) : undefined
   const active = groupForPath(groups, location.pathname) ?? groups[0]
@@ -185,26 +183,31 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {/* ================= the page ================= */}
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Mobile header. "Menu" opens the home screen of areas rather than a
-            long flat list — the same model as the desktop rail, one level at a
-            time. */}
+        {/* Mobile header. "Menu" goes to the home screen of tiles. On the
+            home screen itself it gives way to the program's name. */}
         <header
           className="sticky top-0 z-20 border-b border-line bg-surface md:hidden"
           style={{ paddingTop: 'env(safe-area-inset-top)' }}
         >
           <div className="flex items-center justify-between gap-2 px-4 py-3">
-            <button
-              onClick={() => setMobileNav(true)}
-              aria-label="Menu"
-              className="flex min-h-[40px] items-center gap-2 rounded-md border border-line px-3 text-sm font-medium text-ink"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-              Menu
-            </button>
+            {onMenu ? (
+              <span className="flex min-h-[40px] items-center gap-2">
+                <Waveform className="h-4 w-10 text-accent" />
+              </span>
+            ) : (
+              <Link
+                to={MENU_PATH}
+                aria-label="Menu"
+                className="flex min-h-[40px] items-center gap-2 rounded-md border border-line px-3 text-sm font-medium text-ink"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+                Menu
+              </Link>
+            )}
             <span className="min-w-0 flex-1 truncate text-center font-display text-sm font-semibold text-ink">
-              {active?.label ?? siteName ?? 'Fellowship Portal'}
+              {onMenu ? (siteName || 'Fellowship Portal') : (active?.label ?? siteName ?? 'Fellowship Portal')}
             </span>
             {/* Top-right, the usual place on a phone, and in a header that was
                 already sticky. Opens downward for the same reason. */}
@@ -228,156 +231,6 @@ export function AppShell({ children }: { children: ReactNode }) {
         </main>
       </div>
 
-      {mobileNav && (
-        <MobileNav
-          groups={groups}
-          activeId={active?.id}
-          onClose={() => setMobileNav(false)}
-        />
-      )}
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-
-/**
- * The phone's navigation: a home screen of areas, then that area's list.
- *
- * Two levels, never more, and the back arrow always goes up exactly one. The
- * old mobile menu was one long scroll of every page in the portal, which is
- * fine at eight items and unusable at eighteen.
- *
- * Navigation only. Who you are, the appearance control and sign out live in
- * the account button in the header, which is one tap away and does not need a
- * second copy in here that would then have to stay in step with the first.
- */
-function MobileNav({
-  groups,
-  activeId,
-  onClose,
-}: {
-  groups: NavGroup[]
-  activeId?: string
-  onClose: () => void
-}) {
-  // Opens on the home screen, not on the area you happen to be in: the reason
-  // to open the menu is usually to go somewhere else.
-  const [openGroup, setOpenGroup] = useState<NavGroup | null>(null)
-
-  useEffect(() => {
-    const previous = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') (openGroup ? setOpenGroup(null) : onClose())
-    }
-    window.addEventListener('keydown', onKey)
-    return () => {
-      document.body.style.overflow = previous
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [openGroup, onClose])
-
-  return (
-    <div
-      className="fixed inset-0 z-40 flex flex-col bg-paper md:hidden"
-      style={{
-        paddingTop: 'env(safe-area-inset-top)',
-        paddingBottom: 'env(safe-area-inset-bottom)',
-      }}
-    >
-      <div className="flex items-center justify-between gap-2 border-b border-line bg-surface px-3 py-3">
-        {openGroup ? (
-          <button
-            onClick={() => setOpenGroup(null)}
-            className="flex min-h-[40px] items-center gap-1.5 rounded-md px-2 text-sm font-semibold text-accent"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M14 6l-6 6 6 6" />
-            </svg>
-            All areas
-          </button>
-        ) : (
-          <span className="px-2 font-display text-base font-semibold text-ink">Where to?</span>
-        )}
-        <button
-          onClick={onClose}
-          aria-label="Close menu"
-          className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded-md border border-line text-muted"
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M6 6l12 12M18 6L6 18" />
-          </svg>
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-3 py-4">
-        {!openGroup ? (
-          <>
-            {/* The home screen: one tile per area, two across. */}
-            <div className="grid grid-cols-2 gap-3">
-              {groups.map((g) => {
-                // An area with one thing in it goes straight there. Making
-                // someone tap through a list of one is a step that teaches
-                // nothing.
-                const single = g.items.length === 1 ? g.items[0] : null
-                const inner = (
-                  <>
-                    <span
-                      className={`flex h-11 w-11 items-center justify-center rounded-lg ${
-                        activeId === g.id ? 'bg-accent text-white' : 'bg-accent-soft text-accent'
-                      }`}
-                    >
-                      <NavIcon name={g.icon} className="h-6 w-6" />
-                    </span>
-                    <span className="mt-2 block text-sm font-semibold text-ink">{g.label}</span>
-                    <span className="mt-0.5 block text-xs leading-snug text-muted">
-                      {single ? single.label : `${g.items.length} tools`}
-                    </span>
-                  </>
-                )
-                const cls =
-                  'flex min-h-[112px] flex-col items-start rounded-xl border border-line bg-surface p-3 text-left active:bg-paper'
-                return single ? (
-                  <NavLink key={g.id} to={single.to} onClick={onClose} className={cls}>
-                    {inner}
-                  </NavLink>
-                ) : (
-                  <button key={g.id} onClick={() => setOpenGroup(g)} className={cls}>
-                    {inner}
-                  </button>
-                )
-              })}
-            </div>
-
-          </>
-        ) : (
-          <>
-            <div className="mb-3 flex items-center gap-3 px-1">
-              <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-soft text-accent">
-                <NavIcon name={openGroup.icon} />
-              </span>
-              <div>
-                <p className="font-display text-base font-semibold text-ink">{openGroup.label}</p>
-                <p className="text-xs text-muted">{openGroup.tagline}</p>
-              </div>
-            </div>
-            <div className="space-y-2">
-              {openGroup.items.map((i) => (
-                <NavLink
-                  key={i.to}
-                  to={i.to}
-                  onClick={onClose}
-                  className="block rounded-xl border border-line bg-surface px-4 py-3 active:bg-paper"
-                >
-                  <span className="block text-sm font-semibold text-ink">{i.label}</span>
-                  <span className="mt-0.5 block text-xs leading-snug text-muted">{i.blurb}</span>
-                </NavLink>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
     </div>
   )
 }

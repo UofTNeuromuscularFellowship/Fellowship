@@ -1,7 +1,7 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { toolForPath } from '../lib/navigation'
+import { homePath, toolForPath } from '../lib/navigation'
 
 interface Props {
   children: ReactNode
@@ -53,7 +53,7 @@ export function ProtectedRoute({ children, allow, skipPasswordGate, skipWelcome,
   }
 
   if (platformOnly) {
-    if (!isPlatformAdmin) return <Navigate to="/dashboard" replace />
+    if (!isPlatformAdmin) return <Navigate to={homePath()} replace />
     return <>{children}</>
   }
 
@@ -70,14 +70,14 @@ export function ProtectedRoute({ children, allow, skipPasswordGate, skipWelcome,
   }
 
   if (allow && profile && !allow.includes(profile.role)) {
-    return <Navigate to="/dashboard" replace />
+    return <Navigate to={homePath()} replace />
   }
 
   // A toolkit item this program has not been granted. The menu already hides
   // it; this stops a bookmark or a typed URL opening it.
   const tool = toolForPath(location.pathname)
   if (tool && !tools.has(tool)) {
-    return <Navigate to="/dashboard" replace />
+    return <Navigate to={homePath()} replace />
   }
 
   return <>{children}</>

@@ -385,3 +385,24 @@ export function overviewPath(groupId: string): string {
 export function landingPath(group: NavGroup): string {
   return group.items.length === 1 ? group.items[0].to : overviewPath(group.id)
 }
+
+// ------------------------------------------------------------------ phones
+
+/** The width below which the portal is laid out for a phone (Tailwind md). */
+export const PHONE_QUERY = '(max-width: 767px)'
+
+export function isPhone(): boolean {
+  try { return window.matchMedia(PHONE_QUERY).matches } catch { return false }
+}
+
+/** The phone's home screen of tiles, and one area's tiles. */
+export const MENU_PATH = '/menu'
+export const menuPath = (groupId: string) => `${MENU_PATH}/${groupId}`
+
+/**
+ * Where someone lands after signing in, or when there is nowhere better: the
+ * dashboard on a computer, the home screen of tiles on a phone.
+ */
+export function homePath(): string {
+  return isPhone() ? MENU_PATH : '/dashboard'
+}

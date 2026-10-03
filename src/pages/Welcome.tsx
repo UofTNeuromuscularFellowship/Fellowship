@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { homePath } from '../lib/navigation'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { Waveform } from '../components/ui/Waveform'
@@ -94,7 +95,7 @@ export default function Welcome() {
               await supabase.from('users').update({ welcomed_at: now, onboarding_dismissed_at: now, updated_at: now }).eq('id', profile.id)
             }
             await refreshProfile()
-            navigate('/dashboard', { replace: true })
+            navigate(homePath(), { replace: true })
           }} />
         )}
       </div>

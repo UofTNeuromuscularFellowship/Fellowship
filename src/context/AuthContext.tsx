@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import { homePath } from '../lib/navigation'
 import type { ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
@@ -200,7 +201,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function switchSite(siteId: string) {
     const { error } = await supabase.rpc('set_active_site', { p_site: siteId })
     if (error) return { error: error.message }
-    window.location.assign('/dashboard')
+    window.location.assign(homePath())
     return { error: null }
   }
 

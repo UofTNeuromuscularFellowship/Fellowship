@@ -31,6 +31,8 @@ import CaseMediaLibrary from './pages/CaseMedia'
 import Settings from './pages/Settings'
 import Platform from './pages/Platform'
 import SectionOverview from './pages/SectionOverview'
+import MobileMenu from './pages/MobileMenu'
+import { homePath } from './lib/navigation'
 import NotFound from './pages/NotFound'
 
 // Code-split: the 3D atlas pulls in three.js, which must not weigh down the
@@ -139,6 +141,9 @@ export default function App() {
           lib/navigation.ts; SectionOverview sends an unknown or forbidden id to
           the dashboard rather than showing an error. */}
       <Route path="/s/:groupId" element={<Shell><SectionOverview /></Shell>} />
+      {/* The phone's home screen of tiles (pages/MobileMenu.tsx). */}
+      <Route path="/menu" element={<Shell><MobileMenu /></Shell>} />
+      <Route path="/menu/:groupId" element={<Shell><MobileMenu /></Shell>} />
       <Route path="/teaching" element={<Shell><TeachingSchedule /></Shell>} />
       <Route path="/clinic" element={<Shell><ClinicRotations /></Shell>} />
       <Route path="/clinic/setup" element={<Shell allow={['director']}><LazyPage><ClinicSetup /></LazyPage></Shell>} />
@@ -210,7 +215,7 @@ export default function App() {
           program, so no site role applies — see ProtectedRoute. */}
       <Route path="/platform" element={<Shell platformOnly><Platform /></Shell>} />
       {/* Legacy path redirects */}
-      <Route path="/home" element={<Navigate to="/dashboard" replace />} />
+      <Route path="/home" element={<Navigate to={homePath()} replace />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   )

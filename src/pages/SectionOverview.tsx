@@ -1,7 +1,7 @@
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { NavIcon } from '../components/nav/NavIcon'
-import { navFor } from '../lib/navigation'
+import { isPhone, menuPath, navFor } from '../lib/navigation'
 
 // ---------------------------------------------------------------------------
 // What an area contains.
@@ -32,6 +32,8 @@ export default function SectionOverview() {
   // dashboard, /s/clinic to the clinic schedule. Kept here as well as in the
   // rail so a bookmarked or typed overview URL behaves the same way.
   if (group.items.length === 1) return <Navigate to={group.items[0].to} replace />
+  // A phone shows the same area as smaller tiles.
+  if (isPhone()) return <Navigate to={menuPath(group.id)} replace />
 
   return (
     <div className="space-y-6">

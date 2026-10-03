@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Card, CardHeader } from '../components/ui/Card'
 import { useAuth } from '../context/AuthContext'
-import { AnnotatedMedia, AnnotationEditor, COLOURS, TOOLS } from '../components/caseMedia/Annotator'
+import { AnnotatedMedia, AnnotationEditor, COLOURS, TOOLS, legendNumbers } from '../components/caseMedia/Annotator'
 import { SignaturePad } from '../components/caseMedia/SignaturePad'
 import { InstallImagesApp } from '../components/caseMedia/InstallImagesApp'
 import { ExpandButton, Lightbox } from '../components/caseMedia/Lightbox'
@@ -782,6 +782,15 @@ function CaseView({
   const [tool, setTool] = useState<ShapeKind>('arrow')
   const [colour, setColour] = useState(COLOURS[0].id)
   const [activeId, setActiveId] = useState<string | null>(null)
+  // Annotations drawn on the image, or the plain image. Remembered on this
+  // device: someone who prefers the clean image wants it on the next case too.
+  const [marksOn, setMarksOnState] = useState(() => {
+    try { return localStorage.getItem('nmf-case-marks') !== 'off' } catch { return true }
+  })
+  const setMarksOn = (on: boolean) => {
+    setMarksOnState(on)
+    try { localStorage.setItem('nmf-case-marks', on ? 'on' : 'off') } catch { /* not kept */ }
+  }
   const [busy, setBusy] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
   // Findings are edited on their own, not inside the annotation editor: someone
@@ -861,6 +870,9 @@ function CaseView({
   // shapes are anchored to, so the drawing surface only ever shows an image.
   const annotationSurface = extra ? extraUrl : video ? posterUrl : url
   const shown = editing ? draft : current
+  // What is drawn on the image: everything while editing, otherwise as toggled.
+  const onImage = editing || marksOn ? shown : []
+  const numbers = legendNumbers(shown)
   const totalImages = 1 + c.images.length
 
   async function save() {
@@ -1051,7 +1063,7 @@ function CaseView({
         <div className="space-y-2 border-b border-line bg-paper/60 px-4 py-2.5 sm:flex sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-2 sm:space-y-0 sm:px-5">
           {/* Tools fill the width on a phone so each one is a real tap target,
               and collapse back to a compact row from sm up. */}
-          <div className="grid grid-cols-3 gap-1 sm:flex sm:gap-1">
+          <div className="grid grid-cols-4 gap-1 sm:flex sm:gap-1">
             {TOOLS.map((t) => (
               <button
                 key={t.id}
@@ -1116,7 +1128,7 @@ function CaseView({
           {tool === 'freehand' && joinId && (
             <div className="flex items-center gap-2 rounded-md border border-accent/40 bg-accent-soft/30 px-2.5 py-1.5 text-xs text-ink">
               <span>
-                Drawing outline {draft.findIndex((a) => a.id === joinId) + 1} — lift and keep drawing to add to it.
+                Drawing outline {legendNumbers(draft).get(joinId)} — lift and keep drawing to add to it.
               </span>
               <button onClick={() => setJoinId(null)} className="shrink-0 font-semibold text-accent hover:underline">
                 Finish outline
@@ -1124,9 +1136,9 @@ function CaseView({
             </div>
           )}
           <p className="text-xs text-muted sm:ml-auto">
-            <span className="sm:hidden">Draw on the image with a finger · name each shape below</span>
+            <span className="sm:hidden">Draw with a finger, or pick Text and tap · name each shape in the legend</span>
             <span className="hidden sm:inline">
-              Drag on the image to draw · name each shape in the list below
+              Drag on the image to draw, or pick Text and click where it goes · name each shape in the legend
             </span>
           </p>
         </div>
@@ -1190,68 +1202,150 @@ function CaseView({
           </div>
         )}
 
-        {/* ---- the media ---- */}
-        {!mediaUrl ? (
-          <p className="text-sm text-muted">Loading…</p>
-        ) : video && !editing ? (
-          <div className="space-y-2">
-            <video
-              ref={videoRef}
-              src={mediaUrl}
-              controls
-              playsInline
-              crossOrigin="anonymous"
-              className="w-full rounded-md border border-line bg-black"
-            />
-            {mayEdit && (
-              <button
-                onClick={() => void captureFrame()}
-                disabled={busy}
-                className="min-h-[40px] w-full rounded-md border border-line px-3 py-2 text-sm font-semibold text-accent disabled:opacity-40 sm:w-auto sm:py-1.5 sm:text-xs"
-              >
-                {c.posterPath ? 'Replace the annotation frame with this one' : 'Annotate this frame'}
-              </button>
-            )}
-            {c.posterPath && posterUrl && (
-              <div>
-                <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-muted">
-                  Captured frame
-                </p>
-                {/* The clip has the browser's own full-screen button; the frame
-                    grabbed from it is an <img> and has none, which is the gap
-                    this fills. */}
-                <div className="relative">
-                  <AnnotatedMedia annotations={c.annotations} activeId={activeId}>
-                    <img src={posterUrl} alt={c.title} className="block w-full" />
-                  </AnnotatedMedia>
-                  <ExpandButton
-                    onClick={() => setExpanded({ src: posterUrl, annotations: c.annotations })}
-                  />
+        <div className={shown.length > 0 || editing ? 'grid gap-4 lg:grid-cols-[minmax(0,1fr)_15rem] lg:items-start' : ''}>
+          <div className="min-w-0">
+          {/* ---- the media ---- */}
+          {!mediaUrl ? (
+            <p className="text-sm text-muted">Loading…</p>
+          ) : video && !editing ? (
+            <div className="space-y-2">
+              <video
+                ref={videoRef}
+                src={mediaUrl}
+                controls
+                playsInline
+                crossOrigin="anonymous"
+                className="w-full rounded-md border border-line bg-black"
+              />
+              {mayEdit && (
+                <button
+                  onClick={() => void captureFrame()}
+                  disabled={busy}
+                  className="min-h-[40px] w-full rounded-md border border-line px-3 py-2 text-sm font-semibold text-accent disabled:opacity-40 sm:w-auto sm:py-1.5 sm:text-xs"
+                >
+                  {c.posterPath ? 'Replace the annotation frame with this one' : 'Annotate this frame'}
+                </button>
+              )}
+              {c.posterPath && posterUrl && (
+                <div>
+                  <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-muted">
+                    Captured frame
+                  </p>
+                  {/* The clip has the browser's own full-screen button; the frame
+                      grabbed from it is an <img> and has none, which is the gap
+                      this fills. */}
+                  <div className="relative">
+                    <AnnotatedMedia annotations={marksOn ? c.annotations : []} activeId={activeId}>
+                      <img src={posterUrl} alt={c.title} className="block w-full" />
+                    </AnnotatedMedia>
+                    <ExpandButton
+                      onClick={() => setExpanded({ src: posterUrl, annotations: marksOn ? c.annotations : [] })}
+                    />
+                  </div>
                 </div>
+              )}
+            </div>
+          ) : editing && annotationSurface ? (
+            <AnnotationEditor
+              annotations={draft}
+              onChange={setDraft}
+              tool={tool}
+              colour={colour}
+              activeId={activeId}
+              onActive={setActiveId}
+              joinId={tool === 'freehand' ? joinId : null}
+              onJoinChange={setJoinId}
+            >
+              <img src={annotationSurface} alt={c.title} className="block w-full" draggable={false} />
+            </AnnotationEditor>
+          ) : (
+            <div className="relative">
+              <AnnotatedMedia annotations={onImage} activeId={activeId}>
+                <img src={mediaUrl} alt={totalImages > 1 ? `${c.title}, image ${sel + 1}` : c.title} className="block w-full" />
+              </AnnotatedMedia>
+              <ExpandButton onClick={() => setExpanded({ src: mediaUrl, annotations: onImage })} />
+            </div>
+          )}
+          </div>
+          {/* ---- legend: beside the image on a computer, under it on a phone ---- */}
+          {(shown.length > 0 || editing) && (
+            <div className="rounded-md border border-line lg:sticky lg:top-4">
+              <div className="flex items-center justify-between gap-2 border-b border-line bg-paper/60 px-3 py-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+                  Legend{totalImages > 1 ? ` — image ${sel + 1}` : ''}
+                </p>
+                {!editing && shown.length > 0 && (
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={marksOn}
+                    onClick={() => setMarksOn(!marksOn)}
+                    title={marksOn ? 'Hide the annotations on the image' : 'Show the annotations on the image'}
+                    className="flex min-h-[32px] shrink-0 items-center gap-2 whitespace-nowrap text-xs font-semibold text-muted hover:text-ink"
+                  >
+                    <span className={`relative inline-flex h-4 w-7 shrink-0 rounded-full transition-colors ${marksOn ? 'bg-accent' : 'bg-line'}`}>
+                      <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-all ${marksOn ? 'left-3.5' : 'left-0.5'}`} />
+                    </span>
+                    {marksOn ? 'On image' : 'Hidden'}
+                  </button>
+                )}
               </div>
-            )}
-          </div>
-        ) : editing && annotationSurface ? (
-          <AnnotationEditor
-            annotations={draft}
-            onChange={setDraft}
-            tool={tool}
-            colour={colour}
-            activeId={activeId}
-            onActive={setActiveId}
-            joinId={tool === 'freehand' ? joinId : null}
-            onJoinChange={setJoinId}
-          >
-            <img src={annotationSurface} alt={c.title} className="block w-full" draggable={false} />
-          </AnnotationEditor>
-        ) : (
-          <div className="relative">
-            <AnnotatedMedia annotations={shown} activeId={activeId}>
-              <img src={mediaUrl} alt={totalImages > 1 ? `${c.title}, image ${sel + 1}` : c.title} className="block w-full" />
-            </AnnotatedMedia>
-            <ExpandButton onClick={() => setExpanded({ src: mediaUrl, annotations: shown })} />
-          </div>
-        )}
+              {shown.length === 0 ? (
+                <p className="px-3 py-3 text-sm text-muted">
+                  Nothing drawn yet. Pick a tool above and drag on the image, or choose Text and tap where it goes.
+                </p>
+              ) : (
+                <ol className={`divide-y divide-line/60 ${!editing && !marksOn ? 'opacity-60' : ''}`}>
+                  {shown.map((a) => (
+                    <li
+                      key={a.id}
+                      onMouseEnter={() => setActiveId(a.id)}
+                      onMouseLeave={() => setActiveId(null)}
+                      className="flex items-center gap-2.5 px-3 py-2"
+                    >
+                      <span
+                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold"
+                        style={{
+                          backgroundColor: a.colour,
+                          color: a.colour === '#FFFFFF' ? '#111827' : '#FFFFFF',
+                        }}
+                        title={a.kind === 'text' ? 'Text on the image' : undefined}
+                      >
+                        {a.kind === 'text' ? 'T' : numbers.get(a.id)}
+                      </span>
+                      {editing ? (
+                        <>
+                          <input
+                            value={a.label}
+                            autoFocus={a.kind === 'text' && a.id === activeId && !a.label}
+                            onChange={(e) =>
+                              setDraft((d) =>
+                                d.map((x) => (x.id === a.id ? { ...x, label: e.target.value } : x)),
+                              )
+                            }
+                            aria-label={a.kind === 'text' ? 'Text shown on the image' : `Label for ${numbers.get(a.id)}`}
+                            placeholder={a.kind === 'text' ? 'Type the text to show on the image' : `What does ${a.kind === 'arrow' ? 'this arrow' : a.kind === 'ellipse' ? 'this circle' : 'this outline'} point out?`}
+                            className="min-w-0 flex-1 rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink focus:border-accent focus:outline-none"
+                          />
+                          <button
+                            onClick={() => setDraft((d) => d.filter((x) => x.id !== a.id))}
+                            className="shrink-0 text-xs font-semibold text-red-600 hover:underline"
+                          >
+                            Remove
+                          </button>
+                        </>
+                      ) : (
+                        <span className={`min-w-0 text-sm text-ink ${a.kind === 'text' ? 'italic' : ''}`}>
+                          {a.label || <span className="not-italic text-muted">{a.kind === 'text' ? 'Empty text' : 'Unlabelled'}</span>}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* ---- the case's images ---- */}
         {(totalImages > 1 || mayEdit) && (
@@ -1378,64 +1472,6 @@ function CaseView({
         {/* ---- consent, under the photo ---- */}
         <ConsentBlock c={c} />
 
-        {/* ---- legend / appendix ---- */}
-        {(shown.length > 0 || editing) && (
-          <div className="rounded-md border border-line">
-            <p className="border-b border-line bg-paper/60 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted">
-              Legend{totalImages > 1 ? ` — image ${sel + 1}` : ''}
-            </p>
-            {shown.length === 0 ? (
-              <p className="px-4 py-3 text-sm text-muted">
-                Nothing drawn yet. Pick a tool above and drag on the image.
-              </p>
-            ) : (
-              <ol className="divide-y divide-line/60">
-                {shown.map((a, i) => (
-                  <li
-                    key={a.id}
-                    onMouseEnter={() => setActiveId(a.id)}
-                    onMouseLeave={() => setActiveId(null)}
-                    className="flex items-center gap-3 px-4 py-2"
-                  >
-                    <span
-                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold"
-                      style={{
-                        backgroundColor: a.colour,
-                        color: a.colour === '#FFFFFF' ? '#111827' : '#FFFFFF',
-                      }}
-                    >
-                      {i + 1}
-                    </span>
-                    {editing ? (
-                      <>
-                        <input
-                          value={a.label}
-                          onChange={(e) =>
-                            setDraft((d) =>
-                              d.map((x) => (x.id === a.id ? { ...x, label: e.target.value } : x)),
-                            )
-                          }
-                          placeholder={`What does ${a.kind === 'arrow' ? 'this arrow' : a.kind === 'ellipse' ? 'this circle' : 'this outline'} point out?`}
-                          className="min-w-0 flex-1 rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink focus:border-accent focus:outline-none"
-                        />
-                        <button
-                          onClick={() => setDraft((d) => d.filter((x) => x.id !== a.id))}
-                          className="shrink-0 text-xs font-semibold text-red-600 hover:underline"
-                        >
-                          Remove
-                        </button>
-                      </>
-                    ) : (
-                      <span className="text-sm text-ink">
-                        {a.label || <span className="text-muted">Unlabelled</span>}
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ol>
-            )}
-          </div>
-        )}
       </div>
 
       {expanded && (

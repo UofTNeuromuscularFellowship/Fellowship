@@ -30,7 +30,24 @@ export const TOOLS: Array<{ id: ShapeKind; label: string; hint: string }> = [
   { id: 'arrow', label: 'Arrow', hint: 'Drag from the tail to the tip' },
   { id: 'ellipse', label: 'Circle', hint: 'Drag to enclose the finding' },
   { id: 'freehand', label: 'Freehand', hint: 'Draw around anything' },
+  { id: 'text', label: 'Text', hint: 'Tap where the text goes, then type it' },
 ]
+
+/**
+ * The legend numbers. Text written on the image says what it means by itself,
+ * so it takes no number — the shapes are numbered 1, 2, 3… around it.
+ */
+export function legendNumbers(annotations: Annotation[]): Map<string, number> {
+  const out = new Map<string, number>()
+  let n = 0
+  for (const a of annotations) if (a.kind !== 'text') out.set(a.id, ++n)
+  return out
+}
+
+/** Text size on the image: in step with the image's width, within reason. */
+const textSize = (w: number) => Math.round(Math.min(30, Math.max(13, w * 0.03)))
+/** A halo that keeps the text readable on any background. */
+const haloFor = (colour: string) => (['#FFFFFF', '#F0A202'].includes(colour) ? '#111827' : '#FFFFFF')
 
 /**
  * Where the number badge sits, in SCREEN pixels.
@@ -110,13 +127,17 @@ export function AnnotationLayer({
   box,
   activeId,
   showNumbers = true,
+  editing = false,
 }: {
   annotations: Annotation[]
   /** Displayed size of the media, for stroke correction. */
   box: { w: number; h: number }
   activeId?: string | null
   showNumbers?: boolean
+  /** While drawing, empty text shows a placeholder so it can be found. */
+  editing?: boolean
 }) {
+  const numbers = legendNumbers(annotations)
   return (
     <>
     <svg
@@ -196,13 +217,41 @@ export function AnnotationLayer({
         correctly, but a circle drawn in a stretched space is an oval and text
         in it is distorted — which is why this used to need a scale correction
         on every glyph. Two coordinate systems, no correction. */}
-    {showNumbers && box.w > 0 && box.h > 0 && (
+    {box.w > 0 && box.h > 0 && (
       <svg
         viewBox={`0 0 ${box.w} ${box.h}`}
         className="pointer-events-none absolute inset-0 h-full w-full"
         aria-hidden="true"
       >
-        {annotations.map((a, i) => {
+        {annotations.filter((a) => a.kind === 'text' && (a.label.trim() || editing)).map((a) => {
+          const [nx, ny] = a.points[0] ?? [0.5, 0.5]
+          const size = textSize(box.w)
+          const x = nx * box.w
+          // Text near the right edge runs leftwards from the tap, so it stays on
+          // the image.
+          const anchor = nx > 0.62 ? 'end' : 'start'
+          const dim = activeId && activeId !== a.id
+          return (
+            <text
+              key={`t-${a.id}`}
+              x={x}
+              y={Math.min(box.h - size * 0.4, Math.max(size, ny * box.h))}
+              textAnchor={anchor}
+              dominantBaseline="middle"
+              fontSize={size}
+              fontWeight="700"
+              fill={a.colour}
+              stroke={haloFor(a.colour)}
+              strokeWidth={Math.max(2.5, size / 6)}
+              strokeLinejoin="round"
+              paintOrder="stroke"
+              opacity={dim ? 0.45 : a.label.trim() ? 1 : 0.6}
+            >
+              {a.label.trim() || 'Type the text below…'}
+            </text>
+          )
+        })}
+        {showNumbers && annotations.filter((a) => a.kind !== 'text').map((a) => {
           const [bx, by] = badgeAt(a, box)
           const dim = activeId && activeId !== a.id
           return (
@@ -224,7 +273,7 @@ export function AnnotationLayer({
                 fontWeight="700"
                 fill={a.colour === '#FFFFFF' ? '#111827' : '#FFFFFF'}
               >
-                {i + 1}
+                {numbers.get(a.id)}
               </text>
             </g>
           )
@@ -317,6 +366,7 @@ export function AnnotationEditor({
     onStart(cx, cy) {
       measure()
       const p = pointAt(cx, cy)
+      // Text is placed by a tap, not drawn: it is added when the finger lifts.
       setDraft({
         id: crypto.randomUUID(),
         kind: live.current.tool,
@@ -343,6 +393,13 @@ export function AnnotationEditor({
       setDraft(null)
       if (!d) return
       const L = live.current
+      if (d.kind === 'text') {
+        const t: Annotation = { id: d.id, kind: 'text', colour: d.colour, label: '', points: [d.points[0]] }
+        L.onChange([...L.annotations, t])
+        L.onActive(t.id)
+        L.onJoinChange?.(null)
+        return
+      }
       // A tap without a drag is not a shape. Without this every stray tap
       // adds an invisible zero-length arrow to the legend. (For freehand the
       // stroke's length counts, so a small closed loop still registers.)
@@ -390,7 +447,7 @@ export function AnnotationEditor({
       className="relative cursor-crosshair overflow-hidden rounded-md border border-line bg-black"
     >
       {children}
-      <AnnotationLayer annotations={shown} box={box} activeId={activeId} />
+      <AnnotationLayer annotations={shown.filter((a) => a.kind !== 'text' || a.id !== draft?.id)} box={box} activeId={activeId} editing />
     </div>
   )
 }

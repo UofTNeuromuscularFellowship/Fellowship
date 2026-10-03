@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AnnotatedMedia } from './Annotator'
+import { AnnotatedMedia, legendNumbers } from './Annotator'
 import type { Annotation } from '../../lib/caseMedia'
 
 // ---------------------------------------------------------------------------
@@ -113,7 +113,7 @@ export function Lightbox({
           )}
           {annotations.length > 0 && (
             <ol className="mt-2 space-y-1.5">
-              {annotations.map((a, i) => (
+              {annotations.filter((a) => a.kind !== 'text' || a.label.trim()).map((a) => (
                 <li key={a.id} className="flex items-center gap-2.5">
                   <span
                     className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
@@ -122,7 +122,7 @@ export function Lightbox({
                       color: a.colour === '#FFFFFF' ? '#111827' : '#FFFFFF',
                     }}
                   >
-                    {i + 1}
+                    {a.kind === 'text' ? 'T' : legendNumbers(annotations).get(a.id)}
                   </span>
                   <span className="text-sm text-white/90">
                     {a.label || <span className="text-white/50">Unlabelled</span>}
