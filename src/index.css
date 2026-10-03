@@ -166,12 +166,34 @@
 
 
 html, body, #root { height: 100%; }
+/* iPhone: keep text at the size we set when the phone is turned sideways. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+/* Nothing on a page may widen it past the screen. iOS Safari otherwise
+   lets the whole page slide sideways (or zooms out to fit) when one long
+   word, link or table is wider than the phone. clip, unlike hidden, does
+   not create a scroll box, so sticky headers keep working. Wide tables
+   scroll inside their own overflow-x-auto wrappers as before. */
+#root { overflow-x: clip; }
 body {
+  overflow-wrap: break-word;
   margin: 0;
   background: theme('colors.paper');
   color: theme('colors.ink');
   font-family: theme('fontFamily.sans');
   -webkit-font-smoothing: antialiased;
+}
+
+/* iOS zooms the page in when you tap a text box whose text is smaller than
+   16px, and does not zoom back out afterwards, which leaves the sides of
+   every later screen cut off. That began at the very first screen: the
+   email and password boxes on the login page are 14px. 16px on phones and
+   tablets stops the zoom; computers keep the compact size. */
+@media (max-width: 767px), (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
 }
 
 /* tabular figures for all schedule / count data */
