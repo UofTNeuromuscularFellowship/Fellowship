@@ -32,6 +32,7 @@ import Settings from './pages/Settings'
 import Platform from './pages/Platform'
 import SectionOverview from './pages/SectionOverview'
 import MobileMenu from './pages/MobileMenu'
+const JournalClub = lazy(() => import('./pages/JournalClub'))
 import { homePath } from './lib/navigation'
 import NotFound from './pages/NotFound'
 
@@ -142,6 +143,8 @@ export default function App() {
           the dashboard rather than showing an error. */}
       <Route path="/s/:groupId" element={<Shell><SectionOverview /></Shell>} />
       {/* The phone's home screen of tiles (pages/MobileMenu.tsx). */}
+      <Route path="/journal-club" element={<Shell><LazyPage><JournalClub /></LazyPage></Shell>} />
+      <Route path="/journal-club/:id" element={<Shell><LazyPage><JournalClub /></LazyPage></Shell>} />
       <Route path="/menu" element={<Shell><MobileMenu /></Shell>} />
       <Route path="/menu/:groupId" element={<Shell><MobileMenu /></Shell>} />
       <Route path="/teaching" element={<Shell><TeachingSchedule /></Shell>} />

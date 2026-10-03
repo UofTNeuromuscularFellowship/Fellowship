@@ -93,6 +93,11 @@ export const NAV: NavGroup[] = [
         allow: ['fellow', 'supervisor', 'director', 'assistant'],
       },
       {
+        to: '/journal-club',
+        label: 'Journal Club',
+        blurb: 'Recommend articles, sum each up in a line, and discuss them.',
+      },
+      {
         to: '/teaching-cases',
         label: 'Teaching cases',
         blurb: 'Cases prepared for the teaching sessions.',
