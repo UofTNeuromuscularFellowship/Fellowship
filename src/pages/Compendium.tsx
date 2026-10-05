@@ -45,7 +45,7 @@ export default function Compendium() {
     <div className="space-y-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-display text-2xl font-bold text-ink">Disease compendium</h1>
+          <h1 className="font-display text-2xl font-bold text-ink">NMDx</h1>
           <p className="mt-1 text-sm text-muted">
             Search a disease, gene, antibody or sign. Browse by localization, presenting pattern or disease category, or build a differential from findings.
           </p>
@@ -63,7 +63,7 @@ export default function Compendium() {
         <iframe
           ref={frame}
           src={src}
-          title="Neuromuscular disease compendium"
+          title="NMDx"
           allow="fullscreen"
           className="block w-full rounded-lg border border-line bg-paper h-[calc(100dvh-13rem)] min-h-[520px] md:h-[calc(100dvh-11rem)]"
         />

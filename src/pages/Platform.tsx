@@ -18,7 +18,7 @@ const FIELD = 'w-full rounded-md border border-line bg-surface px-3 py-2 text-sm
 const BTN = 'rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50'
 const BTN2 = 'rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink hover:border-accent hover:text-accent disabled:opacity-50'
 
-/** The toolkit, in the order it appears in the EMG Toolkit menu. */
+/** The toolkit, in the order it appears in the Learning Hub menu. */
 const TOOLS: { key: string; label: string; blurb: string }[] = [
   { key: 'test-directory', label: 'Diagnostic test directory', blurb: 'Where to send genetic and antibody testing, with requisitions.' },
   { key: 'atlas-3d', label: '3D atlas', blurb: 'Muscles, nerves and needle insertion points in three dimensions.' },
@@ -214,7 +214,7 @@ function SiteCard({ site, tools, directors, counts, onChanged, onError }: {
         </div>
 
         <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">EMG Toolkit</p>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">Learning Hub</p>
           <ul className="space-y-2">
             {TOOLS.map((t) => (
               <li key={t.key}>

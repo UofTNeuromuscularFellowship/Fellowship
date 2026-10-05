@@ -11,13 +11,13 @@ import { useRoundsAccess, NotAllowed } from './Rounds'
 import { Toggle } from './RoundsWizard'
 import {
   describeRule, FORMAT_LABEL, FORMAT_SHORT, inMyZone, inviteDue, rsvpLabel, sessionWhen, utcToZoned, zonedToUtc, zoneLabel, zoneOptions,
-  type RoundsFormat, type RoundsInvite, type RoundsList, type RoundsSeries as Series, type RoundsSession,
+  type RoundsCase, type RoundsFormat, type RoundsInvite, type RoundsKind, type RoundsList, type RoundsSeries as Series, type RoundsSession,
 } from '../lib/rounds'
 
 // ---------------------------------------------------------------------------
 // One rounds series: its sessions (topic, speaker, moving one to another date,
-// time or time zone, cancelling), who's coming, attendance and feedback, and
-// the series' own settings.
+// time or time zone, cancelling), who's coming, attendance and feedback, the
+// cases discussed (case rounds only), and the series' own settings.
 // ---------------------------------------------------------------------------
 
 type Msg = { tone: 'ok' | 'bad'; text: string } | null
@@ -30,6 +30,7 @@ export default function RoundsSeries() {
   const [series, setSeries] = useState<Series | null | undefined>(undefined)
   const [sessions, setSessions] = useState<RoundsSession[]>([])
   const [counts, setCounts] = useState<Counts>({})
+  const [caseCounts, setCaseCounts] = useState<Record<string, number>>({})
   const [tab, setTab] = useState<'upcoming' | 'past' | 'cancelled'>('upcoming')
   const [open, setOpen] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
@@ -55,6 +56,10 @@ export default function RoundsSeries() {
         if (r.rating) { k.rated++; k.ratingSum += r.rating }
       }
       setCounts(c)
+      const { data: cs } = await supabase.from('rounds_cases').select('session_id').in('session_id', list.map((x) => x.id))
+      const cc: Record<string, number> = {}
+      for (const r of (cs as { session_id: string }[]) ?? []) cc[r.session_id] = (cc[r.session_id] ?? 0) + 1
+      setCaseCounts(cc)
     }
   }, [id])
   useEffect(() => { load() }, [load])
@@ -81,12 +86,13 @@ export default function RoundsSeries() {
             <div className="min-w-0">
               <h1 className="font-display text-2xl font-bold text-ink">{series.title}</h1>
               <p className="text-sm text-muted">
-                {describeRule(series.recurrence, series.recurrence_rule)} · {FORMAT_SHORT[series.format]}
+                {series.kind === 'case' ? 'Case rounds · ' : ''}{describeRule(series.recurrence, series.recurrence_rule)} · {FORMAT_SHORT[series.format]}
                 {series.location ? ` · ${series.location}` : ''}{series.status === 'archived' ? ' · Archived' : ''}
               </p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
+            {series.kind === 'case' && <button className={quiet} onClick={() => downloadCases(series, sessions)}>Download cases (CSV)</button>}
             <button className={quiet} aria-expanded={sponsoring} onClick={() => setSponsoring(!sponsoring)}>{sponsoring ? 'Close sponsors' : 'Sponsors'}</button>
             <button className={quiet} onClick={() => setEditing(!editing)}>{editing ? 'Close settings' : 'Settings'}</button>
           </div>
@@ -121,9 +127,10 @@ export default function RoundsSeries() {
       ) : (
         <ul className="space-y-3">
           {shown.map((s) => (
-            <SessionItem key={s.id} s={s} all={sessions} series={series} c={counts[s.id]} open={open === s.id}
+            <SessionItem key={s.id} s={s} all={sessions} series={series} c={counts[s.id]} cases={caseCounts[s.id] ?? 0} open={open === s.id}
               onToggle={() => setOpen(open === s.id ? null : s.id)}
-              onChanged={(t) => { if (t) setMsg({ tone: 'ok', text: t }); load() }} />
+              onChanged={(t) => { if (t) setMsg({ tone: 'ok', text: t }); load() }}
+              onCasesChanged={(n) => setCaseCounts((cc) => ({ ...cc, [s.id]: n }))} />
           ))}
         </ul>
       )}
@@ -133,8 +140,9 @@ export default function RoundsSeries() {
 
 // ---------------------------------------------------------------- a session
 
-function SessionItem({ s, all, series, c, open, onToggle, onChanged }: {
-  s: RoundsSession; all: RoundsSession[]; series: Series; c?: Counts[string]; open: boolean; onToggle: () => void; onChanged: (t?: string) => void
+function SessionItem({ s, all, series, c, cases, open, onToggle, onChanged, onCasesChanged }: {
+  s: RoundsSession; all: RoundsSession[]; series: Series; c?: Counts[string]; cases: number; open: boolean
+  onToggle: () => void; onChanged: (t?: string) => void; onCasesChanged: (n: number) => void
 }) {
   const past = new Date(s.ends_at).getTime() <= Date.now()
   const mine = inMyZone(s.starts_at, s.timezone)
@@ -147,6 +155,9 @@ function SessionItem({ s, all, series, c, open, onToggle, onChanged }: {
           <span className={`mt-0.5 block text-sm ${s.topic ? 'text-ink' : 'text-amber-700 dark:text-amber-300'}`}>
             {s.topic || 'No topic yet'}{s.speaker ? <span className="text-muted"> · {s.speaker}</span> : null}
           </span>
+          {series.kind === 'case' && s.status === 'scheduled' && (
+            <span className="block text-xs text-muted">{cases ? plural(cases, 'case') + ' recorded' : 'No cases recorded yet'}</span>
+          )}
           {s.status === 'cancelled' && <span className="block text-xs text-muted">Cancelled{s.cancel_reason ? ` — ${s.cancel_reason}` : ''}</span>}
         </span>
         <span className="text-right text-xs text-muted">
@@ -166,6 +177,7 @@ function SessionItem({ s, all, series, c, open, onToggle, onChanged }: {
       {open && (
         <div className="space-y-5 border-t border-line px-5 py-4">
           {s.status === 'scheduled' && !past && <SessionEditor s={s} series={series} invited={c?.invited ?? 0} onChanged={onChanged} />}
+          {series.kind === 'case' && s.status === 'scheduled' && <SessionCases session={s} seriesId={series.id} onCount={onCasesChanged} />}
           <Attendance s={s} series={series} past={past} />
         </div>
       )}
@@ -390,6 +402,173 @@ function Attendance({ s, series, past }: { s: RoundsSession; series: Series; pas
   )
 }
 
+// ----------------------------------------------------------- case rounds
+
+type CaseDraft = { presenter: string; disease_state: string; learning_point: string }
+const blankCase: CaseDraft = { presenter: '', disease_state: '', learning_point: '' }
+const caseDraft = (c: RoundsCase): CaseDraft => ({ presenter: c.presenter ?? '', disease_state: c.disease_state ?? '', learning_point: c.learning_point ?? '' })
+const caseRow = (d: CaseDraft) => ({
+  presenter: d.presenter.trim() || null, disease_state: d.disease_state.trim() || null, learning_point: d.learning_point.trim() || null,
+})
+const caseEmpty = (d: CaseDraft) => !d.presenter.trim() && !d.disease_state.trim() && !d.learning_point.trim()
+
+/** The cases discussed at one session: as many as there were, each with its presenter, disease state and key learning point. */
+function SessionCases({ session, seriesId, onCount }: { session: RoundsSession; seriesId: string; onCount: (n: number) => void }) {
+  const [rows, setRows] = useState<RoundsCase[] | null>(null)
+  const [suggest, setSuggest] = useState<{ presenters: string[]; diseases: string[] }>({ presenters: [], diseases: [] })
+  const [adding, setAdding] = useState<CaseDraft | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const load = useCallback(async () => {
+    const { data, error } = await supabase.from('rounds_cases')
+      .select('id, session_id, position, presenter, disease_state, learning_point')
+      .eq('session_id', session.id).order('position').order('created_at')
+    if (error) { setErr(error.message); setRows([]); return }
+    const list = (data as RoundsCase[]) ?? []
+    setRows(list)
+    onCount(list.length)
+  }, [session.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load() }, [load])
+
+  // Names and disease states already used in this series, offered as you type.
+  useEffect(() => {
+    ;(async () => {
+      const { data } = await supabase.from('rounds_cases').select('presenter, disease_state, rounds_sessions!inner(series_id)')
+        .eq('rounds_sessions.series_id', seriesId)
+      const r = (data as { presenter: string | null; disease_state: string | null }[]) ?? []
+      const uniq = (xs: (string | null)[]) => Array.from(new Set(xs.filter((x): x is string => !!x && !!x.trim()))).sort((a, b) => a.localeCompare(b))
+      setSuggest({ presenters: uniq(r.map((x) => x.presenter)), diseases: uniq(r.map((x) => x.disease_state)) })
+    })()
+  }, [seriesId, rows?.length])
+
+  async function add() {
+    if (!adding || caseEmpty(adding)) { setErr('Fill in at least one of presenter, disease state or learning point.'); return }
+    setBusy(true); setErr(null)
+    const position = rows?.length ? Math.max(...rows.map((r) => r.position)) + 1 : 0
+    const { error } = await supabase.from('rounds_cases').insert({ session_id: session.id, position, ...caseRow(adding) })
+    setBusy(false)
+    if (error) { setErr(error.message); return }
+    setAdding(null)
+    load()
+  }
+
+  const listIds = `rc-${session.id}`
+  if (!rows) return <p className="text-sm text-muted">Loading cases…</p>
+  return (
+    <div className="space-y-3">
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted">Cases discussed · {rows.length}</p>
+      <datalist id={`${listIds}-p`}>{suggest.presenters.map((x) => <option key={x} value={x} />)}</datalist>
+      <datalist id={`${listIds}-d`}>{suggest.diseases.map((x) => <option key={x} value={x} />)}</datalist>
+      {rows.length === 0 && !adding && <p className="text-sm text-muted">No cases recorded for this session yet.</p>}
+      {rows.length > 0 && (
+        <ol className="space-y-3">
+          {rows.map((r, i) => <CaseEditor key={r.id} n={i + 1} row={r} listIds={listIds} onChanged={load} />)}
+        </ol>
+      )}
+      {adding ? (
+        <div className="space-y-3 rounded-lg border border-accent bg-paper px-4 py-3">
+          <p className="text-sm font-semibold text-ink">Case {rows.length + 1}</p>
+          <CaseFields d={adding} onChange={setAdding} listIds={listIds} />
+          {err && <Notice tone="bad">{err}</Notice>}
+          <div className="flex gap-3">
+            <button className={primary} onClick={add} disabled={busy}>{busy ? 'Adding…' : 'Add case'}</button>
+            <button className={quiet} onClick={() => { setAdding(null); setErr(null) }} disabled={busy}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <button className={quiet} onClick={() => setAdding({ ...blankCase })}>+ Add a case</button>
+      )}
+    </div>
+  )
+}
+
+function CaseEditor({ n, row, listIds, onChanged }: { n: number; row: RoundsCase; listIds: string; onChanged: () => void }) {
+  const [d, setD] = useState<CaseDraft>(() => caseDraft(row))
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+  const orig = caseDraft(row)
+  const dirty = d.presenter !== orig.presenter || d.disease_state !== orig.disease_state || d.learning_point !== orig.learning_point
+
+  async function save() {
+    if (caseEmpty(d)) { setErr('Fill in at least one field, or delete the case.'); return }
+    setBusy(true); setErr(null)
+    const { error } = await supabase.from('rounds_cases').update({ ...caseRow(d), updated_at: new Date().toISOString() }).eq('id', row.id)
+    setBusy(false)
+    if (error) { setErr(error.message); return }
+    setSaved(true)
+    onChanged()
+  }
+  async function remove() {
+    if (!window.confirm(`Delete case ${n}?`)) return
+    setBusy(true)
+    const { error } = await supabase.from('rounds_cases').delete().eq('id', row.id)
+    setBusy(false)
+    if (error) { setErr(error.message); return }
+    onChanged()
+  }
+
+  return (
+    <li className="space-y-3 rounded-lg border border-line bg-paper px-4 py-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-ink">Case {n}</p>
+        <button className="text-xs font-medium text-muted hover:text-rose-700 dark:hover:text-rose-300" onClick={remove} disabled={busy}>Delete</button>
+      </div>
+      <CaseFields d={d} onChange={(x) => { setD(x); setSaved(false) }} listIds={listIds} />
+      {err && <Notice tone="bad">{err}</Notice>}
+      {(dirty || saved) && (
+        <div className="flex items-center gap-3">
+          {dirty && <button className={primary} onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save case'}</button>}
+          {dirty && <button className={quiet} onClick={() => setD(orig)} disabled={busy}>Undo changes</button>}
+          {!dirty && saved && <span className="text-xs text-muted">Saved.</span>}
+        </div>
+      )}
+    </li>
+  )
+}
+
+function CaseFields({ d, onChange, listIds }: { d: CaseDraft; onChange: (d: CaseDraft) => void; listIds: string }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <L text="Case presenter"><input className={field} list={`${listIds}-p`} value={d.presenter} onChange={(e) => onChange({ ...d, presenter: e.target.value })} /></L>
+      <L text="Disease state"><input className={field} list={`${listIds}-d`} value={d.disease_state} onChange={(e) => onChange({ ...d, disease_state: e.target.value })} /></L>
+      <L text="Key learning point" wide>
+        <textarea rows={2} className={field} value={d.learning_point} onChange={(e) => onChange({ ...d, learning_point: e.target.value })} />
+      </L>
+    </div>
+  )
+}
+
+/** Every case recorded across the series, one row per case, for the organizer's records. */
+async function downloadCases(series: Series, sessions: RoundsSession[]) {
+  const live = sessions.filter((s) => s.status === 'scheduled')
+  if (!live.length) { window.alert('There are no sessions in this series yet.'); return }
+  const { data, error } = await supabase.from('rounds_cases')
+    .select('session_id, position, presenter, disease_state, learning_point, created_at')
+    .in('session_id', live.map((s) => s.id))
+  if (error) { window.alert(`The cases couldn’t be loaded: ${error.message}`); return }
+  const rows = (data as (Omit<RoundsCase, 'id'> & { created_at: string })[]) ?? []
+  if (!rows.length) { window.alert('No cases have been recorded for this series yet.'); return }
+  const byId = new Map(live.map((s) => [s.id, s]))
+  rows.sort((a, b) => byId.get(a.session_id)!.starts_at.localeCompare(byId.get(b.session_id)!.starts_at)
+    || a.position - b.position || a.created_at.localeCompare(b.created_at))
+  const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
+  const head = ['Session date', 'Session topic', 'Case', 'Presenter', 'Disease state', 'Key learning point']
+  const n: Record<string, number> = {}
+  const body = rows.map((r) => {
+    const s = byId.get(r.session_id)!
+    n[r.session_id] = (n[r.session_id] ?? 0) + 1
+    return [utcToZoned(s.starts_at, s.timezone).date, s.topic, n[r.session_id], r.presenter, r.disease_state, r.learning_point].map(esc).join(',')
+  })
+  const blob = new Blob([[head.join(','), ...body].join('\n')], { type: 'text/csv' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = `${series.title} cases.csv`.replace(/[^\w .-]/g, '')
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
+
 // -------------------------------------------------------------- add session
 
 function AddSession({ series, onAdded }: { series: Series; onAdded: () => void }) {
@@ -456,7 +635,7 @@ function SeriesSettings({ series, onSaved }: { series: Series; onSaved: (t: stri
     setBusy(true); setErr(null)
     const clean = (v: string | null) => (v && v.trim() ? v.trim() : null)
     const { error } = await supabase.from('rounds_series').update({
-      title: d.title.trim(), description: clean(d.description), format: d.format, location: clean(d.location),
+      title: d.title.trim(), description: clean(d.description), kind: d.kind, format: d.format, location: clean(d.location),
       video_url: clean(d.video_url), video_passcode: clean(d.video_passcode), organizer_name: clean(d.organizer_name),
       organizer_email: clean(d.organizer_email), logo_url: d.logo_url, invite_program: d.invite_program,
       reminder_enabled: d.reminder_enabled, feedback_enabled: d.feedback_enabled,
@@ -479,6 +658,12 @@ function SeriesSettings({ series, onSaved }: { series: Series; onSaved: (t: stri
       <div className="grid gap-4 px-5 py-4 sm:grid-cols-2">
         <L text="Name" wide><input className={field} value={d.title} onChange={(e) => set('title', e.target.value)} /></L>
         <L text="Description" wide><textarea rows={2} className={field} value={d.description ?? ''} onChange={(e) => set('description', e.target.value)} /></L>
+        <L text="Type of rounds" wide hint={series.kind === 'case' && d.kind !== 'case' ? 'Cases already recorded are kept, and come back if you switch to case rounds again.' : undefined}>
+          <select className={field} value={d.kind} onChange={(e) => set('kind', e.target.value as RoundsKind)}>
+            <option value="standard">Standard rounds — a topic and a speaker</option>
+            <option value="case">Case rounds — record presenter, disease state and key learning point for each case</option>
+          </select>
+        </L>
         <L text="Organizer"><input className={field} value={d.organizer_name ?? ''} onChange={(e) => set('organizer_name', e.target.value)} /></L>
         <L text="Organizer email"><input type="email" className={field} value={d.organizer_email ?? ''} onChange={(e) => set('organizer_email', e.target.value)} /></L>
         <div className="sm:col-span-2"><LogoPicker value={d.logo_url} onChange={(u) => set('logo_url', u)} /></div>
