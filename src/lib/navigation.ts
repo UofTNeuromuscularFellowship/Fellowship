@@ -193,6 +193,11 @@ export const NAV: NavGroup[] = [
         blurb: 'Self-testing on muscles, nerves and root levels.',
         allow: ['fellow', 'supervisor', 'director'],
       },
+      {
+        to: '/compendium',
+        label: 'Disease compendium',
+        blurb: 'Neuromuscular diseases by localization, pattern and category, with a differential builder.',
+      },
     ],
   },
   {
