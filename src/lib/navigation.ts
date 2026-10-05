@@ -20,7 +20,7 @@ export interface NavItem {
   /** One line in the section overview, saying what the tool is for. */
   blurb: string
   allow?: UserRole[]
-  /** EMG Toolkit entitlement key. The item is shown only when the current
+  /** Learning Hub entitlement key. The item is shown only when the current
    *  program has this tool switched on (site_tools). */
   tool?: string
   /** Shown to platform admins only, whatever their site role. */
@@ -93,11 +93,6 @@ export const NAV: NavGroup[] = [
         allow: ['fellow', 'supervisor', 'director', 'assistant'],
       },
       {
-        to: '/journal-club',
-        label: 'Journal Club',
-        blurb: 'Recommend articles, sum each up in a line, and discuss them.',
-      },
-      {
         to: '/teaching-cases',
         label: 'Teaching cases',
         blurb: 'Cases prepared for the teaching sessions.',
@@ -144,11 +139,17 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
+    // The id stays 'emg' so existing /s/emg and /menu/emg links keep working.
     id: 'emg',
-    label: 'EMG Toolkit',
-    tagline: 'The things you reach for mid-study',
+    label: 'Learning Hub',
+    tagline: 'Reading, reference and self-study',
     icon: 'emg',
     items: [
+      {
+        to: '/journal-club',
+        label: 'Journal Club',
+        blurb: 'Recommend articles, sum each up in a line, and discuss them.',
+      },
       {
         to: '/test-directory',
         tool: 'test-directory',
@@ -355,7 +356,7 @@ export function toolForPath(pathname: string): string | undefined {
  *
  * Matches the group's own overview route as well as its items. Without the
  * first check, standing on /s/emg highlighted whichever group happened to be
- * first while the main area showed the EMG toolkit.
+ * first while the main area showed the Learning Hub.
  */
 export function groupForPath(groups: NavGroup[], pathname: string): NavGroup | undefined {
   const overview = pathname.match(/^\/s\/([^/]+)$/)

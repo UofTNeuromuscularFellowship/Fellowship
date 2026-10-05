@@ -114,7 +114,7 @@ function SeriesList() {
                 {s.logo_url && <img src={s.logo_url} alt="" className="h-8 max-w-[5rem] object-contain" />}
                 <div className="min-w-0">
                   <p className="font-semibold text-ink">{s.title}</p>
-                  <p className="text-xs text-muted">{describeRule(s.recurrence, s.recurrence_rule)} · {FORMAT_SHORT[s.format]}{s.status === 'archived' ? ' · Archived' : ''}</p>
+                  <p className="text-xs text-muted">{s.kind === 'case' ? 'Case rounds · ' : ''}{describeRule(s.recurrence, s.recurrence_rule)} · {FORMAT_SHORT[s.format]}{s.status === 'archived' ? ' · Archived' : ''}</p>
                 </div>
               </div>
               <span className="text-xs text-muted">{plural(upcoming.length, 'upcoming session')}</span>

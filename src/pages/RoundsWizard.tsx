@@ -10,7 +10,7 @@ import { time12 } from '../lib/conference'
 import { useRoundsAccess, NotAllowed } from './Rounds'
 import {
   describeRule, expandRule, FORMAT_LABEL, MAX_SESSIONS, NTH, parsePeople, WEEKDAYS, zonedToUtc, zoneLabel, zoneOptions,
-  type Recurrence, type RepeatRule, type RoundsFormat, type RoundsList,
+  type Recurrence, type RepeatRule, type RoundsFormat, type RoundsKind, type RoundsList,
 } from '../lib/rounds'
 
 // ---------------------------------------------------------------------------
@@ -44,6 +44,7 @@ export default function RoundsWizard() {
   // about
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [roundsKind, setRoundsKind] = useState<RoundsKind>('standard')
   const [organizerName, setOrganizerName] = useState('')
   const [organizerEmail, setOrganizerEmail] = useState('')
   const [logo, setLogo] = useState<string | null>(null)
@@ -163,7 +164,7 @@ export default function RoundsWizard() {
     setBusy(true); setErr(null)
     const clean = (v: string) => (v.trim() ? v.trim() : null)
     const { data: ser, error } = await supabase.from('rounds_series').insert({
-      title: title.trim(), description: clean(description), format,
+      title: title.trim(), description: clean(description), kind: roundsKind, format,
       location: format === 'virtual' ? null : clean(location),
       video_url: format === 'in_person' ? null : clean(videoUrl),
       video_passcode: format === 'in_person' ? null : clean(passcode),
@@ -212,6 +213,17 @@ export default function RoundsWizard() {
           <Lbl text="Name">
             <input className={field} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Neuromuscular Grand Rounds" autoFocus />
           </Lbl>
+          <div className="space-y-2">
+            <span className={labelCls}>Type of rounds</span>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <ChoiceCard name="kind" checked={roundsKind === 'standard'} onChange={() => setRoundsKind('standard')} title="Standard rounds">
+                A topic and a speaker for each session.
+              </ChoiceCard>
+              <ChoiceCard name="kind" checked={roundsKind === 'case'} onChange={() => setRoundsKind('case')} title="Case rounds">
+                Record each case discussed — presenter, disease state and key learning point. Several cases per session.
+              </ChoiceCard>
+            </div>
+          </div>
           <Lbl text="Description (optional)" hint="A line or two for the invitation.">
             <textarea rows={3} className={field} value={description} onChange={(e) => setDescription(e.target.value)} />
           </Lbl>
@@ -445,6 +457,7 @@ export default function RoundsWizard() {
         <section className="space-y-4">
           <SummaryList items={[
             ['Rounds', <span key="t" className="flex items-center gap-3">{logo && <img src={logo} alt="" className="h-8 max-w-[5rem] object-contain" />}{title}</span>],
+            ['Type', roundsKind === 'case' ? 'Case rounds — cases are recorded on each session' : 'Standard rounds'],
             ['When', <span key="w">{describeRule(kind, rule)} · {time12(rule.time)}, {duration} min · {zoneLabel(tz)}<br />
               <span className="text-muted">{plural(live.length, 'session')}{live.length ? `: ${niceDay(live[0].date)}${live.length > 1 ? ` to ${niceDay(live[live.length - 1].date)}` : ''}` : ''}</span></span>],
             ['Where', <span key="p">{FORMAT_LABEL[format]}{format !== 'virtual' && location ? ` · ${location}` : ''}{format !== 'in_person' ? (videoUrl ? ' · video link added' : ' · video link to add later') : ''}</span>],

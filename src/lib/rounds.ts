@@ -8,11 +8,14 @@
 
 export type RoundsFormat = 'in_person' | 'virtual' | 'hybrid'
 export type Recurrence = 'once' | 'weekly' | 'monthly' | 'interval'
+/** 'case': case rounds — each session records the cases discussed. */
+export type RoundsKind = 'standard' | 'case'
 
 export interface RoundsSeries {
   id: string
   title: string
   description: string | null
+  kind: RoundsKind
   format: RoundsFormat
   location: string | null
   video_url: string | null
@@ -52,6 +55,16 @@ export interface RoundsSession {
   invite_sent_at: string | null
   reminder_sent_at: string | null
   feedback_sent_at: string | null
+}
+
+/** One case discussed at a case-rounds session. A session can have several. */
+export interface RoundsCase {
+  id: string
+  session_id: string
+  position: number
+  presenter: string | null
+  disease_state: string | null
+  learning_point: string | null
 }
 
 export interface RoundsList { id: string; name: string; created_at: string }
