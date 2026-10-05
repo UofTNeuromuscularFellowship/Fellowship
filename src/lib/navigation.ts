@@ -196,7 +196,7 @@ export const NAV: NavGroup[] = [
       },
       {
         to: '/compendium',
-        label: 'Disease compendium',
+        label: 'NMDx',
         blurb: 'Neuromuscular diseases by localization, pattern and category, with a differential builder.',
       },
     ],

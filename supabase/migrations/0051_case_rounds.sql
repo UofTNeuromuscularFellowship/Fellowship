@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- 0050 — case rounds
+-- 0051 — case rounds
 --
 -- A rounds series can be set up as case rounds. Each session of a case-rounds
 -- series then carries a list of the cases discussed — several per session —
