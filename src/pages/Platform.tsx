@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -75,6 +76,14 @@ export default function Platform() {
           {msg} <button className="ml-2 font-medium text-accent" onClick={() => setMsg(null)}>dismiss</button>
         </div>
       )}
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-surface px-4 py-3">
+        <div>
+          <p className="font-medium text-ink">NMDx suggestions</p>
+          <p className="text-sm text-muted">Corrections and new topic requests from every program come to you as website coordinator.</p>
+        </div>
+        <Link to="/compendium/suggestions" className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent-soft">Review suggestions</Link>
+      </div>
 
       <NewSiteForm onCreated={load} onError={setMsg} />
 

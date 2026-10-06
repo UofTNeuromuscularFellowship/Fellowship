@@ -9,9 +9,10 @@ import {
 } from '../lib/nmdxSuggestions'
 
 // ---------------------------------------------------------------------------
-// /compendium/suggestions: the NMDx talk page. Everyone in the program sees
+// /compendium/suggestions: the NMDx talk page. Members of every program see
 // every correction and topic request with its status and the reviewer's note.
-// Authors can withdraw their own open suggestions. The director/admin marks
+// Authors can withdraw their own open suggestions. The website coordinator
+// (the platform admin; NMDx is shared by every program) marks
 // each one accepted, declined or done, with a note.
 // ---------------------------------------------------------------------------
 
@@ -76,8 +77,8 @@ function Review({ s, onSaved }: { s: Suggestion; onSaved: () => void }) {
 }
 
 export default function NmdxSuggestions() {
-  const { profile } = useAuth()
-  const isEditor = profile?.role === 'director' || profile?.role === 'admin'
+  const { profile, isPlatformAdmin } = useAuth()
+  const isEditor = isPlatformAdmin
   const [list, setList] = useState<Suggestion[] | null>(null)
   const [names, setNames] = useState<Map<string, string>>(new Map())
   const [error, setError] = useState<string | null>(null)
@@ -111,7 +112,7 @@ export default function NmdxSuggestions() {
           <p className="text-sm"><Link to="/compendium" className="text-accent hover:underline">← NMDx</Link></p>
           <h1 className="font-display text-2xl font-bold text-ink">NMDx suggestions</h1>
           <p className="mt-1 text-sm text-muted">
-            Corrections and new topic requests from the program, with their status. To suggest a correction, open the topic in NMDx and use
+            Corrections and new topic requests from every program using this website, with their status. The website coordinator reviews them. To suggest a correction, open the topic in NMDx and use
             “Suggest a correction”; highlight the text first to quote it.
           </p>
         </div>
