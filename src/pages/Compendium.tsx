@@ -1,5 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import compendiumHtml from '../data/compendium.html?raw'
+import NmdxSuggestDialog, { type DialogStart } from '../components/NmdxSuggestDialog'
+import { SECTION_LABEL, isFrameRequest, loadSuggestions, openCounts } from '../lib/nmdxSuggestions'
 
 // ---------------------------------------------------------------------------
 // Neuromuscular disease compendium.
@@ -24,11 +27,55 @@ import compendiumHtml from '../data/compendium.html?raw'
 //
 // The HTML is imported ?raw, so it lands in this page's lazy chunk. It is not
 // a public file and loads only for someone signed in.
+//
+// Suggestions: the frame posts {type: 'nmdx-suggest'} when someone clicks
+// "Suggest a correction" on a topic or "Request a new topic", and this page
+// opens the form. When the frame says it is ready, this page sends it the
+// number of open suggestions per topic so each topic can show them.
 // ---------------------------------------------------------------------------
 
 export default function Compendium() {
   const frame = useRef<HTMLIFrameElement>(null)
   const [src, setSrc] = useState<string>()
+  const [dialog, setDialog] = useState<DialogStart | null>(null)
+  const [openTotal, setOpenTotal] = useState(0)
+  const counts = useRef<Record<string, number>>({})
+
+  const sendCounts = useCallback(() => {
+    frame.current?.contentWindow?.postMessage({ type: 'nmdx-counts', counts: counts.current }, window.location.origin)
+  }, [])
+
+  const refreshCounts = useCallback(() => {
+    loadSuggestions()
+      .then((list) => {
+        counts.current = openCounts(list)
+        setOpenTotal(list.filter((x) => x.status === 'open').length)
+        sendCounts()
+      })
+      .catch(() => {})
+  }, [sendCounts])
+
+  useEffect(() => { refreshCounts() }, [refreshCounts])
+
+  useEffect(() => {
+    function onMessage(e: MessageEvent) {
+      if (e.source !== frame.current?.contentWindow) return
+      if (e.data && (e.data as { type?: string }).type === 'nmdx-ready') { sendCounts(); return }
+      if (!isFrameRequest(e.data)) return
+      const r = e.data
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
+      setDialog({
+        kind: r.kind,
+        entryId: typeof r.entryId === 'string' ? r.entryId.slice(0, 80) : undefined,
+        entryName: typeof r.entryName === 'string' ? r.entryName.slice(0, 300) : undefined,
+        section: typeof r.section === 'string' && r.section in SECTION_LABEL ? r.section : undefined,
+        quote: typeof r.quote === 'string' ? r.quote.slice(0, 2000) : undefined,
+        topicName: typeof r.topicName === 'string' ? r.topicName.slice(0, 300) : undefined,
+      })
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [sendCounts])
 
   useEffect(() => {
     const url = URL.createObjectURL(new Blob([compendiumHtml], { type: 'text/html' }))
@@ -50,13 +97,25 @@ export default function Compendium() {
             Search a disease, gene, antibody or sign. Browse by localization, presenting pattern or disease category, or build a differential from findings.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={fullScreen}
-          className="hidden rounded-md border border-line px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent-soft md:inline-block"
-        >
-          Full screen
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link to="/compendium/suggestions" className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent-soft">
+            Suggestions{openTotal ? ` (${openTotal} open)` : ''}
+          </Link>
+          <button
+            type="button"
+            onClick={() => setDialog({ kind: 'new_topic' })}
+            className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent-soft"
+          >
+            Request a topic
+          </button>
+          <button
+            type="button"
+            onClick={fullScreen}
+            className="hidden rounded-md border border-line px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent-soft md:inline-block"
+          >
+            Full screen
+          </button>
+        </div>
       </div>
 
       {src ? (
@@ -70,6 +129,8 @@ export default function Compendium() {
       ) : (
         <p className="text-sm text-muted">Loading…</p>
       )}
+
+      {dialog && <NmdxSuggestDialog start={dialog} onClose={() => setDialog(null)} onSubmitted={refreshCounts} />}
     </div>
   )
 }
