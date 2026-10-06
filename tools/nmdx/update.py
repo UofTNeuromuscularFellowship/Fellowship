@@ -16,7 +16,9 @@ file:
         "aliases_add": ["..."], "features_add": ["..."],
         "sources_add": [{"src": "ref", "key": "izenberg2023"}]
       }
-    }
+    },
+    "new_entries": [{"after": "<existing id>", "entry": {full entry: id, name, aliases,
+                     loc, cat, patterns, features, summary, sections, sources}}]
   }
 
 Each paragraph drawn from a review article ends with [R:<key>], which the page
@@ -40,13 +42,18 @@ def load():
     di = next(i for i, l in enumerate(lines) if l.startswith('const DATA = '))
     ri = next(i for i, l in enumerate(lines) if l.startswith('const REFS = '))
     fi = next(i for i, l in enumerate(lines) if l.startswith('const FEATURES = ['))
+    def keys(name):
+        i = next(i for i, l in enumerate(lines) if l.startswith(f'const {name} = ['))
+        b = '\n'.join(lines[i:i + 40]); b = b[:b.index('];')]
+        return set(re.findall(r'\["([a-z0-9-]+)",', b))
+    vocab = {'loc': keys('LOC'), 'patterns': keys('PATTERNS'), 'cat': keys('CATS')}
     data = json.loads(lines[di][len('const DATA = '):].rstrip().rstrip(';'))
     refs = json.loads(lines[ri][len('const REFS = '):].rstrip().rstrip(';'))
     # feature keys, from the FEATURES block (rows like ["key","Label"])
     block = '\n'.join(lines[fi:fi + 40])
     block = block[:block.index('];') + 1]
     feats = set(re.findall(r'\["([a-z0-9-]+)",\s*"', block))
-    return lines, di, ri, data, refs, feats
+    return lines, di, ri, data, refs, feats, vocab
 
 
 def words(t):
@@ -62,7 +69,7 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     dry, force = '--dry-run' in sys.argv, '--force' in sys.argv
     patch = json.loads(pathlib.Path(args[0]).read_text())
-    lines, di, ri, data, refs, feats = load()
+    lines, di, ri, data, refs, feats, vocab = load()
     refs.update({k: {kk: vv for kk, vv in v.items() if kk != 'text'} for k, v in patch.get('refs', {}).items()})
     src_text = {k: pathlib.Path(v['text']).read_text() for k, v in patch.get('refs', {}).items() if v.get('text')}
     src_sh = {k: shingles(t) for k, t in src_text.items()}
@@ -77,6 +84,25 @@ def main():
                 hits = shingles(para) & src_sh[key]
                 if hits:
                     problems.append(f'{eid}.{field}: {len(hits)} copied 8-word run(s) from {key}, {sorted(hits)}')
+
+    for ne in patch.get('new_entries', []):
+        e = ne['entry']
+        if e['id'] in by_id:
+            problems.append(f"new entry {e['id']} already exists"); continue
+        for f in ['id', 'name', 'loc', 'cat', 'patterns', 'features', 'summary', 'sources']:
+            if f not in e: problems.append(f"new entry {e['id']}: missing {f}")
+        if e.get('loc') not in vocab['loc']: problems.append(f"{e['id']}: bad loc {e.get('loc')}")
+        for k in ['cat', 'patterns']:
+            for v in e.get(k, []):
+                if v not in vocab[k]: problems.append(f"{e['id']}: bad {k} {v}")
+        for f in e.get('features', []):
+            if f not in feats: problems.append(f"{e['id']}: unknown feature {f}")
+        check(e['id'], 'summary', e['summary'])
+        for sec in SECTIONS:
+            for p in re.split(r'\n\n+', e.get(sec, '')): check(e['id'], sec, p)
+        at = next((i for i, x in enumerate(data) if x['id'] == ne.get('after')), len(data) - 1)
+        data.insert(at + 1, e); by_id[e['id']] = e
+        report.append(f"  {e['id']}: NEW entry")
 
     for eid, ch in patch.get('entries', {}).items():
         e = by_id.get(eid)
