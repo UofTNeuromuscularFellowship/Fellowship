@@ -57,8 +57,9 @@ export function ProtectedRoute({ children, allow, skipPasswordGate, skipWelcome,
     return <>{children}</>
   }
 
-  // A platform admin with no program of their own has nowhere else to go.
-  if (!site && isPlatformAdmin && location.pathname !== '/platform') {
+  // A platform admin with no program of their own has nowhere else to go,
+  // except the NMDx suggestions they review as website coordinator.
+  if (!site && isPlatformAdmin && location.pathname !== '/platform' && location.pathname !== '/compendium/suggestions') {
     return <Navigate to="/platform" replace />
   }
 

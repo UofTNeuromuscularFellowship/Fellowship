@@ -80,7 +80,7 @@ export default function NmdxSuggestDialog({ start, onClose, onSubmitted }: {
 
         {done ? (
           <div className="mt-4 space-y-4">
-            <Notice tone="ok">Thanks. Your suggestion has been sent to the program director for review, and it now appears on the suggestions page for everyone to see.</Notice>
+            <Notice tone="ok">Thanks. Your suggestion has been sent to the website coordinator for review, and it now appears on the suggestions page for everyone to see.</Notice>
             <div className="flex flex-wrap gap-3">
               <button type="button" className={primary} onClick={onClose}>Close</button>
               <Link to="/compendium/suggestions" className={quiet}>See all suggestions</Link>
