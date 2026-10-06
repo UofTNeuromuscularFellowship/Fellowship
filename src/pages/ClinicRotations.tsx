@@ -680,6 +680,7 @@ function CancelClinicModal({ rotation, onClose, onDone, onError }: {
 }) {
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState(false)
 
   async function submit() {
     setBusy(true)
@@ -689,7 +690,36 @@ function CancelClinicModal({ rotation, onClose, onDone, onError }: {
     })
     setBusy(false)
     if (error) { onError(error.message); onClose(); return }
-    onDone()
+    // Stay open on a confirmation so the provider knows who was told and what
+    // happens next; the schedule reloads once they close it.
+    setDone(true)
+  }
+
+  if (done) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onDone}>
+        <div role="alertdialog" aria-labelledby="clinic-cancelled-title"
+          className="w-full max-w-md rounded-lg border border-line bg-surface p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <p id="clinic-cancelled-title" className="font-display text-base font-semibold text-ink">Clinic cancelled</p>
+          <p className="mt-2 text-sm text-ink">
+            <strong>{rotation.site_code}</strong> on {shortDate(rotation.rotation_date)} has been cancelled.
+          </p>
+          <p className="mt-2 text-sm text-ink">
+            {rotation.fellow_label
+              ? <>The fellow (<strong>{rotation.fellow_label}</strong>) and the fellowship director have been informed of the
+                cancellation, and the fellow will be rescheduled to a different clinic.</>
+              : <>The fellowship director has been informed of the cancellation.</>}
+          </p>
+          <p className="mt-2 text-sm text-muted">No further action is needed from you.</p>
+          <div className="mt-4 flex">
+            <button onClick={onDone} autoFocus
+              className="ml-auto rounded-md bg-accent px-4 py-1.5 text-sm font-semibold text-white hover:opacity-90">
+              OK
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
