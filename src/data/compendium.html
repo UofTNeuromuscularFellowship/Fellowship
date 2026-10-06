@@ -74,6 +74,15 @@ a.xref{color:var(--hema);text-decoration:none;border-bottom:1px dotted var(--hem
 .feat{display:flex;flex-wrap:wrap;gap:5px;margin-top:10px}
 .feat span{font-size:.72rem;background:var(--sunk);border-radius:5px;padding:2px 7px;color:var(--muted)}
 .disc{font-size:.76rem;color:var(--muted);margin-top:18px;line-height:1.45}
+/* suggestions (shown only inside the portal) */
+.talk{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 16px;font-size:.82rem;color:var(--muted)}
+.talk button,.sugg{border:1px solid var(--line);background:var(--surface);border-radius:7px;padding:4px 10px;font-size:.8rem;cursor:pointer;color:var(--hema)}
+.talk button:hover,.sugg:hover{border-color:var(--hema)}
+.talk .cnt{background:var(--eosin-soft);color:var(--ink);border-radius:999px;padding:1px 8px;font-size:.74rem}
+.sec h4{display:flex;align-items:baseline;gap:10px}
+.sec h4 .sugg{border:0;background:none;padding:0;font-size:.7rem;letter-spacing:0;text-transform:none;font-weight:500;color:var(--muted);opacity:.85}
+.sec h4 .sugg:hover{color:var(--hema);text-decoration:underline}
+body:not(.embedded) .sugg,body:not(.embedded) .talk{display:none}
 /* on-this-page section links */
 .sheet.has-toc{max-width:1010px}
 .ent{display:block}
@@ -304,7 +313,7 @@ function renderIndex(){
     const hits=searchHits(S.q);
     $('#count').textContent = hits.length+' match'+(hits.length===1?'':'es');
     html = '<div class="grp">'+hits.map(({e,snip})=>`<button class="item" data-id="${e.id}" aria-current="${e.id===S.id}">${hl(e.name,S.q)}${snip?`<small>${hl(snip,S.q)}</small>`:''}</button>`).join('')+'</div>';
-    if(!hits.length) html='<p class="count">No entry matches that search. Try a shorter term, a gene name or an antibody.</p>';
+    if(!hits.length) html='<p class="count">No entry matches that search. Try a shorter term, a gene name or an antibody.</p><p class="count"><button type="button" class="sugg" data-request="1">Request this as a new topic</button></p>';
   } else {
     $('#count').textContent = DATA.length+' entries';
     html = groups().filter(g=>g.items.length).map(g=>`<div class="grp"><h3>${esc(g.l)}</h3>${g.d?`<p class="gdesc">${esc(g.d)}</p>`:''}${g.items.sort((a,b)=>a.name.localeCompare(b.name)).map(e=>`<button class="item" data-id="${e.id}" aria-current="${e.id===S.id}">${esc(e.name)}</button>`).join('')}</div>`).join('');
@@ -333,9 +342,10 @@ function renderEntry(e){
     <button class="back" data-back>← Back to index</button>
     <div class="crumbs">${tags}</div>
     <h2>${esc(e.name)}</h2>
+    <div class="talk"><button type="button" class="sg" data-suggest="other">Suggest a correction</button><span class="cnt" id="talkcnt" hidden></span><span>Highlight text first to quote it.</span></div>
     ${e.aliases&&e.aliases.length?`<p class="aka">Also searched as: ${esc(e.aliases.slice(0,10).join(', '))}</p>`:''}
     <p class="lede">${linkify(esc(e.summary.replace(/\s*\[(W|R:[a-z0-9_-]+)\]/g,'')),e.id,used)}</p>
-    ${SECTIONS.filter(([k])=>e[k]).map(([k,l])=>`<section class="sec" id="sec-${k}"><h4>${l}</h4>${paras(e,e[k],used)}</section>`).join('')}
+    ${SECTIONS.filter(([k])=>e[k]).map(([k,l])=>`<section class="sec" id="sec-${k}"><h4>${l}<button type="button" class="sugg" data-suggest="${k}">Suggest an edit</button></h4>${paras(e,e[k],used)}</section>`).join('')}
     <div class="srcbox" id="sec-sources"><b>Sources</b>${hasW||hasR?` · ${[hasW?'paragraphs marked <sup class="w"><a>W</a></sup> come from the WUSTL site':'',hasR?'paragraphs tagged with an author and year come from that review article':''].filter(Boolean).join('; ')}; all other text from the textbook`:''}
       <ol>${srcs.map(s=>`<li>${cite(s)}</li>`).join('')}</ol>
       <div class="feat">${(e.features||[]).map(f=>`<span>${esc(FLABEL[f]||f)}</span>`).join('')}</div>
@@ -344,6 +354,27 @@ function renderEntry(e){
   $('#main').scrollTop=0;
   if(innerWidth<=820) scrollTo(0,0);
 }
+const EMBED = (()=>{ try{ return parent!==window; }catch(e){ return true; } })();
+if(EMBED) document.body.classList.add('embedded');
+let COUNTS = {}, lastQuote = '';
+function rememberSelection(){
+  const sel = window.getSelection && window.getSelection();
+  if(!sel || sel.isCollapsed){ return; }
+  const node = sel.anchorNode && (sel.anchorNode.nodeType===1 ? sel.anchorNode : sel.anchorNode.parentElement);
+  if(node && node.closest && node.closest('#sheet')) lastQuote = sel.toString().replace(/\s+/g,' ').trim().slice(0,2000);
+}
+document.addEventListener('mouseup', rememberSelection);
+document.addEventListener('keyup', rememberSelection);
+document.addEventListener('selectionchange', ()=>{ const sel=window.getSelection(); if(sel && !sel.isCollapsed) rememberSelection(); });
+function toPortal(msg){ try{ parent.postMessage(msg, window.origin && window.origin!=='null' ? window.origin : '*'); }catch(e){} }
+function talkSync(){
+  const el=document.getElementById('talkcnt'); if(!el || !S.id) return;
+  const n=COUNTS[S.id]||0; el.hidden=!n; el.textContent = n ? `${n} open suggestion${n>1?'s':''}` : '';
+}
+window.addEventListener('message', ev=>{
+  if(ev.source!==parent || !ev.data || ev.data.type!=='nmdx-counts') return;
+  COUNTS = ev.data.counts || {}; talkSync();
+});
 function tocSync(){
   const btns=[...document.querySelectorAll('.toc [data-sec]')]; if(!btns.length) return;
   const side=getComputedStyle(document.querySelector('.toc')).flexDirection==='column';
@@ -363,6 +394,7 @@ function renderWelcome(){
     <p class="aka">${DATA.length} entries written for teaching. Every entry is cited to its sources.</p>
     <p class="sec" style="margin:0"><span style="font-family:var(--f-read);font-size:1.06rem;line-height:1.6">Start where the lesion is. Each level of the motor unit below opens the index at that level. You can also switch the index to presenting pattern or disease category, or search any disease, gene, antibody or sign.</span></p>
     <div class="path">${LOC.filter(([k])=>k!=='multi').map(([k,l])=>`<button data-jump="${k}"><b>${l}</b><span>${counts[k]} entries</span></button>`).join('')}</div>
+    <p class="talk" style="margin-top:14px"><button type="button" data-request="1">Request a new topic</button><span>Spot an error? Open the topic and use “Suggest a correction”.</span></p>
     <div class="howto">
       <div><b>Search</b>Type a name, gene (SOD1, PMP22), antibody (GAD65, MuSK) or sign. Results rank names first, then other names, then text.</div>
       <div><b>Three ways to browse</b>Switch the index between localization, presenting pattern and disease category. An entry can sit under several patterns.</div>
@@ -403,11 +435,14 @@ function render(){
   if(S.ddx) renderDdx(); else if(S.id && byId[S.id]) renderEntry(byId[S.id]); else renderWelcome();
   $('#app').classList.toggle('reading', !!(S.ddx || S.id));
   tocSync();
+  talkSync();
 }
-function open(id){ S.id=id; S.ddx=false; try{ history.replaceState(null,'','#'+id);}catch(e){} try{ if(parent!==window) parent.history.replaceState(parent.history.state,'',parent.location.pathname+'#'+id);}catch(e){} render(); }
+function open(id){ S.id=id; S.ddx=false; lastQuote=''; try{ history.replaceState(null,'','#'+id);}catch(e){} try{ if(parent!==window) parent.history.replaceState(parent.history.state,'',parent.location.pathname+'#'+id);}catch(e){} render(); }
 document.addEventListener('click',ev=>{
-  const t=ev.target.closest('[data-sec],[data-id],[data-go],[data-view],[data-jump],[data-f],[data-clear],[data-back],#ddxbtn,[data-filter]');
+  const t=ev.target.closest('[data-suggest],[data-request],[data-sec],[data-id],[data-go],[data-view],[data-jump],[data-f],[data-clear],[data-back],#ddxbtn,[data-filter]');
   if(!t) return;
+  if(t.dataset.suggest){ const e=byId[S.id]; if(e) toPortal({type:'nmdx-suggest', kind:'correction', entryId:e.id, entryName:e.name, section:t.dataset.suggest, quote:lastQuote}); lastQuote=''; return; }
+  if(t.dataset.request){ toPortal({type:'nmdx-suggest', kind:'new_topic', topicName:S.q.trim().slice(0,300)}); return; }
   if(t.dataset.sec){ const el=document.getElementById('sec-'+t.dataset.sec); if(el) el.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'}); return; }
   if(t.dataset.go){ ev.preventDefault(); open(t.dataset.go); return; }
   if(t.dataset.id){ open(t.dataset.id); return; }
@@ -426,4 +461,5 @@ $('#q').addEventListener('input',e=>{ S.q=e.target.value; renderIndex(); });
 window.addEventListener('hashchange',()=>{ const h=location.hash.slice(1); if(byId[h]) open(h); });
 const h0=location.hash.slice(1); if(byId[h0]) S.id=h0;
 render();
+if(EMBED) toPortal({type:'nmdx-ready'});
 </script>

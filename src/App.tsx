@@ -66,6 +66,7 @@ const LearnerWizard = lazy(() => import('./pages/LearnerWizard'))
 const LearnerFeedbackForm = lazy(() => import('./pages/public/LearnerFeedbackForm'))
 const EventInPortal = lazy(() => import('./pages/public/EventPublic').then((m) => ({ default: m.EventInPortal })))
 const Compendium = lazy(() => import('./pages/Compendium'))
+const NmdxSuggestions = lazy(() => import('./pages/NmdxSuggestions'))
 
 /**
  * Rounds and conferences: the director and admin, and anyone the director has
@@ -159,6 +160,7 @@ export default function App() {
       <Route path="/calculators" element={<Shell allow={['fellow', 'supervisor', 'director']}><Calculators /></Shell>} />
       <Route path="/study" element={<Shell allow={['fellow', 'supervisor', 'director']}><StudyTools /></Shell>} />
       <Route path="/compendium" element={<Shell><LazyPage><Compendium /></LazyPage></Shell>} />
+      <Route path="/compendium/suggestions" element={<Shell><LazyPage><NmdxSuggestions /></LazyPage></Shell>} />
       {/* The EMG atlas and NCS guide now live in the 3D Atlas, which carries
           the same clinical text beside the anatomy. Old links follow. */}
       <Route path="/emg-atlas" element={<Navigate to="/atlas-3d" replace />} />
