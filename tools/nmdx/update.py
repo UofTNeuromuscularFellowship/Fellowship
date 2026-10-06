@@ -76,7 +76,7 @@ def main():
             elif key in src_sh:
                 hits = shingles(para) & src_sh[key]
                 if hits:
-                    problems.append(f'{eid}.{field}: {len(hits)} copied 8-word run(s) from {key}, e.g. "{sorted(hits)[0]}"')
+                    problems.append(f'{eid}.{field}: {len(hits)} copied 8-word run(s) from {key}, {sorted(hits)}')
 
     for eid, ch in patch.get('entries', {}).items():
         e = by_id.get(eid)
