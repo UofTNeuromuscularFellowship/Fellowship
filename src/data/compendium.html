@@ -78,6 +78,8 @@ a.xref{color:var(--hema);text-decoration:none;border-bottom:1px dotted var(--hem
 .talk{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 16px;font-size:.82rem;color:var(--muted)}
 .talk button,.sugg{border:1px solid var(--line);background:var(--surface);border-radius:7px;padding:4px 10px;font-size:.8rem;cursor:pointer;color:var(--hema)}
 .talk button:hover,.sugg:hover{border-color:var(--hema)}
+.talk .listen{background:var(--hema);border-color:var(--hema);color:var(--surface);font-weight:600}
+.talk .listen:hover{opacity:.9}
 .talk .cnt{background:var(--eosin-soft);color:var(--ink);border-radius:999px;padding:1px 8px;font-size:.74rem}
 .sec h4{display:flex;align-items:baseline;gap:10px}
 .sec h4 .sugg{border:0;background:none;padding:0;font-size:.7rem;letter-spacing:0;text-transform:none;font-weight:500;color:var(--muted);opacity:.85}
@@ -342,7 +344,7 @@ function renderEntry(e){
     <button class="back" data-back>← Back to index</button>
     <div class="crumbs">${tags}</div>
     <h2>${esc(e.name)}</h2>
-    <div class="talk"><button type="button" class="sg" data-suggest="other">Suggest a correction</button><span class="cnt" id="talkcnt" hidden></span><span>Highlight text first to quote it.</span></div>
+    <div class="talk">${EMBED?'<button type="button" class="listen" data-listen="1" title="Read this topic aloud">▶ Listen</button>':''}<button type="button" class="sg" data-suggest="other">Suggest a correction</button><span class="cnt" id="talkcnt" hidden></span><span>Highlight text first to quote it.</span></div>
     ${e.aliases&&e.aliases.length?`<p class="aka">Also searched as: ${esc(e.aliases.slice(0,10).join(', '))}</p>`:''}
     <p class="lede">${linkify(esc(e.summary.replace(/\s*\[(W|R:[a-z0-9_-]+)\]/g,'')),e.id,used)}</p>
     ${SECTIONS.filter(([k])=>e[k]).map(([k,l])=>`<section class="sec" id="sec-${k}"><h4>${l}<button type="button" class="sugg" data-suggest="${k}">Suggest an edit</button></h4>${paras(e,e[k],used)}</section>`).join('')}
@@ -366,6 +368,20 @@ function rememberSelection(){
 document.addEventListener('mouseup', rememberSelection);
 document.addEventListener('keyup', rememberSelection);
 document.addEventListener('selectionchange', ()=>{ const sel=window.getSelection(); if(sel && !sel.isCollapsed) rememberSelection(); });
+/* read aloud: the portal plays the topic as a series of chapters (overview, then each section; long sections in parts) */
+function speechText(text){
+  return text.split(/\n\n+/).map(p=>p.trim().replace(/\s*\[(W|R:[a-z0-9_-]+)\]/g,'').trim()).filter(p=>p && !p.startsWith('Source note:')).join('\n\n');
+}
+function speechChapters(e){
+  const out=[{key:'overview', label:'Overview', text:`${e.name}.\n\n${speechText(e.summary)}`}];
+  SECTIONS.filter(([k])=>e[k]).forEach(([k,l])=>{
+    const paras=speechText(e[k]).split('\n\n'); const parts=[]; let cur='';
+    paras.forEach(p=>{ if(cur && cur.length+p.length>7000){ parts.push(cur); cur=''; } cur=cur?cur+'\n\n'+p:p; });
+    if(cur) parts.push(cur);
+    parts.forEach((t,i)=>out.push({key:parts.length>1?`${k}-${i+1}`:k, label:parts.length>1?`${l} (part ${i+1} of ${parts.length})`:l, text:`${l}${i?', continued':''}.\n\n${t}`}));
+  });
+  return out;
+}
 function toPortal(msg){ try{ parent.postMessage(msg, window.origin && window.origin!=='null' ? window.origin : '*'); }catch(e){} }
 function talkSync(){
   const el=document.getElementById('talkcnt'); if(!el || !S.id) return;
@@ -439,8 +455,9 @@ function render(){
 }
 function open(id){ S.id=id; S.ddx=false; lastQuote=''; try{ history.replaceState(null,'','#'+id);}catch(e){} try{ if(parent!==window) parent.history.replaceState(parent.history.state,'',parent.location.pathname+'#'+id);}catch(e){} render(); }
 document.addEventListener('click',ev=>{
-  const t=ev.target.closest('[data-suggest],[data-request],[data-sec],[data-id],[data-go],[data-view],[data-jump],[data-f],[data-clear],[data-back],#ddxbtn,[data-filter]');
+  const t=ev.target.closest('[data-listen],[data-suggest],[data-request],[data-sec],[data-id],[data-go],[data-view],[data-jump],[data-f],[data-clear],[data-back],#ddxbtn,[data-filter]');
   if(!t) return;
+  if(t.dataset.listen){ const e=byId[S.id]; if(e) toPortal({type:'nmdx-listen', entryId:e.id, entryName:e.name, chapters:speechChapters(e)}); return; }
   if(t.dataset.suggest){ const e=byId[S.id]; if(e) toPortal({type:'nmdx-suggest', kind:'correction', entryId:e.id, entryName:e.name, section:t.dataset.suggest, quote:lastQuote}); lastQuote=''; return; }
   if(t.dataset.request){ toPortal({type:'nmdx-suggest', kind:'new_topic', topicName:S.q.trim().slice(0,300)}); return; }
   if(t.dataset.sec){ const el=document.getElementById('sec-'+t.dataset.sec); if(el) el.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'}); return; }

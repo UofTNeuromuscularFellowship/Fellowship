@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import compendiumHtml from '../data/compendium.html?raw'
 import NmdxSuggestDialog, { type DialogStart } from '../components/NmdxSuggestDialog'
+import NmdxListenPlayer from '../components/NmdxListenPlayer'
+import { parseListenRequest, type ListenRequest } from '../lib/nmdxAudio'
 import { SECTION_LABEL, isFrameRequest, loadSuggestions, openCounts } from '../lib/nmdxSuggestions'
 
 // ---------------------------------------------------------------------------
@@ -32,6 +34,9 @@ import { SECTION_LABEL, isFrameRequest, loadSuggestions, openCounts } from '../l
 // "Suggest a correction" on a topic or "Request a new topic", and this page
 // opens the form. When the frame says it is ready, this page sends it the
 // number of open suggestions per topic so each topic can show them.
+//
+// Read aloud: the frame posts {type: 'nmdx-listen'} with the topic split into
+// chapters, and this page plays them in the player above the frame.
 // ---------------------------------------------------------------------------
 
 export default function Compendium() {
@@ -39,6 +44,7 @@ export default function Compendium() {
   const [src, setSrc] = useState<string>()
   const [dialog, setDialog] = useState<DialogStart | null>(null)
   const [openTotal, setOpenTotal] = useState(0)
+  const [listen, setListen] = useState<ListenRequest | null>(null)
   const counts = useRef<Record<string, number>>({})
 
   const sendCounts = useCallback(() => {
@@ -61,6 +67,12 @@ export default function Compendium() {
     function onMessage(e: MessageEvent) {
       if (e.source !== frame.current?.contentWindow) return
       if (e.data && (e.data as { type?: string }).type === 'nmdx-ready') { sendCounts(); return }
+      const l = parseListenRequest(e.data)
+      if (l) {
+        if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
+        setListen(l)
+        return
+      }
       if (!isFrameRequest(e.data)) return
       const r = e.data
       if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
@@ -118,13 +130,15 @@ export default function Compendium() {
         </div>
       </div>
 
+      {listen && <NmdxListenPlayer request={listen} onClose={() => setListen(null)} />}
+
       {src ? (
         <iframe
           ref={frame}
           src={src}
           title="NMDx"
           allow="fullscreen"
-          className="block w-full rounded-lg border border-line bg-paper h-[calc(100dvh-13rem)] min-h-[520px] md:h-[calc(100dvh-11rem)]"
+          className={`block w-full rounded-lg border border-line bg-paper min-h-[520px] ${listen ? 'h-[calc(100dvh-22rem)] md:h-[calc(100dvh-19rem)]' : 'h-[calc(100dvh-13rem)] md:h-[calc(100dvh-11rem)]'}`}
         />
       ) : (
         <p className="text-sm text-muted">Loading…</p>

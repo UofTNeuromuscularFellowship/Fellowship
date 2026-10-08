@@ -80,6 +80,23 @@ with `npm run build`. Set the three `VITE_` env vars in the Vercel project first
 
 ---
 
+## NMDx read aloud
+
+Each NMDx topic has a **Listen** button that plays the topic like a podcast
+(chapters, back 15 s / ahead 30 s, speed, lock-screen and car controls). The
+voice comes from OpenAI's `gpt-4o-mini-tts`; each chapter is voiced once and
+saved in the private `nmdx-audio` storage bucket, then reused for everyone.
+
+To turn it on:
+
+1. Run `supabase/migrations/0054_nmdx_audio.sql` (creates the bucket).
+2. `supabase functions deploy nmdx-audio`
+3. `supabase secrets set OPENAI_API_KEY=...` (optional: `NMDX_TTS_VOICE`, default `sage`).
+
+Until the key is set, the player shows "Read aloud is not set up yet".
+
+---
+
 ## Notes / open items carried from planning
 
 - **Clinic site codes** (`AI SHSC`, `CK SMH`, `CTB TGH`, `SMA - SHSC`, `SICK KIDS`,
