@@ -9,6 +9,7 @@ import { RecentChanges } from '../components/change/ChangeKit'
 import { AwayDatesButton } from '../components/AwayDatesButton'
 import { CLINIC_COLUMNS, inFellowship, dateLabel, plural, listClinicFellows, periodsOf, rangeLabel, addDays as addIsoDays } from '../lib/schedule'
 import { buildClinicSchedulePdf, downloadPdf } from '../lib/clinicPdf'
+import { buildClinicColorMap, clinicKeyOf, isColoredRow } from '../lib/clinicColors'
 
 interface Rotation {
   id: string
@@ -48,26 +49,6 @@ function isoLocal(d: Date): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
-// One entry per distinct clinic (site + supervisor). Full class strings are
-// required here — Tailwind only generates classes it can see in the source.
-// SickKids always gets its own light blue, kept out of the rotation below.
-const SICKKIDS_COLOR = { cell: 'bg-sky-100', chip: 'bg-sky-200 text-sky-900' }
-const isSickKids = (key: string) => /sick\s*kids|hospital for sick children/i.test(key.split('|')[0])
-const CLINIC_COLORS = [
-  { cell: 'bg-emerald-50', chip: 'bg-emerald-100 text-emerald-900' },
-  { cell: 'bg-amber-50', chip: 'bg-amber-100 text-amber-900' },
-  { cell: 'bg-violet-50', chip: 'bg-violet-100 text-violet-900' },
-  { cell: 'bg-rose-50', chip: 'bg-rose-100 text-rose-900' },
-  { cell: 'bg-teal-50', chip: 'bg-teal-100 text-teal-900' },
-  { cell: 'bg-indigo-50', chip: 'bg-indigo-100 text-indigo-900' },
-  { cell: 'bg-orange-50', chip: 'bg-orange-100 text-orange-900' },
-  { cell: 'bg-lime-50', chip: 'bg-lime-100 text-lime-900' },
-  { cell: 'bg-fuchsia-50', chip: 'bg-fuchsia-100 text-fuchsia-900' },
-  { cell: 'bg-cyan-50', chip: 'bg-cyan-100 text-cyan-900' },
-  { cell: 'bg-stone-100', chip: 'bg-stone-200 text-stone-900' },
-]
-const clinicKeyOf = (site: string | null, provider: string | null) =>
-  site ? `${site}|${provider ?? ''}` : null
 
 export default function ClinicRotations() {
   const { profile } = useAuth()
@@ -155,22 +136,17 @@ export default function ClinicRotations() {
     return m
   }, [rotations])
 
-  // Each distinct clinic (site + supervisor) gets a stable colour, assigned
-  // alphabetically so it doesn't shuffle between reloads.
-  const clinicColors = useMemo(() => {
-    const keys = new Set<string>()
+  // Each clinic (site + provider) gets a stable colour — the same one the PDF
+  // export uses (see lib/clinicColors). The legend lists only clinics on screen.
+  const clinicColors = useMemo(() => buildClinicColorMap(catalog, rotations), [catalog, rotations])
+  const legendKeys = useMemo(() => {
+    const ks = new Set<string>()
     for (const r of rotations) {
-      if (r.is_away || r.is_protected || r.status === 'cancelled') continue
-      const k = clinicKeyOf(r.site_code, r.provider_name)
-      if (k) keys.add(k)
+      const k = isColoredRow(r) ? clinicKeyOf(r.site_code, r.provider_name) : null
+      if (k) ks.add(k)
     }
-    const m = new Map<string, (typeof CLINIC_COLORS)[number]>()
-    let i = 0
-    for (const k of Array.from(keys).sort()) {
-      m.set(k, isSickKids(k) ? SICKKIDS_COLOR : CLINIC_COLORS[i++ % CLINIC_COLORS.length])
-    }
-    return m
-  }, [rotations])
+    return Array.from(clinicColors.keys()).filter((k) => ks.has(k))
+  }, [clinicColors, rotations])
 
   // Week Mondays that have any rotation, each expanded to Mon–Fri dates
   const weeks = useMemo(() => {
@@ -363,10 +339,11 @@ export default function ClinicRotations() {
         </>
       )}
 
-      {(isManager || isFellow) && weeks.length > 0 && clinicColors.size > 0 && (
+      {(isManager || isFellow) && weeks.length > 0 && legendKeys.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="mr-1 text-xs font-semibold uppercase tracking-wider text-muted">Clinics</span>
-          {Array.from(clinicColors.entries()).map(([k, c]) => {
+          {legendKeys.map((k) => {
+            const c = clinicColors.get(k)!
             const [site, provider] = k.split('|')
             return (
               <span key={k} className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${c.chip}`}>

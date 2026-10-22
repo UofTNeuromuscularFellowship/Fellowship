@@ -4,6 +4,7 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
 import { supabase } from './supabase'
 import { addDays, mondayOf, dateLabel, fromIso, listClinicFellows } from './schedule'
+import { buildClinicColorMap, clinicKeyOf, isColoredRow } from './clinicColors'
 
 interface Row {
   fellow_id: string; rotation_date: string; site_code: string | null; provider_name: string | null
@@ -19,8 +20,7 @@ const FS = 8, FS_SMALL = 7, LINE = 9.5
 
 const INK = rgb(0.1, 0.1, 0.12), MUTED = rgb(0.45, 0.45, 0.5), GRID = rgb(0.78, 0.78, 0.82)
 const HEAD_BG = rgb(0.93, 0.94, 0.96), OUT_BG = rgb(0.96, 0.96, 0.96)
-const SICKKIDS_BG = rgb(0.86, 0.93, 0.99), AWAY_BG = rgb(0.99, 0.93, 0.9), PROT_BG = rgb(0.94, 0.94, 0.97)
-const isSickKids = (s: string | null) => /sick\s*kids|hospital for sick children/i.test(s ?? '')
+const RED = rgb(0.86, 0.15, 0.15)
 
 async function loadRows(from: string, to: string): Promise<Row[]> {
   const out: Row[] = []
@@ -37,8 +37,18 @@ async function loadRows(from: string, to: string): Promise<Row[]> {
 }
 
 export async function buildClinicSchedulePdf(from: string, to: string): Promise<Uint8Array> {
-  const [rows, fl] = await Promise.all([loadRows(from, to), listClinicFellows(from, to)])
+  const [rows, fl, cat] = await Promise.all([
+    loadRows(from, to), listClinicFellows(from, to),
+    supabase.from('clinic_template').select('site_code, provider_name'),
+  ])
   if (fl.error) throw new Error(fl.error.message)
+  // Same colours as the Clinic Rotations page (lib/clinicColors).
+  const colors = buildClinicColorMap((cat.data as { site_code: string | null; provider_name: string | null }[]) ?? [], rows)
+  const colorOf = (r: Row) => {
+    if (!isColoredRow(r)) return undefined
+    const c = colors.get(clinicKeyOf(r.site_code, r.provider_name) ?? '')
+    return c ? rgb(...c.rgb) : undefined
+  }
   const fellows = ((fl.data as Fellow[]) ?? [])
   const byCell = new Map(rows.map((r) => [`${r.fellow_id}|${r.rotation_date}`, r]))
 
@@ -86,6 +96,28 @@ export async function buildClinicSchedulePdf(from: string, to: string): Promise<
   }
   newPage()
 
+  // Colour key: clinics that appear in this PDF, as chips (wrapping to new lines).
+  {
+    const seen = new Set<string>()
+    for (const r of rows) { const k = isColoredRow(r) ? clinicKeyOf(r.site_code, r.provider_name) : null; if (k) seen.add(k) }
+    const keys = Array.from(colors.keys()).filter((k) => seen.has(k))
+    if (keys.length) {
+      let x = M
+      page!.drawText('CLINICS', { x, y: y - 9, size: 7, font: bold, color: MUTED })
+      x += bold.widthOfTextAtSize('CLINICS', 7) + 8
+      for (const k of keys) {
+        const [site, prov] = k.split('|')
+        const label = clean(font, prov ? `${site} · ${prov}` : site)
+        const w = font.widthOfTextAtSize(label, 7.5) + 12
+        if (x + w > PAGE_W - M) { x = M; y -= 15 }
+        page!.drawRectangle({ x, y: y - 12, width: w, height: 13, color: rgb(...colors.get(k)!.rgb) })
+        page!.drawText(label, { x: x + 6, y: y - 8.5, size: 7.5, font, color: INK })
+        x += w + 5
+      }
+      y -= 24
+    }
+  }
+
   const dayW = (PAGE_W - 2 * M - NAME_W) / 5
   const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
   const headH = 26
@@ -98,13 +130,13 @@ export async function buildClinicSchedulePdf(from: string, to: string): Promise<
     }
     const r = byCell.get(`${f.id}|${dt}`)
     if (!r) return { lines: [{ text: '—', f: font, size: FS, color: MUTED }] }
-    if (r.is_away) return { lines: [{ text: 'Away', f: bold, size: FS, color: INK }], bg: AWAY_BG }
-    if (r.is_protected) return { lines: [{ text: 'Protected', f: font, size: FS, color: INK }], bg: PROT_BG }
+    if (r.is_away) return { lines: [{ text: 'Fellow Away', f: bold, size: FS, color: RED }] }
+    if (r.is_protected) return { lines: [{ text: 'Protected', f: font, size: FS, color: INK }] }
     const w = dayW - 2 * PAD
     const site = wrap(bold, r.site_code ?? 'TBD', FS, w).map((t) => ({ text: t, f: bold, size: FS, color: r.status === 'cancelled' ? MUTED : INK }))
     const prov = r.provider_name ? wrap(font, r.provider_name, FS_SMALL, w).map((t) => ({ text: t, f: font, size: FS_SMALL, color: MUTED })) : []
-    const canc = r.status === 'cancelled' ? [{ text: 'CANCELLED', f: bold, size: FS_SMALL, color: rgb(0.75, 0.1, 0.1) }] : []
-    return { lines: [...site, ...prov, ...canc], bg: isSickKids(r.site_code) && r.status !== 'cancelled' ? SICKKIDS_BG : undefined }
+    const canc = r.status === 'cancelled' ? [{ text: 'CANCELLED', f: bold, size: FS_SMALL, color: RED }] : []
+    return { lines: [...site, ...prov, ...canc], bg: colorOf(r) }
   }
   const rect = (x: number, top: number, w: number, h: number, fill?: ReturnType<typeof rgb>) =>
     page.drawRectangle({ x, y: top - h, width: w, height: h, color: fill, borderColor: GRID, borderWidth: 0.5 })
