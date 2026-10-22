@@ -84,6 +84,8 @@ export default function ClinicRotations() {
   const [msg, setMsg] = useState<string | null>(null)
   const [showConfig, setShowConfig] = useState(false)
   const [editCell, setEditCell] = useState<{ fellowId: string; date: string; weekday: number } | null>(null)
+  const [customText, setCustomText] = useState('')
+  useEffect(() => { setCustomText('') }, [editCell])
   const [cancelTarget, setCancelTarget] = useState<Rotation | null>(null)
   const [allDrafts, setAllDrafts] = useState(0)
   const [setup, setSetup] = useState<{ patterns: number; starts: number; publishedThrough: string | null } | null>(null)
@@ -181,11 +183,13 @@ export default function ClinicRotations() {
     })
   }, [rotations])
 
-  async function applyCell(mode: string, clinicId?: string) {
+  async function applyCell(mode: string, clinicId?: string, text?: string) {
     if (!editCell) return
-    const { error } = await supabase.rpc('set_clinic_cell', {
+    const args: Record<string, unknown> = {
       p_fellow: editCell.fellowId, p_date: editCell.date, p_mode: mode, p_clinic: clinicId ?? null,
-    })
+    }
+    if (mode === 'custom') args.p_text = text ?? ''
+    const { error } = await supabase.rpc('set_clinic_cell', args)
     setEditCell(null)
     if (error) setMsg(error.message); else load()
   }
@@ -202,6 +206,22 @@ export default function ClinicRotations() {
         && (!c.active_from || c.active_from <= editCell.date)
         && (!c.active_until || c.active_until >= editCell.date)
         && !(c.paused_dates ?? []).includes(editCell.date))
+    : []
+  // Every other clinic in the catalog, so any site (e.g. SickKids) can still be
+  // placed by hand on a day it doesn't normally run. One entry per site+provider.
+  const otherCellOptions = editCell
+    ? (() => {
+        const shown = new Set(cellOptions.map((c) => `${c.site_code}|${c.provider_name ?? ''}`))
+        const seen = new Set<string>()
+        return catalog
+          .filter((c) => c.site_code !== 'TBD')
+          .filter((c) => {
+            const k = `${c.site_code}|${c.provider_name ?? ''}`
+            if (shown.has(k) || seen.has(k)) return false
+            seen.add(k); return true
+          })
+          .sort((a, b) => a.site_code.localeCompare(b.site_code) || (a.provider_name ?? '').localeCompare(b.provider_name ?? ''))
+      })()
     : []
   const editCellRotation = editCell ? byCell.get(`${editCell.fellowId}|${editCell.date}`) : undefined
   const editCellCancellable = Boolean(
@@ -429,7 +449,7 @@ export default function ClinicRotations() {
             )}
             <div className="mt-4 space-y-1.5">
               {cellOptions.length === 0 && (
-                <p className="text-sm text-muted">No clinics are defined for this day in the catalog.</p>
+                <p className="text-sm text-muted">No clinics normally run this day — pick one below or type your own.</p>
               )}
               {cellOptions.map((c) => (
                 <button key={c.id} onClick={() => applyCell('clinic', c.id)}
@@ -438,6 +458,29 @@ export default function ClinicRotations() {
                   {c.recurrence === 'dates' && <span className="ml-2 rounded-full border border-accent px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">This date</span>}
                 </button>
               ))}
+              {otherCellOptions.length > 0 && (
+                <>
+                  <p className="pt-2 text-xs font-semibold uppercase tracking-wide text-muted">Other clinics</p>
+                  <div className="max-h-48 space-y-1.5 overflow-y-auto">
+                    {otherCellOptions.map((c) => (
+                      <button key={c.id} onClick={() => applyCell('clinic', c.id)}
+                        className="block w-full rounded-md border border-dashed border-line px-3 py-2 text-left text-sm text-ink hover:border-accent hover:text-accent">
+                        {c.site_code} <span className="text-muted">· {c.provider_name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+              <form className="flex gap-2 pt-2"
+                onSubmit={(e) => { e.preventDefault(); if (customText.trim()) applyCell('custom', undefined, customText.trim()) }}>
+                <input value={customText} onChange={(e) => setCustomText(e.target.value)} maxLength={120}
+                  placeholder="Or type your own (e.g. SickKids – Dr X)" aria-label="Custom entry"
+                  className="min-w-0 flex-1 rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none" />
+                <button type="submit" disabled={!customText.trim()}
+                  className="rounded-md border border-accent px-3 py-1.5 text-sm font-medium text-accent hover:bg-paper disabled:opacity-40">
+                  Save
+                </button>
+              </form>
               <div className="flex flex-wrap gap-2 pt-2">
                 <button onClick={() => applyCell('protected')} className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink hover:bg-paper">Protected</button>
                 <button onClick={() => applyCell('away')} className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink hover:bg-paper">Fellow Away</button>
