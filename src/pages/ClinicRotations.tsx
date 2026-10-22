@@ -7,7 +7,8 @@ import { useActingProvider, ActingForBar } from '../components/ActingFor'
 import { Link } from 'react-router-dom'
 import { RecentChanges } from '../components/change/ChangeKit'
 import { AwayDatesButton } from '../components/AwayDatesButton'
-import { CLINIC_COLUMNS, inFellowship, dateLabel, plural, listClinicFellows } from '../lib/schedule'
+import { CLINIC_COLUMNS, inFellowship, dateLabel, plural, listClinicFellows, periodsOf, rangeLabel, addDays as addIsoDays } from '../lib/schedule'
+import { buildClinicSchedulePdf, downloadPdf } from '../lib/clinicPdf'
 
 interface Rotation {
   id: string
@@ -291,6 +292,7 @@ export default function ClinicRotations() {
         <div className="flex flex-wrap gap-2">
           <AwayDatesButton />
           {isManager && <>
+            <PdfExportButton onError={setMsg} />
             <Link to="/change" className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90">Make a change</Link>
             {isDirector && <Link to="/clinic/setup?step=5" className="rounded-md border border-line px-4 py-2 text-sm font-medium text-ink hover:border-accent">Generate again</Link>}
           </>}
@@ -513,6 +515,7 @@ export default function ClinicRotations() {
       )}
 
       {isManager && <ClinicTally />}
+      {isManager && <AwayDatesTable />}
       {isManager && <RecentChanges area="clinic" />}
     </div>
   )
@@ -1328,6 +1331,124 @@ function ClinicTally() {
           ))}
         </div>
       )}
+    </Card>
+  )
+}
+
+// Download a PDF of the published schedule for a chosen date range, to attach
+// to an email for people who don't use the portal.
+function PdfExportButton({ onError }: { onError: (m: string) => void }) {
+  const today = localToday()
+  const [open, setOpen] = useState(false)
+  const [from, setFrom] = useState(today)
+  const [to, setTo] = useState(addIsoDays(today, 27))
+  const [busy, setBusy] = useState(false)
+  const bad = !from || !to || to < from || to > addIsoDays(from, 400)
+
+  async function go() {
+    setBusy(true)
+    try {
+      const bytes = await buildClinicSchedulePdf(from, to)
+      downloadPdf(bytes, `clinic-schedule_${from}_to_${to}.pdf`)
+      setOpen(false)
+    } catch (e) {
+      onError(`Couldn't build the PDF: ${(e as Error).message}`)
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <>
+      <button onClick={() => setOpen(true)} className="rounded-md border border-line px-4 py-2 text-sm font-medium text-ink hover:border-accent">
+        Download PDF
+      </button>
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => !busy && setOpen(false)}>
+          <div className="w-full max-w-sm rounded-lg border border-line bg-surface p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <p className="font-display text-base font-semibold text-ink">Download schedule as PDF</p>
+            <p className="mt-0.5 text-sm text-muted">Published clinics only, one table per week — ready to attach to an email.</p>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <label className="text-xs font-semibold uppercase tracking-wide text-muted">From
+                <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
+                  className="mt-1 block w-full rounded-md border border-line bg-surface px-2 py-1.5 text-sm font-normal normal-case tracking-normal text-ink" />
+              </label>
+              <label className="text-xs font-semibold uppercase tracking-wide text-muted">To
+                <input type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)}
+                  className="mt-1 block w-full rounded-md border border-line bg-surface px-2 py-1.5 text-sm font-normal normal-case tracking-normal text-ink" />
+              </label>
+            </div>
+            {to && from && to < from && <p className="mt-2 text-xs text-red-600">The end date is before the start date.</p>}
+            {to && from && to > addIsoDays(from, 400) && <p className="mt-2 text-xs text-red-600">Pick a range of about a year or less.</p>}
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={() => setOpen(false)} disabled={busy} className="rounded-md px-3 py-1.5 text-sm font-medium text-muted hover:text-ink">Cancel</button>
+              <button onClick={go} disabled={busy || bad}
+                className="rounded-md bg-accent px-4 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-40">
+                {busy ? 'Building…' : 'Download'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+// Upcoming away / vacation dates for fellows and supervising staff.
+function AwayDatesTable() {
+  const today = localToday()
+  const [rows, setRows] = useState<{ name: string; role: string; from: string; to: string; days: number }[] | null>(null)
+
+  useEffect(() => {
+    ;(async () => {
+      const horizon = addIsoDays(today, 730)
+      const [fl, pr, fa, pa] = await Promise.all([
+        listClinicFellows(today, horizon),
+        supabase.rpc('list_providers'),
+        supabase.from('fellow_away_dates').select('fellow_id, away_date').gte('away_date', today),
+        supabase.from('provider_away_dates').select('provider_id, away_date').gte('away_date', today),
+      ])
+      const out: { name: string; role: string; from: string; to: string; days: number }[] = []
+      const weekdaysIn = (dates: string[], a: string, b: string) => dates.filter((d) => d >= a && d <= b).length
+      const add = (people: { id: string; full_name: string }[], dates: { who: string; d: string }[], role: string) => {
+        for (const p of people) {
+          const mine = dates.filter((x) => x.who === p.id).map((x) => x.d)
+          for (const per of periodsOf(mine)) out.push({ name: p.full_name, role, from: per.from, to: per.to, days: weekdaysIn(mine, per.from, per.to) })
+        }
+      }
+      add((fl.data as { id: string; full_name: string }[]) ?? [],
+        ((fa.data as { fellow_id: string; away_date: string }[]) ?? []).map((x) => ({ who: x.fellow_id, d: x.away_date })), 'Fellow')
+      add((pr.data as { id: string; full_name: string }[]) ?? [],
+        ((pa.data as { provider_id: string; away_date: string }[]) ?? []).map((x) => ({ who: x.provider_id, d: x.away_date })), 'Staff')
+      out.sort((a, b) => a.from.localeCompare(b.from) || a.name.localeCompare(b.name))
+      setRows(out)
+    })()
+  }, [today])
+
+  return (
+    <Card>
+      <CardHeader title="Away & vacation dates" />
+      <div className="overflow-x-auto px-2 pb-3">
+        {rows === null ? <p className="px-3 py-2 text-sm text-muted">Loading…</p>
+          : rows.length === 0 ? <p className="px-3 py-2 text-sm text-muted">No upcoming away dates.</p>
+          : (
+            <table className="w-full min-w-[480px] border-collapse text-sm">
+              <thead>
+                <tr className="text-left text-xs font-semibold uppercase tracking-wider text-muted">
+                  <th className="p-2">Name</th><th className="p-2">Role</th><th className="p-2">Dates</th><th className="p-2 text-right">Days</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={`${r.name}-${r.from}-${i}`} className="border-t border-line">
+                    <td className="p-2 font-medium text-ink">{r.name}</td>
+                    <td className="p-2 text-muted">{r.role}</td>
+                    <td className="p-2 text-ink">{rangeLabel(r.from, r.to)}</td>
+                    <td className="p-2 text-right text-ink">{r.days}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+      </div>
     </Card>
   )
 }

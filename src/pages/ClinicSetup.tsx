@@ -7,7 +7,7 @@ import { StepBar, Notice, field, label as labelCls, primary, quiet, textBtn } fr
 import {
   CLINIC_COLUMNS, WEEKDAY_NAMES, WEEKDAY_SHORT, loadClinicWorld, clinicName, clinicWhen, cellLabel, rowFor,
   clinicsWithRoom, inFellowship, rangeLabel, dateLabel, dayLabel, addDays, mondayOf, academicYear, plural,
-  type Clinic, type ClinicWorld, type Fellow, type Pattern, type Slot, type Person, listClinicFellows } from '../lib/schedule'
+  type Clinic, type ClinicWorld, type Fellow, type Pattern, type Slot, type Person, listClinicFellows, periodsOf } from '../lib/schedule'
 
 // ---------------------------------------------------------------------------
 // Setting up the clinic schedule, one step at a time:
@@ -452,18 +452,6 @@ function FellowsStep({ patterns, onError, onBack, onNext }: {
 }
 
 // --------------------------------------------------------------- 4 away dates
-
-function periodsOf(dates: string[]): { from: string; to: string }[] {
-  const sorted = Array.from(new Set(dates)).sort()
-  const out: { from: string; to: string }[] = []
-  for (const d of sorted) {
-    const last = out[out.length - 1]
-    // weekends inside an away period don't split it
-    if (last && (addDays(last.to, 1) === d || (addDays(last.to, 3) >= d && new Date(last.to + 'T00:00:00').getDay() === 5))) last.to = d
-    else out.push({ from: d, to: d })
-  }
-  return out
-}
 
 function AwayStep({ clinics, onError, onBack, onNext }: { clinics: Clinic[]; onError: (m: string) => void; onBack: () => void; onNext: () => void }) {
   const today = localToday()

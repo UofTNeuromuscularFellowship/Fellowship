@@ -344,3 +344,16 @@ export function capacityWarnings(
   }
   return out
 }
+
+/** Away dates -> merged periods; weekends inside a period don't split it. */
+export function periodsOf(dates: string[]): { from: string; to: string }[] {
+  const sorted = Array.from(new Set(dates)).sort()
+  const out: { from: string; to: string }[] = []
+  for (const d of sorted) {
+    const last = out[out.length - 1]
+    // weekends inside an away period don't split it
+    if (last && (addDays(last.to, 1) === d || (addDays(last.to, 3) >= d && new Date(last.to + 'T00:00:00').getDay() === 5))) last.to = d
+    else out.push({ from: d, to: d })
+  }
+  return out
+}
