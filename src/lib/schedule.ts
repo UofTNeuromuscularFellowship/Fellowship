@@ -170,11 +170,24 @@ export async function loadRotations(from: string, to: string): Promise<{ data: R
   return { data: all, error: null }
 }
 
+// list_fellows for clinic scheduling: drops fellows switched off for clinic
+// (site_memberships.exclude_from_clinic, e.g. teaching-only fellows).
+// Same { data, error } shape as the RPC so it drops in where list_fellows was.
+export async function listClinicFellows(from: string, to: string | null) {
+  const [fl, ex] = await Promise.all([
+    supabase.rpc('list_fellows', { p_from: from, p_to: to }),
+    supabase.from('site_memberships').select('user_id').eq('exclude_from_clinic', true),
+  ])
+  if (fl.error) return fl
+  const skip = new Set(((ex.data as { user_id: string }[] | null) ?? []).map((x) => x.user_id))
+  return { ...fl, data: ((fl.data as { id: string }[] | null) ?? []).filter((f) => !skip.has(f.id)) }
+}
+
 export async function loadClinicWorld(from: string, to: string): Promise<ClinicWorld> {
   const [cat, rot, fl, pr, tp, sl, fr, pa, fa] = await Promise.all([
     supabase.from('clinic_template').select(CLINIC_COLUMNS).order('weekday').order('provider_name'),
     loadRotations(from, to),
-    supabase.rpc('list_fellows', { p_from: from, p_to: to }),
+    listClinicFellows(from, to),
     supabase.rpc('list_providers'),
     supabase.from('fellow_templates').select('id, name, sort_order').order('sort_order').order('created_at'),
     supabase.from('fellow_template_slots').select('id, template_id, weekday, slot_type, clinic_template_id, monthly_cap, fallback_clinic_template_id'),

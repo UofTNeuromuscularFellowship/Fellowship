@@ -7,8 +7,7 @@ import { StepBar, Notice, field, label as labelCls, primary, quiet, textBtn } fr
 import {
   CLINIC_COLUMNS, WEEKDAY_NAMES, WEEKDAY_SHORT, loadClinicWorld, clinicName, clinicWhen, cellLabel, rowFor,
   clinicsWithRoom, inFellowship, rangeLabel, dateLabel, dayLabel, addDays, mondayOf, academicYear, plural,
-  type Clinic, type ClinicWorld, type Fellow, type Pattern, type Slot, type Person,
-} from '../lib/schedule'
+  type Clinic, type ClinicWorld, type Fellow, type Pattern, type Slot, type Person, listClinicFellows } from '../lib/schedule'
 
 // ---------------------------------------------------------------------------
 // Setting up the clinic schedule, one step at a time:
@@ -381,7 +380,7 @@ function FellowsStep({ patterns, onError, onBack, onNext }: {
   useEffect(() => {
     ;(async () => {
       const [f, r] = await Promise.all([
-        supabase.rpc('list_fellows', { p_from: today, p_to: addDays(today, 400) }),
+        listClinicFellows(today, addDays(today, 400)),
         supabase.from('fellow_rotation').select('fellow_id, start_template_id'),
       ])
       if (f.error) onError(f.error.message)
@@ -478,7 +477,7 @@ function AwayStep({ clinics, onError, onBack, onNext }: { clinics: Clinic[]; onE
     ;(async () => {
       const [pr, fl, pa, fa] = await Promise.all([
         supabase.rpc('list_providers'),
-        supabase.rpc('list_fellows', { p_from: today, p_to: until }),
+        listClinicFellows(today, until),
         supabase.from('provider_away_dates').select('provider_id, away_date').gte('away_date', today).lte('away_date', until),
         supabase.from('fellow_away_dates').select('fellow_id, away_date').gte('away_date', today).lte('away_date', until),
       ])

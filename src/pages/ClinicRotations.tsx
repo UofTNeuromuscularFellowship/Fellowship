@@ -7,7 +7,7 @@ import { useActingProvider, ActingForBar } from '../components/ActingFor'
 import { Link } from 'react-router-dom'
 import { RecentChanges } from '../components/change/ChangeKit'
 import { AwayDatesButton } from '../components/AwayDatesButton'
-import { CLINIC_COLUMNS, inFellowship, dateLabel, plural } from '../lib/schedule'
+import { CLINIC_COLUMNS, inFellowship, dateLabel, plural, listClinicFellows } from '../lib/schedule'
 
 interface Rotation {
   id: string
@@ -49,8 +49,10 @@ function isoLocal(d: Date): string {
 
 // One entry per distinct clinic (site + supervisor). Full class strings are
 // required here — Tailwind only generates classes it can see in the source.
+// SickKids always gets its own light blue, kept out of the rotation below.
+const SICKKIDS_COLOR = { cell: 'bg-sky-100', chip: 'bg-sky-200 text-sky-900' }
+const isSickKids = (key: string) => /sick\s*kids|hospital for sick children/i.test(key.split('|')[0])
 const CLINIC_COLORS = [
-  { cell: 'bg-sky-50', chip: 'bg-sky-100 text-sky-900' },
   { cell: 'bg-emerald-50', chip: 'bg-emerald-100 text-emerald-900' },
   { cell: 'bg-amber-50', chip: 'bg-amber-100 text-amber-900' },
   { cell: 'bg-violet-50', chip: 'bg-violet-100 text-violet-900' },
@@ -110,7 +112,7 @@ export default function ClinicRotations() {
       const { data: aw } = await supabase.from('fellow_away_dates').select('fellow_id, away_date').gte('away_date', today)
       setAway((aw as AwayDate[]) ?? [])
       // the fellows in their fellowship at some point in the weeks shown
-      const { data: fl } = await supabase.rpc('list_fellows', { p_from: today, p_to: isoLocal(horizon) })
+      const { data: fl } = await listClinicFellows(today, isoLocal(horizon))
       setFellows((fl as FellowOpt[]) ?? [])
       const { data: cat } = await supabase.from('clinic_template').select(CLINIC_COLUMNS)
       setCatalog((cat as ClinicCat[]) ?? [])
@@ -162,7 +164,10 @@ export default function ClinicRotations() {
       if (k) keys.add(k)
     }
     const m = new Map<string, (typeof CLINIC_COLORS)[number]>()
-    Array.from(keys).sort().forEach((k, i) => m.set(k, CLINIC_COLORS[i % CLINIC_COLORS.length]))
+    let i = 0
+    for (const k of Array.from(keys).sort()) {
+      m.set(k, isSickKids(k) ? SICKKIDS_COLOR : CLINIC_COLORS[i++ % CLINIC_COLORS.length])
+    }
     return m
   }, [rotations])
 
@@ -1232,7 +1237,7 @@ function FellowAssignments({ onError }: { onError: (m: string) => void }) {
 
   async function load() {
     const [{ data: f }, { data: t }, { data: r }] = await Promise.all([
-      supabase.rpc('list_fellows', { p_from: localToday(), p_to: (() => { const d = new Date(); d.setDate(d.getDate() + 400); return isoLocal(d) })() }),
+      listClinicFellows(localToday(), (() => { const d = new Date(); d.setDate(d.getDate() + 400); return isoLocal(d) })()),
       supabase.from('fellow_templates').select('id, name, sort_order').order('sort_order').order('created_at'),
       supabase.from('fellow_rotation').select('fellow_id, start_template_id'),
     ])
